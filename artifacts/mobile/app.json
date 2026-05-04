@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "HomeBase",
+    "name": "Homie",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F5F7FB"
+      "backgroundColor": "#FBF8F4"
     },
     "ios": {
       "supportsTablet": false
