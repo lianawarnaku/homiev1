@@ -48,6 +48,7 @@ export interface Expense {
   amount: number;
   paidBy: string;
   sharedWith: string[];
+  splits: Record<string, number>; // person id → amount they owe payer
   date: string;
   category: ExpenseCategory;
   settled: boolean;
@@ -232,7 +233,8 @@ const INITIAL_EXPENSES: Expense[] = [
     title: "Monthly groceries",
     amount: 240,
     paidBy: "current",
-    sharedWith: ["current", "2", "3", "4"],
+    sharedWith: ["2", "3", "4"],
+    splits: { "2": 60, "3": 60, "4": 60 },
     date: daysFromNow(-3),
     category: "groceries",
     settled: false,
@@ -242,7 +244,8 @@ const INITIAL_EXPENSES: Expense[] = [
     title: "Internet bill",
     amount: 80,
     paidBy: "2",
-    sharedWith: ["current", "2", "3", "4"],
+    sharedWith: ["current", "3", "4"],
+    splits: { current: 20, "3": 20, "4": 20 },
     date: daysFromNow(-10),
     category: "utilities",
     settled: false,
@@ -252,7 +255,8 @@ const INITIAL_EXPENSES: Expense[] = [
     title: "Cleaning supplies",
     amount: 45,
     paidBy: "3",
-    sharedWith: ["current", "2", "3", "4"],
+    sharedWith: ["current", "2", "4"],
+    splits: { current: 11.25, "2": 11.25, "4": 11.25 },
     date: daysFromNow(-7),
     category: "other",
     settled: false,
@@ -317,7 +321,7 @@ const INITIAL_BORROWS: BorrowItem[] = [
   },
 ];
 
-const STORAGE_KEY = "homebase_data_v1";
+const STORAGE_KEY = "homebase_data_v2";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [roommates, setRoommates] = useState<Roommate[]>(INITIAL_ROOMMATES);
@@ -454,11 +458,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     expenses
       .filter((e) => !e.settled)
       .forEach((e) => {
-        const perPerson = e.amount / e.sharedWith.length;
-        e.sharedWith.forEach((id) => {
-          if (id !== e.paidBy) {
-            balances[id] = (balances[id] ?? 0) - perPerson;
-            balances[e.paidBy] = (balances[e.paidBy] ?? 0) + perPerson;
+        Object.entries(e.splits ?? {}).forEach(([personId, amount]) => {
+          if (personId !== e.paidBy) {
+            balances[personId] = (balances[personId] ?? 0) - amount;
+            balances[e.paidBy] = (balances[e.paidBy] ?? 0) + amount;
           }
         });
       });
