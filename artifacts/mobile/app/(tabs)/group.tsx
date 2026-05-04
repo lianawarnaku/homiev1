@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -13,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { HomePlant } from "@/components/HomePlant";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
@@ -32,6 +34,25 @@ function formatDueDate(dateStr: string) {
   return `${diff}d left`;
 }
 
+const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
+  thriving: {
+    title: "Thriving! 🌸",
+    subtitle: "Your home is in great shape",
+  },
+  healthy: {
+    title: "Looking good",
+    subtitle: "Keep the momentum going",
+  },
+  struggling: {
+    title: "Needs attention",
+    subtitle: "A few chores are overdue",
+  },
+  dying: {
+    title: "SOS! 🚨",
+    subtitle: "Your home needs help now",
+  },
+};
+
 export default function GroupChoresScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -46,17 +67,17 @@ export default function GroupChoresScreen() {
   const completedChores = chores.filter((c) => c.completed).length;
   const healthPct = totalChores > 0 ? completedChores / totalChores : 0;
 
-  const healthLabel =
-    healthPct >= 0.8
-      ? "Great shape"
+  const stage =
+    healthPct >= 0.75
+      ? "thriving"
       : healthPct >= 0.5
-      ? "Getting there"
+      ? "healthy"
       : healthPct >= 0.25
-      ? "Needs work"
-      : "Falling behind";
+      ? "struggling"
+      : "dying";
 
   const healthColor =
-    healthPct >= 0.8
+    healthPct >= 0.75
       ? colors.success
       : healthPct >= 0.5
       ? colors.primary
@@ -64,304 +85,404 @@ export default function GroupChoresScreen() {
       ? colors.warning
       : colors.destructive;
 
+  const msg = HEALTH_MESSAGES[stage];
+
   const roommatesWithChores = roommates.map((r) => ({
     roommate: r,
     chores: chores.filter((c) => c.assignedTo === r.id),
   }));
 
-  const handleNudge = (roommateId: string, choreId: string, choreName: string) => {
+  const handleNudge = (
+    roommateId: string,
+    choreId: string,
+    choreName: string
+  ) => {
     const key = `${roommateId}-${choreId}`;
     if (nudgedChores.has(key)) return;
-    const roommate = roommates.find((r) => r.id === roommateId);
-    Alert.alert(
-      "Send Anonymous Nudge",
-      `Send an anonymous reminder about "${choreName}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Nudge",
-          onPress: () => {
-            sendNudge(roommateId, choreId);
-            setNudgedChores((prev) => new Set([...prev, key]));
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            Alert.alert(
-              "Nudge Sent",
-              `Your roommate has been anonymously reminded about this task.`,
-              [{ text: "Got it" }]
-            );
-          },
+    Alert.alert("Send Anonymous Nudge", `Remind about "${choreName}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Nudge 👋",
+        onPress: () => {
+          sendNudge(roommateId, choreId);
+          setNudgedChores((prev) => new Set([...prev, key]));
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          Alert.alert(
+            "Nudge sent!",
+            "Your roommate got an anonymous reminder.",
+            [{ text: "Got it" }]
+          );
         },
-      ]
-    );
+      },
+    ]);
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
       <View
         style={[
           styles.header,
           {
             paddingTop: topPad + 16,
             backgroundColor: colors.background,
-            borderBottomColor: colors.border,
           },
         ]}
       >
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          Group Chores
-        </Text>
+        <View>
+          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+            Your household
+          </Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+            Group Chores
+          </Text>
+        </View>
         <View
           style={[
-            styles.nudgeInfo,
-            { backgroundColor: colors.secondary },
+            styles.anonBadge,
+            { backgroundColor: colors.secondary, borderColor: colors.border },
           ]}
         >
-          <Feather name="bell" size={12} color={colors.mutedForeground} />
-          <Text style={[styles.nudgeInfoText, { color: colors.mutedForeground }]}>
+          <Feather name="eye-off" size={11} color={colors.mutedForeground} />
+          <Text style={[styles.anonText, { color: colors.mutedForeground }]}>
             Nudges are anonymous
           </Text>
         </View>
       </View>
 
-      <View
-        style={[
-          styles.healthCard,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 90 + botPad }}
       >
-        <View style={styles.healthHeader}>
-          <View>
-            <Text style={[styles.healthTitle, { color: colors.foreground }]}>
-              Room Health
-            </Text>
-            <Text style={[styles.healthLabel, { color: healthColor }]}>
-              {healthLabel}
-            </Text>
-          </View>
+        {/* ── Plant Health Card ──────────────────────────── */}
+        <View
+          style={[
+            styles.plantCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              shadowColor: healthColor,
+            },
+          ]}
+        >
+          {/* Ambient glow strip at top */}
           <View
             style={[
-              styles.healthPct,
-              { backgroundColor: healthColor + "18" },
-            ]}
-          >
-            <Text style={[styles.healthPctText, { color: healthColor }]}>
-              {Math.round(healthPct * 100)}%
-            </Text>
-          </View>
-        </View>
-        <View style={[styles.healthTrack, { backgroundColor: colors.muted }]}>
-          <View
-            style={[
-              styles.healthFill,
-              {
-                backgroundColor: healthColor,
-                width: `${healthPct * 100}%` as `${number}%`,
-              },
+              styles.glowStrip,
+              { backgroundColor: healthColor + "28" },
             ]}
           />
-        </View>
-        <View style={styles.healthStats}>
-          <Text style={[styles.healthStat, { color: colors.mutedForeground }]}>
-            {completedChores} completed
-          </Text>
-          <Text style={[styles.healthStat, { color: colors.mutedForeground }]}>
-            {totalChores - completedChores} remaining
-          </Text>
-        </View>
-      </View>
 
-      <FlatList
-        data={roommatesWithChores}
-        keyExtractor={(item) => item.roommate.id}
-        contentContainerStyle={[
-          styles.list,
-          { paddingBottom: 90 + botPad },
-        ]}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <EmptyState icon="users" title="No roommates yet" subtitle="Add roommates to see group chores" />
-        }
-        renderItem={({ item }) => {
-          const pending = item.chores.filter((c) => !c.completed);
-          const done = item.chores.filter((c) => c.completed);
-          return (
-            <View
-              style={[
-                styles.roommateSection,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              <View style={styles.roommateHeader}>
-                <RoommateAvatar
-                  name={item.roommate.name}
-                  color={item.roommate.color}
-                  size={38}
-                />
-                <View style={styles.roommateInfo}>
-                  <Text
-                    style={[styles.roommateName, { color: colors.foreground }]}
-                  >
-                    {item.roommate.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.roommateStats,
-                      { color: colors.mutedForeground },
-                    ]}
-                  >
-                    {done.length}/{item.chores.length} done
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.roommatePoints,
-                    { backgroundColor: item.roommate.color + "18" },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.roommatePointsText,
-                      { color: item.roommate.color },
-                    ]}
-                  >
-                    {item.roommate.weeklyPoints} pts
-                  </Text>
-                </View>
+          <View style={styles.plantCardInner}>
+            {/* Left: Animated plant */}
+            <View style={styles.plantContainer}>
+              <HomePlant health={healthPct} size={130} />
+            </View>
+
+            {/* Right: Health info */}
+            <View style={styles.healthInfo}>
+              <Text
+                style={[
+                  styles.healthRoom,
+                  { color: colors.mutedForeground },
+                ]}
+              >
+                Room Health
+              </Text>
+
+              <Text
+                style={[styles.healthTitle, { color: healthColor }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {msg.title}
+              </Text>
+
+              <Text
+                style={[
+                  styles.healthSubtitle,
+                  { color: colors.mutedForeground },
+                ]}
+                numberOfLines={2}
+              >
+                {msg.subtitle}
+              </Text>
+
+              {/* Percentage badge */}
+              <View
+                style={[
+                  styles.pctBadge,
+                  { backgroundColor: healthColor + "18" },
+                ]}
+              >
+                <Text style={[styles.pctText, { color: healthColor }]}>
+                  {Math.round(healthPct * 100)}%
+                </Text>
               </View>
 
-              {item.chores.length === 0 ? (
-                <Text
-                  style={[styles.noChores, { color: colors.mutedForeground }]}
-                >
-                  No chores assigned
+              {/* Progress bar */}
+              <View
+                style={[styles.track, { backgroundColor: colors.muted }]}
+              >
+                <View
+                  style={[
+                    styles.fill,
+                    {
+                      backgroundColor: healthColor,
+                      width: `${healthPct * 100}%` as `${number}%`,
+                    },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.statsRow}>
+                <Text style={[styles.stat, { color: colors.mutedForeground }]}>
+                  ✓ {completedChores} done
                 </Text>
-              ) : (
-                item.chores.map((chore) => {
-                  const overdue = !chore.completed && isOverdue(chore.dueDate);
-                  const key = `${item.roommate.id}-${chore.id}`;
-                  const nudged = nudgedChores.has(key);
-                  return (
-                    <View
-                      key={chore.id}
-                      style={[
-                        styles.choreItem,
-                        {
-                          borderTopColor: colors.border,
-                          backgroundColor: overdue
-                            ? colors.warning + "0a"
-                            : "transparent",
-                        },
-                      ]}
-                    >
-                      <View
+                <Text style={[styles.stat, { color: colors.mutedForeground }]}>
+                  {totalChores - completedChores} left
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Roommate chore sections ───────────────────── */}
+        <View style={styles.listPad}>
+          {roommatesWithChores.length === 0 ? (
+            <EmptyState
+              icon="users"
+              title="No roommates yet"
+              subtitle="Add roommates to see group chores"
+            />
+          ) : (
+            roommatesWithChores.map(({ roommate, chores: rc }) => {
+              const pending = rc.filter((c) => !c.completed);
+              const done = rc.filter((c) => c.completed);
+              return (
+                <View
+                  key={roommate.id}
+                  style={[
+                    styles.section,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  {/* Roommate header */}
+                  <View style={styles.sectionHeader}>
+                    <RoommateAvatar
+                      name={roommate.name}
+                      color={roommate.color}
+                      size={38}
+                    />
+                    <View style={styles.sectionInfo}>
+                      <Text
                         style={[
-                          styles.choreStatus,
-                          {
-                            backgroundColor: chore.completed
-                              ? colors.success + "22"
-                              : overdue
-                              ? colors.warning + "22"
-                              : colors.muted,
-                          },
+                          styles.roommateName,
+                          { color: colors.foreground },
                         ]}
                       >
-                        <Feather
-                          name={
-                            chore.completed
-                              ? "check"
-                              : overdue
-                              ? "alert-circle"
-                              : "clock"
-                          }
-                          size={11}
-                          color={
-                            chore.completed
-                              ? colors.success
-                              : overdue
-                              ? colors.warning
-                              : colors.mutedForeground
-                          }
+                        {roommate.name}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.roommateStats,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        {done.length}/{rc.length} done
+                      </Text>
+                    </View>
+                    {/* Mini health bar for this roommate */}
+                    <View style={styles.miniBarContainer}>
+                      <View
+                        style={[
+                          styles.miniTrack,
+                          { backgroundColor: colors.muted },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.miniFill,
+                            {
+                              backgroundColor: roommate.color,
+                              width: `${
+                                rc.length > 0
+                                  ? (done.length / rc.length) * 100
+                                  : 0
+                              }%` as `${number}%`,
+                            },
+                          ]}
                         />
                       </View>
-                      <View style={{ flex: 1 }}>
+                      <View
+                        style={[
+                          styles.ptsBadge,
+                          { backgroundColor: roommate.color + "18" },
+                        ]}
+                      >
                         <Text
                           style={[
-                            styles.choreItemTitle,
-                            {
-                              color: chore.completed
-                                ? colors.mutedForeground
-                                : colors.foreground,
-                              textDecorationLine: chore.completed
-                                ? "line-through"
-                                : "none",
-                            },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {chore.title}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.choreItemDate,
-                            {
-                              color: overdue
-                                ? colors.warning
-                                : colors.mutedForeground,
-                            },
+                            styles.ptsText,
+                            { color: roommate.color },
                           ]}
                         >
-                          {formatDueDate(chore.dueDate)}
+                          {roommate.weeklyPoints} pts
                         </Text>
                       </View>
-                      {!chore.completed && (
-                        <TouchableOpacity
+                    </View>
+                  </View>
+
+                  {/* Chore rows */}
+                  {rc.length === 0 ? (
+                    <Text
+                      style={[
+                        styles.noChores,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      No chores assigned
+                    </Text>
+                  ) : (
+                    rc.map((chore) => {
+                      const overdue =
+                        !chore.completed && isOverdue(chore.dueDate);
+                      const key = `${roommate.id}-${chore.id}`;
+                      const nudged = nudgedChores.has(key);
+
+                      return (
+                        <View
+                          key={chore.id}
                           style={[
-                            styles.nudgeBtn,
+                            styles.choreRow,
                             {
-                              backgroundColor: nudged
-                                ? colors.muted
-                                : colors.warning + "18",
-                              borderColor: nudged
-                                ? colors.border
-                                : colors.warning + "55",
+                              borderTopColor: colors.border,
+                              backgroundColor: overdue
+                                ? colors.warning + "08"
+                                : "transparent",
                             },
                           ]}
-                          onPress={() =>
-                            handleNudge(
-                              item.roommate.id,
-                              chore.id,
-                              chore.title
-                            )
-                          }
-                          disabled={nudged}
                         >
-                          <Feather
-                            name="bell"
-                            size={12}
-                            color={nudged ? colors.mutedForeground : colors.warning}
-                          />
-                          <Text
+                          {/* Status icon */}
+                          <View
                             style={[
-                              styles.nudgeBtnText,
+                              styles.statusDot,
                               {
-                                color: nudged
-                                  ? colors.mutedForeground
-                                  : colors.warning,
+                                backgroundColor: chore.completed
+                                  ? colors.success + "22"
+                                  : overdue
+                                  ? colors.warning + "22"
+                                  : colors.muted,
                               },
                             ]}
                           >
-                            {nudged ? "Nudged" : "Nudge"}
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          );
-        }}
-      />
+                            <Feather
+                              name={
+                                chore.completed
+                                  ? "check"
+                                  : overdue
+                                  ? "alert-circle"
+                                  : "clock"
+                              }
+                              size={11}
+                              color={
+                                chore.completed
+                                  ? colors.success
+                                  : overdue
+                                  ? colors.warning
+                                  : colors.mutedForeground
+                              }
+                            />
+                          </View>
+
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.choreTitle,
+                                {
+                                  color: chore.completed
+                                    ? colors.mutedForeground
+                                    : colors.foreground,
+                                  textDecorationLine: chore.completed
+                                    ? "line-through"
+                                    : "none",
+                                },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {chore.title}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.choreDate,
+                                {
+                                  color: overdue
+                                    ? colors.warning
+                                    : colors.mutedForeground,
+                                },
+                              ]}
+                            >
+                              {formatDueDate(chore.dueDate)}
+                            </Text>
+                          </View>
+
+                          {!chore.completed && (
+                            <TouchableOpacity
+                              style={[
+                                styles.nudgeBtn,
+                                {
+                                  backgroundColor: nudged
+                                    ? colors.muted
+                                    : colors.warning + "18",
+                                  borderColor: nudged
+                                    ? colors.border
+                                    : colors.warning + "55",
+                                },
+                              ]}
+                              onPress={() =>
+                                handleNudge(
+                                  roommate.id,
+                                  chore.id,
+                                  chore.title
+                                )
+                              }
+                              disabled={nudged}
+                            >
+                              <Feather
+                                name="bell"
+                                size={11}
+                                color={
+                                  nudged
+                                    ? colors.mutedForeground
+                                    : colors.warning
+                                }
+                              />
+                              <Text
+                                style={[
+                                  styles.nudgeTxt,
+                                  {
+                                    color: nudged
+                                      ? colors.mutedForeground
+                                      : colors.warning,
+                                  },
+                                ]}
+                              >
+                                {nudged ? "Nudged" : "Nudge"}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -371,89 +492,135 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingBottom: 14,
-    borderBottomWidth: 1,
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
   },
-  title: { fontFamily: "Inter_700Bold", fontSize: 28 },
-  nudgeInfo: {
+  headerSub: { fontFamily: "Inter_400Regular", fontSize: 13 },
+  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 28, marginTop: 2 },
+  anonBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 12,
-  },
-  nudgeInfoText: { fontFamily: "Inter_400Regular", fontSize: 11 },
-  healthCard: {
-    margin: 16,
-    borderRadius: 16,
-    padding: 16,
     borderWidth: 1,
   },
-  healthHeader: {
+  anonText: { fontFamily: "Inter_400Regular", fontSize: 11 },
+
+  // Plant card
+  plantCard: {
+    marginHorizontal: 16,
+    marginBottom: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: "hidden",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  glowStrip: { height: 4, width: "100%" },
+  plantCardInner: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "flex-end",
+    paddingHorizontal: 12,
+    paddingBottom: 16,
+    paddingTop: 8,
+    gap: 8,
+  },
+  plantContainer: {
+    width: 134,
     alignItems: "center",
-    marginBottom: 12,
+    justifyContent: "flex-end",
   },
-  healthTitle: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
-  healthLabel: { fontFamily: "Inter_700Bold", fontSize: 18, marginTop: 2 },
-  healthPct: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 },
-  healthPctText: { fontFamily: "Inter_700Bold", fontSize: 22 },
-  healthTrack: { height: 8, borderRadius: 4, overflow: "hidden" },
-  healthFill: { height: 8, borderRadius: 4 },
-  healthStats: {
+  healthInfo: {
+    flex: 1,
+    paddingTop: 8,
+    gap: 4,
+  },
+  healthRoom: { fontFamily: "Inter_400Regular", fontSize: 12 },
+  healthTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 20,
+    lineHeight: 24,
+  },
+  healthSubtitle: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  pctBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  pctText: { fontFamily: "Inter_700Bold", fontSize: 18 },
+  track: { height: 7, borderRadius: 4, overflow: "hidden", marginBottom: 4 },
+  fill: { height: 7, borderRadius: 4 },
+  statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 8,
   },
-  healthStat: { fontFamily: "Inter_400Regular", fontSize: 12 },
-  list: { paddingHorizontal: 16, gap: 12 },
-  roommateSection: {
+  stat: { fontFamily: "Inter_400Regular", fontSize: 11 },
+
+  // Roommate list
+  listPad: { paddingHorizontal: 16, gap: 10 },
+  section: {
     borderRadius: 16,
     borderWidth: 1,
     overflow: "hidden",
   },
-  roommateHeader: {
+  sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     padding: 14,
     gap: 10,
   },
-  roommateInfo: { flex: 1 },
+  sectionInfo: { flex: 1 },
   roommateName: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
   roommateStats: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 1 },
-  roommatePoints: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+  miniBarContainer: { alignItems: "flex-end", gap: 4 },
+  miniTrack: {
+    width: 64,
+    height: 5,
+    borderRadius: 3,
+    overflow: "hidden",
   },
-  roommatePointsText: { fontFamily: "Inter_700Bold", fontSize: 13 },
+  miniFill: { height: 5, borderRadius: 3 },
+  ptsBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  ptsText: { fontFamily: "Inter_700Bold", fontSize: 12 },
   noChores: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
     paddingHorizontal: 14,
     paddingBottom: 12,
   },
-  choreItem: {
+  choreRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
     gap: 10,
   },
-  choreStatus: {
+  statusDot: {
     width: 22,
     height: 22,
     borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
   },
-  choreItemTitle: { fontFamily: "Inter_500Medium", fontSize: 14 },
-  choreItemDate: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 1 },
+  choreTitle: { fontFamily: "Inter_500Medium", fontSize: 14 },
+  choreDate: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 1 },
   nudgeBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -463,5 +630,5 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
-  nudgeBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
+  nudgeTxt: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
 });

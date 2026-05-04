@@ -1,23 +1,28 @@
 const colors = {
   light: {
-    text: "#111827",
-    tint: "#4F7FF7",
+    text: "#2D1F14",
+    tint: "#5B7FF2",
 
-    background: "#F5F7FB",
-    foreground: "#111827",
+    // Warm neutral backgrounds
+    background: "#FBF8F4",
+    foreground: "#2D1F14",
 
+    // Cards & surfaces
     card: "#FFFFFF",
-    cardForeground: "#111827",
+    cardForeground: "#2D1F14",
 
-    primary: "#4F7FF7",
+    // Brand colors
+    primary: "#5B7FF2",
     primaryForeground: "#FFFFFF",
 
-    secondary: "#EEF2FF",
-    secondaryForeground: "#1E3A8A",
+    // Warm secondary / muted tones
+    secondary: "#F5EEE6",
+    secondaryForeground: "#6B4226",
 
-    muted: "#F0F4FF",
-    mutedForeground: "#6B7A99",
+    muted: "#F2EBE3",
+    mutedForeground: "#8B7968",
 
+    // Semantic
     accent: "#F97316",
     accentForeground: "#FFFFFF",
 
@@ -27,8 +32,9 @@ const colors = {
     success: "#22C55E",
     warning: "#F59E0B",
 
-    border: "#DDE4F0",
-    input: "#DDE4F0",
+    // Warm borders
+    border: "#E8DDD4",
+    input: "#E8DDD4",
   },
 
   radius: 12,

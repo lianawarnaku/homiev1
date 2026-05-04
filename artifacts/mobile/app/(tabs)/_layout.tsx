@@ -42,9 +42,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "My Chores",
+          title: "My Home",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="check-circle" size={size ?? 22} color={color} />
+            <Feather name="home" size={size ?? 22} color={color} />
           ),
         }}
       />
@@ -71,7 +71,7 @@ export default function TabLayout() {
         options={{
           title: "Planning",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="zap" size={size ?? 22} color={color} />
+            <Feather name="clipboard" size={size ?? 22} color={color} />
           ),
         }}
       />

@@ -198,10 +198,10 @@ export default function MyChoresScreen() {
       >
         <View>
           <Text style={[styles.greeting, { color: colors.mutedForeground }]}>
-            Good work,
+            Welcome home,
           </Text>
           <Text style={[styles.username, { color: colors.foreground }]}>
-            {currentUser?.name ?? "You"}
+            {currentUser?.name ?? "You"} 🏠
           </Text>
         </View>
         <View
