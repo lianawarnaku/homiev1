@@ -676,16 +676,25 @@ export default function PlanningScreen() {
     if (housingType === "traditional") {
       assign("Clean communal bathroom", "bathroom", 25, 7);
       assign("Vacuum floors & rugs", "cleaning", 20, 7);
+      assign("Take out trash & recycling", "other", 10, 7);
+      assign("Mop hard floors", "cleaning", 20, 7);
+      assign("Wipe down appliances", "kitchen", 10, 7);
     }
     if (housingType === "suite") {
       assign("Clean bedroom", "cleaning", 20, 7);
       assign("Clean en-suite bathroom", "bathroom", 25, 7);
       assign("Vacuum floors & rugs", "cleaning", 20, 7);
+      assign("Take out trash & recycling", "other", 10, 7);
+      assign("Mop hard floors", "cleaning", 20, 7);
+      assign("Wipe down appliances", "kitchen", 10, 7);
     }
     if (housingType === "apartment") {
       assign("Clean bedroom", "cleaning", 20, 7);
       assign("Deep clean kitchen", "kitchen", 30, 7);
       assign("Clean apartment bathroom", "bathroom", 25, 7);
+      assign("Take out trash & recycling", "other", 10, 7);
+      assign("Mop hard floors", "cleaning", 20, 7);
+      assign("Wipe down appliances", "kitchen", 10, 7);
     }
 
     // ── Kitchen amenity chores ──
