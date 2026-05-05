@@ -98,20 +98,22 @@ export default function ExpensesScreen() {
   const activeExpenses = expenses.filter((e) => !e.settled);
   const myBalance = balances[currentUserId] ?? 0;
 
-  // Gross amounts in each direction (not net) so both cards can show simultaneously
+  // Gross amounts in each direction — exclude entries already paid back
   const owedToMe = activeExpenses.reduce((sum, e) => {
     if (e.paidBy !== currentUserId) return sum;
     return (
       sum +
-      Object.entries(e.splits ?? {}).reduce(
-        (s, [id, amt]) => (id !== e.paidBy ? s + (amt as number) : s),
-        0
-      )
+      Object.entries(e.splits ?? {}).reduce((s, [id, amt]) => {
+        if (id === e.paidBy) return s;
+        if ((e.paidBack ?? {})[id]) return s; // already paid back
+        return s + (amt as number);
+      }, 0)
     );
   }, 0);
 
   const iOwe = activeExpenses.reduce((sum, e) => {
     if (e.paidBy === currentUserId) return sum;
+    if ((e.paidBack ?? {})[currentUserId]) return sum; // I already paid back
     return sum + ((e.splits ?? {})[currentUserId] as number || 0);
   }, 0);
 

@@ -573,9 +573,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .filter((e) => !e.settled)
       .forEach((e) => {
         Object.entries(e.splits ?? {}).forEach(([personId, amount]) => {
-          if (personId !== e.paidBy) {
-            balances[personId] = (balances[personId] ?? 0) - amount;
-            balances[e.paidBy] = (balances[e.paidBy] ?? 0) + amount;
+          if (personId !== e.paidBy && !(e.paidBack ?? {})[personId]) {
+            balances[personId] = (balances[personId] ?? 0) - (amount as number);
+            balances[e.paidBy] = (balances[e.paidBy] ?? 0) + (amount as number);
           }
         });
       });
