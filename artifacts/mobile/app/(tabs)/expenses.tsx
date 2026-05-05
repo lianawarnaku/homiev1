@@ -21,6 +21,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import {
   type ExpenseCategory,
+  type RecurringInterval,
   useAppContext,
 } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
@@ -63,10 +64,14 @@ export default function ExpensesScreen() {
   const {
     roommates,
     expenses,
+    shoppingLists,
     shoppingItems,
     addExpense,
+    updateExpense,
     settleExpense,
     deleteExpense,
+    addShoppingList,
+    deleteShoppingList,
     addShoppingItem,
     toggleShoppingItem,
     deleteShoppingItem,
@@ -77,6 +82,7 @@ export default function ExpensesScreen() {
   const [tab, setTab] = useState<Tab>("expenses");
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showShoppingModal, setShowShoppingModal] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   // ── IOU builder state ──────────────────────────────────────────────────────
   const [expTitle, setExpTitle] = useState("");
@@ -89,10 +95,25 @@ export default function ExpensesScreen() {
   );
   // splits: person id → dollar string they owe
   const [expSplits, setExpSplits] = useState<Record<string, string>>({});
+  const [expRecurring, setExpRecurring] = useState<RecurringInterval | null>(null);
+  const [expRecurringCustom, setExpRecurringCustom] = useState("");
 
   // Shopping state
   const [shopName, setShopName] = useState("");
   const [shopQty, setShopQty] = useState("1");
+  const [targetListId, setTargetListId] = useState<string | null>(null);
+  const [showNewListModal, setShowNewListModal] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
+
+  const toggleListCollapse = (id: string) => {
+    setCollapsedLists((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
@@ -100,6 +121,23 @@ export default function ExpensesScreen() {
   const balances = getBalances();
   const activeExpenses = expenses.filter((e) => !e.settled);
   const myBalance = balances[currentUserId] ?? 0;
+
+  // Gross amounts in each direction (not net) so both cards can show simultaneously
+  const owedToMe = activeExpenses.reduce((sum, e) => {
+    if (e.paidBy !== currentUserId) return sum;
+    return (
+      sum +
+      Object.entries(e.splits ?? {}).reduce(
+        (s, [id, amt]) => (id !== e.paidBy ? s + (amt as number) : s),
+        0
+      )
+    );
+  }, 0);
+
+  const iOwe = activeExpenses.reduce((sum, e) => {
+    if (e.paidBy === currentUserId) return sum;
+    return sum + ((e.splits ?? {})[currentUserId] as number || 0);
+  }, 0);
 
   // ── Recalculate even split when total or participants change ───────────────
   const recalcEvenSplit = useCallback(() => {
@@ -130,7 +168,7 @@ export default function ExpensesScreen() {
     Math.abs(remainder) < 0.02 &&
     totalParsed > 0;
 
-  const canSubmit = expTitle.trim() && totalParsed > 0 && splitsValid;
+  const canSubmit = !!expTitle.trim() && totalParsed > 0 && expParticipants.length > 0;
 
   // ── Toggle participant ─────────────────────────────────────────────────────
   const toggleParticipant = (id: string) => {
@@ -154,42 +192,94 @@ export default function ExpensesScreen() {
       roommates.filter((r) => r.id !== currentUserId).map((r) => r.id)
     );
     setExpSplits({});
+    setExpRecurring(null);
+    setExpRecurringCustom("");
+    setEditingExpenseId(null);
+  };
+
+  const openEditModal = (item: (typeof expenses)[number]) => {
+    setEditingExpenseId(item.id);
+    setExpTitle(item.title);
+    setExpCategory(item.category);
+    setExpPaidBy(item.paidBy);
+    setExpTotalAmount(item.amount.toFixed(2));
+    setExpParticipants(item.sharedWith);
+    setExpSplits(
+      Object.fromEntries(
+        Object.entries(item.splits ?? {}).map(([id, amt]) => [id, (amt as number).toFixed(2)])
+      )
+    );
+    setExpRecurring(item.recurring ?? null);
+    setExpRecurringCustom(item.recurringCustom ?? "");
+    setShowExpenseModal(true);
   };
 
   // ── Submit IOU ─────────────────────────────────────────────────────────────
-  const handleSendIOU = () => {
-    if (!canSubmit) return;
+  const doSendIOU = () => {
     const numericSplits: Record<string, number> = {};
     expParticipants.forEach((id) => {
       numericSplits[id] = parseFloat(expSplits[id] ?? "0") || 0;
     });
-    addExpense({
+    const payload = {
       title: expTitle.trim(),
       amount: totalParsed,
       paidBy: expPaidBy,
       sharedWith: expParticipants,
       splits: numericSplits,
-      date: new Date().toISOString(),
       category: expCategory,
-      settled: false,
-    });
+      recurring: expRecurring ?? undefined,
+      recurringCustom: expRecurring === "custom" ? expRecurringCustom.trim() || undefined : undefined,
+    };
+    if (editingExpenseId) {
+      updateExpense(editingExpenseId, payload);
+    } else {
+      addExpense({ ...payload, date: new Date().toISOString(), settled: false });
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     resetModal();
     setShowExpenseModal(false);
   };
 
+  const handleSendIOU = () => {
+    if (!canSubmit) return;
+    if (Math.abs(remainder) >= 0.02) {
+      const overUnder = remainder > 0 ? "unassigned" : "over-assigned";
+      const amt = `$${Math.abs(remainder).toFixed(2)}`;
+      Alert.alert(
+        "Splits don't add up",
+        `The splits are ${amt} ${overUnder}. Send the IOU anyway?`,
+        [
+          { text: "Go back", style: "cancel" },
+          { text: "Send anyway", onPress: doSendIOU },
+        ]
+      );
+      return;
+    }
+    doSendIOU();
+  };
+
   // ── Shopping ───────────────────────────────────────────────────────────────
   const handleAddShopItem = () => {
-    if (!shopName.trim()) return;
+    if (!shopName.trim() || !targetListId) return;
     addShoppingItem({
       name: shopName.trim(),
       quantity: shopQty.trim() || "1",
       addedBy: currentUserId,
       completed: false,
+      listId: targetListId,
     });
     setShopName("");
     setShopQty("1");
     setShowShoppingModal(false);
+    setTargetListId(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleAddList = () => {
+    if (!newListName.trim()) return;
+    addShoppingList(newListName.trim());
+    setNewListName("");
+    setShowNewListModal(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -212,7 +302,7 @@ export default function ExpensesScreen() {
               resetModal();
               setShowExpenseModal(true);
             } else {
-              setShowShoppingModal(true);
+              setShowNewListModal(true);
             }
           }}
         >
@@ -248,47 +338,62 @@ export default function ExpensesScreen() {
 
       {tab === "expenses" ? (
         <>
-          {/* Balance card */}
-          <View
-            style={[
-              styles.balanceCard,
-              {
-                backgroundColor:
-                  myBalance >= 0
-                    ? colors.success + "14"
-                    : colors.destructive + "14",
-                borderColor:
-                  myBalance >= 0
-                    ? colors.success + "40"
-                    : colors.destructive + "40",
-              },
-            ]}
-          >
-            <Text
-              style={[styles.balanceLabel, { color: colors.mutedForeground }]}
-            >
-              Your balance
-            </Text>
-            <Text
-              style={[
-                styles.balanceAmount,
-                {
-                  color:
-                    myBalance >= 0 ? colors.success : colors.destructive,
-                },
-              ]}
-            >
-              {myBalance >= 0 ? "+" : ""}${Math.abs(myBalance).toFixed(2)}
-            </Text>
-            <Text
-              style={[styles.balanceHint, { color: colors.mutedForeground }]}
-            >
-              {myBalance > 0
-                ? "Others owe you"
-                : myBalance < 0
-                ? "You owe others"
-                : "All settled up"}
-            </Text>
+          {/* Balance cards — You owe on top, Owed to you below */}
+          <View style={styles.balanceRow}>
+            {iOwe > 0 && (
+              <View
+                style={[
+                  styles.balanceCard,
+                  { backgroundColor: colors.destructive + "14", borderColor: colors.destructive + "40" },
+                ]}
+              >
+                <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>
+                  You owe
+                </Text>
+                <Text style={[styles.balanceAmount, { color: colors.destructive }]}>
+                  -${iOwe.toFixed(2)}
+                </Text>
+                <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>
+                  To others
+                </Text>
+              </View>
+            )}
+            {owedToMe > 0 && (
+              <View
+                style={[
+                  styles.balanceCard,
+                  { backgroundColor: colors.success + "14", borderColor: colors.success + "40" },
+                ]}
+              >
+                <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>
+                  Owed to you
+                </Text>
+                <Text style={[styles.balanceAmount, { color: colors.success }]}>
+                  +${owedToMe.toFixed(2)}
+                </Text>
+                <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>
+                  Others owe you
+                </Text>
+              </View>
+            )}
+            {owedToMe === 0 && iOwe === 0 && (
+              <View
+                style={[
+                  styles.balanceCard,
+                  { backgroundColor: colors.success + "14", borderColor: colors.success + "40" },
+                ]}
+              >
+                <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>
+                  Balance
+                </Text>
+                <Text style={[styles.balanceAmount, { color: colors.success }]}>
+                  $0.00
+                </Text>
+                <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>
+                  All settled up
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Per-roommate mini balance strip */}
@@ -401,14 +506,26 @@ export default function ExpensesScreen() {
                       >
                         {item.title}
                       </Text>
-                      <Text
-                        style={[
-                          styles.expMeta,
-                          { color: colors.mutedForeground },
-                        ]}
-                      >
-                        Paid by {payer?.name ?? "?"} · {formatDate(item.date)}
-                      </Text>
+                      <View style={styles.expMetaRow}>
+                        <Text
+                          style={[
+                            styles.expMeta,
+                            { color: colors.mutedForeground },
+                          ]}
+                        >
+                          Paid by {payer?.name ?? "?"} · {formatDate(item.date)}
+                        </Text>
+                        {item.recurring ? (
+                          <View style={[styles.recurringBadge, { backgroundColor: colors.primary + "14" }]}>
+                            <Feather name="repeat" size={9} color={colors.primary} />
+                            <Text style={[styles.recurringBadgeText, { color: colors.primary }]}>
+                              {item.recurring === "custom" && item.recurringCustom
+                                ? item.recurringCustom
+                                : item.recurring}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
                     </View>
                     <View style={styles.expRight}>
                       <Text
@@ -419,49 +536,57 @@ export default function ExpensesScreen() {
                       >
                         ${item.amount.toFixed(2)}
                       </Text>
-                      <View style={styles.expActions}>
-                        <TouchableOpacity
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          onPress={() =>
-                            Alert.alert(
-                              "Settle Up",
-                              "Mark this IOU as settled?",
-                              [
+                      {item.paidBy === currentUserId ? (
+                        <View style={styles.expActions}>
+                          <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => openEditModal(item)}
+                          >
+                            <Feather name="edit-2" size={15} color={colors.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() =>
+                              Alert.alert(
+                                "Settle Up",
+                                "Mark this IOU as settled?",
+                                [
+                                  { text: "Cancel", style: "cancel" },
+                                  {
+                                    text: "Settle",
+                                    onPress: () => settleExpense(item.id),
+                                  },
+                                ]
+                              )
+                            }
+                          >
+                            <Feather
+                              name="check-circle"
+                              size={15}
+                              color={colors.success}
+                            />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() =>
+                              Alert.alert("Delete IOU", "Remove this expense?", [
                                 { text: "Cancel", style: "cancel" },
                                 {
-                                  text: "Settle",
-                                  onPress: () => settleExpense(item.id),
+                                  text: "Delete",
+                                  style: "destructive",
+                                  onPress: () => deleteExpense(item.id),
                                 },
-                              ]
-                            )
-                          }
-                        >
-                          <Feather
-                            name="check-circle"
-                            size={15}
-                            color={colors.success}
-                          />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          onPress={() =>
-                            Alert.alert("Delete IOU", "Remove this expense?", [
-                              { text: "Cancel", style: "cancel" },
-                              {
-                                text: "Delete",
-                                style: "destructive",
-                                onPress: () => deleteExpense(item.id),
-                              },
-                            ])
-                          }
-                        >
-                          <Feather
-                            name="trash-2"
-                            size={15}
-                            color={colors.mutedForeground}
-                          />
-                        </TouchableOpacity>
-                      </View>
+                              ])
+                            }
+                          >
+                            <Feather
+                              name="trash-2"
+                              size={15}
+                              color={colors.mutedForeground}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
                     </View>
                   </View>
 
@@ -522,97 +647,161 @@ export default function ExpensesScreen() {
           />
         </>
       ) : (
-        /* ── Shopping list ── */
-        <FlatList
-          data={shoppingItems}
-          keyExtractor={(s) => s.id}
+        /* ── Shopping lists ── */
+        <ScrollView
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.listContent,
             { paddingBottom: 90 + botPad },
           ]}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
+        >
+          {shoppingLists.length === 0 ? (
             <EmptyState
               icon="shopping-cart"
-              title="Shopping list is empty"
-              subtitle="Tap + to add items"
+              title="No lists yet"
+              subtitle="Tap + to create your first shopping list"
             />
-          }
-          renderItem={({ item }) => {
-            const addedBy = roommates.find((r) => r.id === item.addedBy);
-            return (
-              <View
-                style={[
-                  styles.shopItem,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    opacity: item.completed ? 0.6 : 1,
-                  },
-                ]}
-              >
-                <TouchableOpacity
+          ) : (
+            shoppingLists.map((list) => {
+              const items = shoppingItems.filter((s) => s.listId === list.id);
+              const collapsed = collapsedLists.has(list.id);
+              return (
+                <View
+                  key={list.id}
                   style={[
-                    styles.shopCheck,
-                    {
-                      borderColor: item.completed
-                        ? colors.success
-                        : colors.border,
-                      backgroundColor: item.completed
-                        ? colors.success + "22"
-                        : "transparent",
-                    },
+                    styles.listSection,
+                    { backgroundColor: colors.card, borderColor: colors.border },
                   ]}
-                  onPress={() => {
-                    toggleShoppingItem(item.id);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
                 >
-                  {item.completed ? (
-                    <Feather name="check" size={13} color={colors.success} />
-                  ) : null}
-                </TouchableOpacity>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      styles.shopName,
-                      {
-                        color: colors.foreground,
-                        textDecorationLine: item.completed
-                          ? "line-through"
-                          : "none",
-                      },
-                    ]}
-                    numberOfLines={1}
+                  {/* Section header */}
+                  <TouchableOpacity
+                    style={styles.listHeader}
+                    onPress={() => toggleListCollapse(list.id)}
+                    activeOpacity={0.7}
                   >
-                    {item.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.shopMeta,
-                      { color: colors.mutedForeground },
-                    ]}
-                  >
-                    {item.quantity} · added by {addedBy?.name ?? "?"}
-                  </Text>
+                    <Feather
+                      name={collapsed ? "chevron-right" : "chevron-down"}
+                      size={18}
+                      color={colors.mutedForeground}
+                    />
+                    <Text style={[styles.listName, { color: colors.foreground }]}>
+                      {list.name}
+                    </Text>
+                    <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
+                      {items.filter((i) => !i.completed).length}/{items.length}
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.listAddBtn, { backgroundColor: colors.primary + "18" }]}
+                      onPress={() => {
+                        setTargetListId(list.id);
+                        setShowShoppingModal(true);
+                      }}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Feather name="plus" size={15} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() =>
+                        Alert.alert(
+                          "Delete List",
+                          `Delete "${list.name}" and all its items?`,
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Delete",
+                              style: "destructive",
+                              onPress: () => deleteShoppingList(list.id),
+                            },
+                          ]
+                        )
+                      }
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Feather name="trash-2" size={15} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+
+                  {/* Items */}
+                  {!collapsed && (
+                    <View style={styles.listItems}>
+                      {items.length === 0 ? (
+                        <Text style={[styles.listEmpty, { color: colors.mutedForeground }]}>
+                          No items yet — tap + to add
+                        </Text>
+                      ) : (
+                        items.map((item) => {
+                          const addedBy = roommates.find((r) => r.id === item.addedBy);
+                          return (
+                            <View
+                              key={item.id}
+                              style={[
+                                styles.shopItem,
+                                {
+                                  borderTopColor: colors.border,
+                                  opacity: item.completed ? 0.55 : 1,
+                                },
+                              ]}
+                            >
+                              <TouchableOpacity
+                                style={[
+                                  styles.shopCheck,
+                                  {
+                                    borderColor: item.completed ? colors.success : colors.border,
+                                    backgroundColor: item.completed
+                                      ? colors.success + "22"
+                                      : "transparent",
+                                  },
+                                ]}
+                                onPress={() => {
+                                  toggleShoppingItem(item.id);
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                }}
+                              >
+                                {item.completed ? (
+                                  <Feather name="check" size={12} color={colors.success} />
+                                ) : null}
+                              </TouchableOpacity>
+                              <View style={{ flex: 1 }}>
+                                <Text
+                                  style={[
+                                    styles.shopName,
+                                    {
+                                      color: colors.foreground,
+                                      textDecorationLine: item.completed ? "line-through" : "none",
+                                    },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {item.name}
+                                </Text>
+                                <Text style={[styles.shopMeta, { color: colors.mutedForeground }]}>
+                                  {item.quantity} · {addedBy?.name ?? "?"}
+                                </Text>
+                              </View>
+                              <TouchableOpacity
+                                onPress={() => deleteShoppingItem(item.id)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              >
+                                <Feather name="x" size={15} color={colors.mutedForeground} />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })
+                      )}
+                    </View>
+                  )}
                 </View>
-                <TouchableOpacity
-                  onPress={() => deleteShoppingItem(item.id)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Feather name="x" size={16} color={colors.mutedForeground} />
-                </TouchableOpacity>
-              </View>
-            );
-          }}
-        />
+              );
+            })
+          )}
+        </ScrollView>
       )}
 
       {/* ── IOU Builder Modal ────────────────────────────────────────────── */}
       <Modal visible={showExpenseModal} transparent animationType="slide">
         <Pressable
           style={styles.overlay}
-          onPress={() => setShowExpenseModal(false)}
+          onPress={() => { setShowExpenseModal(false); resetModal(); }}
         />
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -630,7 +819,7 @@ export default function ExpensesScreen() {
           >
             <View style={[styles.handle, { backgroundColor: colors.border }]} />
             <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
-              New IOU
+              {editingExpenseId ? "Edit IOU" : "New IOU"}
             </Text>
 
             <ScrollView
@@ -866,6 +1055,91 @@ export default function ExpensesScreen() {
                 </View>
               </View>
 
+              {/* Recurring toggle */}
+              <View>
+                <TouchableOpacity
+                  style={[
+                    styles.recurringToggle,
+                    {
+                      backgroundColor: expRecurring ? colors.primary + "12" : colors.muted,
+                      borderColor: expRecurring ? colors.primary + "55" : colors.border,
+                    },
+                  ]}
+                  onPress={() => setExpRecurring(expRecurring ? null : "monthly")}
+                >
+                  <View
+                    style={[
+                      styles.recurringCheckbox,
+                      {
+                        backgroundColor: expRecurring ? colors.primary : "transparent",
+                        borderColor: expRecurring ? colors.primary : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {expRecurring ? <Feather name="check" size={11} color="#fff" /> : null}
+                  </View>
+                  <Feather name="repeat" size={14} color={expRecurring ? colors.primary : colors.mutedForeground} />
+                  <Text
+                    style={{
+                      fontFamily: "Inter_500Medium",
+                      fontSize: 14,
+                      color: expRecurring ? colors.primary : colors.mutedForeground,
+                      flex: 1,
+                    }}
+                  >
+                    Recurring expense
+                  </Text>
+                </TouchableOpacity>
+
+                {expRecurring ? (
+                  <View style={{ marginTop: 8, gap: 8 }}>
+                    <View style={styles.recurringOptions}>
+                      {(["daily", "monthly", "custom"] as RecurringInterval[]).map((opt) => (
+                        <TouchableOpacity
+                          key={opt}
+                          style={[
+                            styles.recurringChip,
+                            {
+                              backgroundColor: expRecurring === opt ? colors.primary : colors.muted,
+                              borderColor: expRecurring === opt ? colors.primary : colors.border,
+                              flex: 1,
+                            },
+                          ]}
+                          onPress={() => setExpRecurring(opt)}
+                        >
+                          <Text
+                            style={{
+                              fontFamily: "Inter_600SemiBold",
+                              fontSize: 13,
+                              color: expRecurring === opt ? "#fff" : colors.mutedForeground,
+                              textAlign: "center",
+                            }}
+                          >
+                            {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {expRecurring === "custom" ? (
+                      <TextInput
+                        style={[
+                          styles.input,
+                          {
+                            backgroundColor: colors.muted,
+                            color: colors.foreground,
+                            borderColor: colors.border,
+                          },
+                        ]}
+                        placeholder="e.g. every 2 weeks"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={expRecurringCustom}
+                        onChangeText={setExpRecurringCustom}
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+
               {/* Per-person edit */}
               {expParticipants.length > 0 && (
                 <View>
@@ -993,7 +1267,7 @@ export default function ExpensesScreen() {
                     },
                   ]}
                 >
-                  Send IOU
+                  {editingExpenseId ? "Save Changes" : "Send IOU"}
                 </Text>
               </TouchableOpacity>
             </ScrollView>
@@ -1001,79 +1275,83 @@ export default function ExpensesScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Shopping Modal ────────────────────────────────────────────────── */}
+      {/* ── Add Item Modal ────────────────────────────────────────────────── */}
       <Modal visible={showShoppingModal} transparent animationType="slide">
         <Pressable
           style={styles.overlay}
-          onPress={() => setShowShoppingModal(false)}
+          onPress={() => { setShowShoppingModal(false); setTargetListId(null); }}
         />
         <View
           style={[
             styles.sheet,
-            {
-              backgroundColor: colors.card,
-              paddingBottom: insets.bottom + 24,
-            },
+            { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 },
           ]}
         >
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
             Add Item
+            {targetListId ? (
+              <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
+                {" "}· {shoppingLists.find((l) => l.id === targetListId)?.name}
+              </Text>
+            ) : null}
           </Text>
-          <Text style={[styles.label, { color: colors.mutedForeground }]}>
-            Item name
-          </Text>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>Item name</Text>
           <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: colors.muted,
-                color: colors.foreground,
-                borderColor: colors.border,
-              },
-            ]}
+            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
             placeholder="e.g. Dish soap"
             placeholderTextColor={colors.mutedForeground}
             value={shopName}
             onChangeText={setShopName}
+            autoFocus
           />
-          <Text style={[styles.label, { color: colors.mutedForeground }]}>
-            Quantity
-          </Text>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>Quantity</Text>
           <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: colors.muted,
-                color: colors.foreground,
-                borderColor: colors.border,
-              },
-            ]}
+            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
             placeholder="e.g. 2 or 1 bag"
             placeholderTextColor={colors.mutedForeground}
             value={shopQty}
             onChangeText={setShopQty}
           />
           <TouchableOpacity
-            style={[
-              styles.addBtn,
-              {
-                backgroundColor: shopName.trim()
-                  ? colors.primary
-                  : colors.border,
-                marginTop: 8,
-              },
-            ]}
+            style={[styles.addBtn, { backgroundColor: shopName.trim() ? colors.primary : colors.border, marginTop: 8 }]}
             disabled={!shopName.trim()}
             onPress={handleAddShopItem}
           >
-            <Text
-              style={[
-                styles.addBtnText,
-                { color: shopName.trim() ? "#fff" : colors.mutedForeground },
-              ]}
-            >
+            <Text style={[styles.addBtnText, { color: shopName.trim() ? "#fff" : colors.mutedForeground }]}>
               Add to List
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* ── New List Modal ────────────────────────────────────────────────── */}
+      <Modal visible={showNewListModal} transparent animationType="slide">
+        <Pressable style={styles.overlay} onPress={() => setShowNewListModal(false)} />
+        <View
+          style={[
+            styles.sheet,
+            { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 },
+          ]}
+        >
+          <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          <Text style={[styles.sheetTitle, { color: colors.foreground }]}>New List</Text>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>List name</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+            placeholder="e.g. Farmers Market"
+            placeholderTextColor={colors.mutedForeground}
+            value={newListName}
+            onChangeText={setNewListName}
+            autoFocus
+          />
+          <TouchableOpacity
+            style={[styles.addBtn, { backgroundColor: newListName.trim() ? colors.primary : colors.border, marginTop: 8 }]}
+            disabled={!newListName.trim()}
+            onPress={handleAddList}
+          >
+            <Text style={[styles.addBtnText, { color: newListName.trim() ? "#fff" : colors.mutedForeground }]}>
+              Create List
             </Text>
           </TouchableOpacity>
         </View>
@@ -1113,9 +1391,13 @@ const styles = StyleSheet.create({
     marginBottom: -1,
   },
   tabText: { fontSize: 14 },
-  balanceCard: {
+  balanceRow: {
+    flexDirection: "column",
     marginHorizontal: 16,
     marginBottom: 10,
+    gap: 8,
+  },
+  balanceCard: {
     borderRadius: 14,
     padding: 16,
     alignItems: "center",
@@ -1170,24 +1452,55 @@ const styles = StyleSheet.create({
   },
   iouDot: { width: 7, height: 7, borderRadius: 4 },
   iouChipText: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  listSection: {
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginBottom: 10,
+  },
+  listHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    gap: 8,
+  },
+  listName: { flex: 1, fontFamily: "Inter_600SemiBold", fontSize: 15 },
+  listCount: { fontFamily: "Inter_400Regular", fontSize: 12 },
+  listAddBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  listItems: { paddingBottom: 4 },
+  listEmpty: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
   shopItem: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderTopWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
   shopCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
   },
   shopName: { fontFamily: "Inter_500Medium", fontSize: 14 },
   shopMeta: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  sheetSubtitle: { fontFamily: "Inter_400Regular", fontSize: 16 },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
@@ -1316,5 +1629,50 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     fontSize: 16,
     color: "#fff",
+  },
+  recurringToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  recurringCheckbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  recurringOptions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  recurringChip: {
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  expMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  recurringBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  recurringBadgeText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 10,
   },
 });

@@ -42,6 +42,8 @@ export type ExpenseCategory =
   | "entertainment"
   | "other";
 
+export type RecurringInterval = "daily" | "monthly" | "custom";
+
 export interface Expense {
   id: string;
   title: string;
@@ -52,10 +54,18 @@ export interface Expense {
   date: string;
   category: ExpenseCategory;
   settled: boolean;
+  recurring?: RecurringInterval;
+  recurringCustom?: string;
+}
+
+export interface ShoppingList {
+  id: string;
+  name: string;
 }
 
 export interface ShoppingItem {
   id: string;
+  listId: string;
   name: string;
   quantity: string;
   addedBy: string;
@@ -85,6 +95,7 @@ interface AppContextType {
   roommates: Roommate[];
   chores: Chore[];
   expenses: Expense[];
+  shoppingLists: ShoppingList[];
   shoppingItems: ShoppingItem[];
   borrowItems: BorrowItem[];
   nudges: Nudge[];
@@ -92,8 +103,11 @@ interface AppContextType {
   completeChore: (id: string) => void;
   deleteChore: (id: string) => void;
   addExpense: (expense: Omit<Expense, "id">) => void;
+  updateExpense: (id: string, updates: Partial<Omit<Expense, "id">>) => void;
   settleExpense: (id: string) => void;
   deleteExpense: (id: string) => void;
+  addShoppingList: (name: string) => void;
+  deleteShoppingList: (id: string) => void;
   addShoppingItem: (item: Omit<ShoppingItem, "id">) => void;
   toggleShoppingItem: (id: string) => void;
   deleteShoppingItem: (id: string) => void;
@@ -101,6 +115,7 @@ interface AppContextType {
   returnBorrowItem: (id: string) => void;
   deleteBorrowItem: (id: string) => void;
   sendNudge: (toRoommateId: string, choreId: string) => void;
+  removeNudge: (toRoommateId: string, choreId: string) => void;
   getRoommateById: (id: string) => Roommate | undefined;
   getChoresByRoommate: (id: string) => Chore[];
   getBalances: () => Record<string, number>;
@@ -124,20 +139,22 @@ function daysFromNow(days: number): string {
 const INITIAL_ROOMMATES: Roommate[] = [
   {
     id: "current",
-    name: "Alex",
+    name: "Liana",
     color: "#4F7FF7",
     points: 450,
     weeklyPoints: 85,
   },
   {
     id: "2",
-    name: "Jordan",
+    name: "Maya",
     color: "#22C55E",
     points: 320,
     weeklyPoints: 60,
   },
-  { id: "3", name: "Sam", color: "#F97316", points: 280, weeklyPoints: 45 },
-  { id: "4", name: "Riley", color: "#8B5CF6", points: 190, weeklyPoints: 30 },
+  { id: "3", name: "Safa", color: "#F97316", points: 280, weeklyPoints: 45 },
+  { id: "4", name: "Akshaya", color: "#8B5CF6", points: 190, weeklyPoints: 30 },
+  { id: "5", name: "Sumaiya", color: "#EC4899", points: 240, weeklyPoints: 50 },
+  { id: "6", name: "Esha", color: "#14B8A6", points: 310, weeklyPoints: 70 },
 ];
 
 const INITIAL_CHORES: Chore[] = [
@@ -225,16 +242,53 @@ const INITIAL_CHORES: Chore[] = [
     category: "other",
     completedAt: new Date().toISOString(),
   },
+  {
+    id: "c10",
+    title: "Wipe down appliances",
+    assignedTo: "5",
+    dueDate: daysFromNow(2),
+    completed: false,
+    points: 15,
+    category: "kitchen",
+  },
+  {
+    id: "c11",
+    title: "Sweep entryway",
+    assignedTo: "5",
+    dueDate: daysFromNow(-1),
+    completed: true,
+    points: 10,
+    category: "cleaning",
+    completedAt: new Date().toISOString(),
+  },
+  {
+    id: "c12",
+    title: "Replace trash bags",
+    assignedTo: "6",
+    dueDate: daysFromNow(1),
+    completed: false,
+    points: 10,
+    category: "other",
+  },
+  {
+    id: "c13",
+    title: "Clean fridge",
+    assignedTo: "6",
+    dueDate: daysFromNow(3),
+    completed: false,
+    points: 20,
+    category: "kitchen",
+  },
 ];
 
 const INITIAL_EXPENSES: Expense[] = [
   {
     id: "e1",
     title: "Monthly groceries",
-    amount: 240,
+    amount: 300,
     paidBy: "current",
-    sharedWith: ["2", "3", "4"],
-    splits: { "2": 60, "3": 60, "4": 60 },
+    sharedWith: ["2", "3", "4", "5", "6"],
+    splits: { "2": 50, "3": 50, "4": 50, "5": 50, "6": 50 },
     date: daysFromNow(-3),
     category: "groceries",
     settled: false,
@@ -242,10 +296,10 @@ const INITIAL_EXPENSES: Expense[] = [
   {
     id: "e2",
     title: "Internet bill",
-    amount: 80,
+    amount: 90,
     paidBy: "2",
-    sharedWith: ["current", "3", "4"],
-    splits: { current: 20, "3": 20, "4": 20 },
+    sharedWith: ["current", "3", "4", "5", "6"],
+    splits: { current: 15, "3": 15, "4": 15, "5": 15, "6": 15 },
     date: daysFromNow(-10),
     category: "utilities",
     settled: false,
@@ -253,52 +307,28 @@ const INITIAL_EXPENSES: Expense[] = [
   {
     id: "e3",
     title: "Cleaning supplies",
-    amount: 45,
+    amount: 60,
     paidBy: "3",
-    sharedWith: ["current", "2", "4"],
-    splits: { current: 11.25, "2": 11.25, "4": 11.25 },
+    sharedWith: ["current", "2", "4", "5", "6"],
+    splits: { current: 10, "2": 10, "4": 10, "5": 10, "6": 10 },
     date: daysFromNow(-7),
     category: "other",
     settled: false,
   },
 ];
 
+const INITIAL_SHOPPING_LISTS: ShoppingList[] = [
+  { id: "list1", name: "Groceries" },
+  { id: "list2", name: "Household" },
+];
+
 const INITIAL_SHOPPING: ShoppingItem[] = [
-  {
-    id: "s1",
-    name: "Dish soap",
-    quantity: "2",
-    addedBy: "current",
-    completed: false,
-  },
-  {
-    id: "s2",
-    name: "Paper towels",
-    quantity: "1 pack",
-    addedBy: "2",
-    completed: false,
-  },
-  {
-    id: "s3",
-    name: "Coffee beans",
-    quantity: "1 bag",
-    addedBy: "current",
-    completed: false,
-  },
-  {
-    id: "s4",
-    name: "Trash bags",
-    quantity: "1 box",
-    addedBy: "3",
-    completed: false,
-  },
-  {
-    id: "s5",
-    name: "Milk",
-    quantity: "2L",
-    addedBy: "2",
-    completed: true,
-  },
+  { id: "s1", listId: "list1", name: "Coffee beans", quantity: "1 bag", addedBy: "current", completed: false },
+  { id: "s2", listId: "list1", name: "Milk", quantity: "2L", addedBy: "2", completed: true },
+  { id: "s3", listId: "list1", name: "Greek yogurt", quantity: "2", addedBy: "5", completed: false },
+  { id: "s4", listId: "list2", name: "Dish soap", quantity: "2 bottles", addedBy: "current", completed: false },
+  { id: "s5", listId: "list2", name: "Paper towels", quantity: "1 pack", addedBy: "2", completed: false },
+  { id: "s6", listId: "list2", name: "Trash bags", quantity: "1 box", addedBy: "3", completed: false },
 ];
 
 const INITIAL_BORROWS: BorrowItem[] = [
@@ -321,12 +351,13 @@ const INITIAL_BORROWS: BorrowItem[] = [
   },
 ];
 
-const STORAGE_KEY = "homebase_data_v2";
+const STORAGE_KEY = "homebase_data_v5";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [roommates, setRoommates] = useState<Roommate[]>(INITIAL_ROOMMATES);
   const [chores, setChores] = useState<Chore[]>(INITIAL_CHORES);
   const [expenses, setExpenses] = useState<Expense[]>(INITIAL_EXPENSES);
+  const [shoppingLists, setShoppingLists] = useState<ShoppingList[]>(INITIAL_SHOPPING_LISTS);
   const [shoppingItems, setShoppingItems] =
     useState<ShoppingItem[]>(INITIAL_SHOPPING);
   const [borrowItems, setBorrowItems] = useState<BorrowItem[]>(INITIAL_BORROWS);
@@ -341,6 +372,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (data.roommates) setRoommates(data.roommates);
           if (data.chores) setChores(data.chores);
           if (data.expenses) setExpenses(data.expenses);
+          if (data.shoppingLists) setShoppingLists(data.shoppingLists);
           if (data.shoppingItems) setShoppingItems(data.shoppingItems);
           if (data.borrowItems) setBorrowItems(data.borrowItems);
           if (data.nudges) setNudges(data.nudges);
@@ -354,9 +386,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!loaded) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ roommates, chores, expenses, shoppingItems, borrowItems, nudges })
+      JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges })
     );
-  }, [loaded, roommates, chores, expenses, shoppingItems, borrowItems, nudges]);
+  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges]);
 
   const addChore = useCallback((chore: Omit<Chore, "id">) => {
     setChores((prev) => [...prev, { ...chore, id: makeId() }]);
@@ -393,6 +425,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setExpenses((prev) => [...prev, { ...expense, id: makeId() }]);
   }, []);
 
+  const updateExpense = useCallback(
+    (id: string, updates: Partial<Omit<Expense, "id">>) => {
+      setExpenses((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, ...updates } : e))
+      );
+    },
+    []
+  );
+
   const settleExpense = useCallback((id: string) => {
     setExpenses((prev) =>
       prev.map((e) => (e.id === id ? { ...e, settled: true } : e))
@@ -401,6 +442,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteExpense = useCallback((id: string) => {
     setExpenses((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  const addShoppingList = useCallback((name: string) => {
+    setShoppingLists((prev) => [...prev, { id: makeId(), name }]);
+  }, []);
+
+  const deleteShoppingList = useCallback((id: string) => {
+    setShoppingLists((prev) => prev.filter((l) => l.id !== id));
+    setShoppingItems((prev) => prev.filter((s) => s.listId !== id));
   }, []);
 
   const addShoppingItem = useCallback((item: Omit<ShoppingItem, "id">) => {
@@ -442,6 +492,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     ]);
   }, []);
 
+  const removeNudge = useCallback((toRoommateId: string, choreId: string) => {
+    setNudges((prev) =>
+      prev.filter((n) => !(n.toRoommateId === toRoommateId && n.choreId === choreId))
+    );
+  }, []);
+
   const getRoommateById = useCallback(
     (id: string) => roommates.find((r) => r.id === id),
     [roommates]
@@ -475,6 +531,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         roommates,
         chores,
         expenses,
+        shoppingLists,
         shoppingItems,
         borrowItems,
         nudges,
@@ -482,8 +539,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         completeChore,
         deleteChore,
         addExpense,
+        updateExpense,
         settleExpense,
         deleteExpense,
+        addShoppingList,
+        deleteShoppingList,
         addShoppingItem,
         toggleShoppingItem,
         deleteShoppingItem,
@@ -491,6 +551,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         returnBorrowItem,
         deleteBorrowItem,
         sendNudge,
+        removeNudge,
         getRoommateById,
         getChoresByRoommate,
         getBalances,

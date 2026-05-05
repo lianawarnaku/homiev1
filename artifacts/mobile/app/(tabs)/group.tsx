@@ -56,7 +56,7 @@ const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
 export default function GroupChoresScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, sendNudge, nudges } = useAppContext();
+  const { roommates, chores, sendNudge, removeNudge, nudges } = useAppContext();
 
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
 
@@ -98,7 +98,16 @@ export default function GroupChoresScreen() {
     choreName: string
   ) => {
     const key = `${roommateId}-${choreId}`;
-    if (nudgedChores.has(key)) return;
+    if (nudgedChores.has(key)) {
+      removeNudge(roommateId, choreId);
+      setNudgedChores((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      return;
+    }
     Alert.alert("Send Anonymous Nudge", `Remind about "${choreName}"?`, [
       { text: "Cancel", style: "cancel" },
       {
@@ -434,38 +443,27 @@ export default function GroupChoresScreen() {
                                 styles.nudgeBtn,
                                 {
                                   backgroundColor: nudged
-                                    ? colors.muted
+                                    ? colors.success + "18"
                                     : colors.warning + "18",
                                   borderColor: nudged
-                                    ? colors.border
+                                    ? colors.success + "55"
                                     : colors.warning + "55",
                                 },
                               ]}
                               onPress={() =>
-                                handleNudge(
-                                  roommate.id,
-                                  chore.id,
-                                  chore.title
-                                )
+                                handleNudge(roommate.id, chore.id, chore.title)
                               }
-                              disabled={nudged}
                             >
                               <Feather
-                                name="bell"
+                                name={nudged ? "bell-off" : "bell"}
                                 size={11}
-                                color={
-                                  nudged
-                                    ? colors.mutedForeground
-                                    : colors.warning
-                                }
+                                color={nudged ? colors.success : colors.warning}
                               />
                               <Text
                                 style={[
                                   styles.nudgeTxt,
                                   {
-                                    color: nudged
-                                      ? colors.mutedForeground
-                                      : colors.warning,
+                                    color: nudged ? colors.success : colors.warning,
                                   },
                                 ]}
                               >

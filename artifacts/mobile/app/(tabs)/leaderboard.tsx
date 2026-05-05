@@ -20,6 +20,16 @@ type Period = "weekly" | "alltime";
 const MEDALS = ["#FFD700", "#C0C0C0", "#CD7F32"] as const;
 const MEDAL_LABELS = ["1st", "2nd", "3rd"] as const;
 
+const HOME_ICONS: (keyof typeof Feather.glyphMap)[] = [
+  "home",       // 1st
+  "coffee",     // 2nd
+  "tool",       // 3rd
+  "wind",       // 4th
+  "droplet",    // 5th
+  "sun",        // 6th
+  "package",    // 7th+
+];
+
 export default function LeaderboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -131,6 +141,14 @@ export default function LeaderboardScreen() {
           <View style={styles.podium}>
             {top3.length > 1 ? (
               <View style={[styles.podiumSlot, styles.podiumSecond]}>
+                <View
+                  style={[
+                    styles.crownWrapper,
+                    { backgroundColor: MEDALS[1] + "22" },
+                  ]}
+                >
+                  <Text style={styles.utensilIcon}>🧹</Text>
+                </View>
                 <RoommateAvatar
                   name={top3[1].name}
                   color={top3[1].color}
@@ -174,7 +192,7 @@ export default function LeaderboardScreen() {
                   { backgroundColor: MEDALS[0] + "22" },
                 ]}
               >
-                <Feather name="award" size={20} color={MEDALS[0]} />
+                <Text style={styles.utensilIcon}>🍴</Text>
               </View>
               <RoommateAvatar
                 name={top3[0].name}
@@ -213,6 +231,14 @@ export default function LeaderboardScreen() {
 
             {top3.length > 2 ? (
               <View style={[styles.podiumSlot, styles.podiumThird]}>
+                <View
+                  style={[
+                    styles.crownWrapper,
+                    { backgroundColor: MEDALS[2] + "22" },
+                  ]}
+                >
+                  <Text style={styles.utensilIcon}>☕</Text>
+                </View>
                 <RoommateAvatar
                   name={top3[2].name}
                   color={top3[2].color}
@@ -280,9 +306,16 @@ export default function LeaderboardScreen() {
               },
             ]}
           >
-            <Text style={[styles.rank, { color: colors.mutedForeground }]}>
-              {idx + 1}
-            </Text>
+            <View style={styles.rankIconCol}>
+              <Text style={[styles.rank, { color: colors.mutedForeground }]}>
+                {idx + 1}
+              </Text>
+              <Feather
+                name={HOME_ICONS[Math.min(idx, HOME_ICONS.length - 1)]}
+                size={11}
+                color={colors.mutedForeground}
+              />
+            </View>
             <RoommateAvatar name={r.name} color={r.color} size={40} />
             <View style={styles.rankInfo}>
               <View style={styles.rankNameRow}>
@@ -401,6 +434,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
+  },
+  utensilIcon: { fontSize: 18 },
+  rankIconCol: {
+    width: 24,
+    alignItems: "center",
+    gap: 2,
   },
   medalBadge: {
     paddingHorizontal: 8,
