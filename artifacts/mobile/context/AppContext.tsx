@@ -56,6 +56,7 @@ export interface Expense {
   settled: boolean;
   recurring?: RecurringInterval;
   recurringCustom?: string;
+  paidBack?: Record<string, boolean>; // person id → true if they've paid back
 }
 
 export interface ShoppingList {
@@ -107,6 +108,7 @@ interface AppContextType {
   updateExpense: (id: string, updates: Partial<Omit<Expense, "id">>) => void;
   settleExpense: (id: string) => void;
   deleteExpense: (id: string) => void;
+  markPersonPaid: (expenseId: string, personId: string) => void;
   addShoppingList: (name: string) => void;
   deleteShoppingList: (id: string) => void;
   addShoppingItem: (item: Omit<ShoppingItem, "id">) => void;
@@ -471,6 +473,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setExpenses((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
+  const markPersonPaid = useCallback((expenseId: string, personId: string) => {
+    setExpenses((prev) =>
+      prev.map((e) => {
+        if (e.id !== expenseId) return e;
+        const paidBack = { ...(e.paidBack ?? {}), [personId]: true };
+        const allPaid = Object.keys(e.splits ?? {}).every(
+          (id) => id === e.paidBy || paidBack[id]
+        );
+        return { ...e, paidBack, settled: allPaid ? true : e.settled };
+      })
+    );
+  }, []);
+
   const addShoppingList = useCallback((name: string) => {
     setShoppingLists((prev) => [...prev, { id: makeId(), name }]);
   }, []);
@@ -570,6 +585,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateExpense,
         settleExpense,
         deleteExpense,
+        markPersonPaid,
         addShoppingList,
         deleteShoppingList,
         addShoppingItem,

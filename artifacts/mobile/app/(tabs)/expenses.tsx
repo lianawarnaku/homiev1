@@ -70,6 +70,7 @@ export default function ExpensesScreen() {
     updateExpense,
     settleExpense,
     deleteExpense,
+    markPersonPaid,
     addShoppingList,
     deleteShoppingList,
     addShoppingItem,
@@ -83,6 +84,7 @@ export default function ExpensesScreen() {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showShoppingModal, setShowShoppingModal] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [detailExpenseId, setDetailExpenseId] = useState<string | null>(null);
 
   // ── IOU builder state ──────────────────────────────────────────────────────
   const [expTitle, setExpTitle] = useState("");
@@ -498,7 +500,9 @@ export default function ExpensesScreen() {
                 EXPENSE_CATEGORIES.find((c) => c.key === item.category) ??
                 EXPENSE_CATEGORIES[4];
               return (
-                <View
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setDetailExpenseId(item.id)}
                   style={[
                     styles.expenseCard,
                     {
@@ -611,7 +615,9 @@ export default function ExpensesScreen() {
                             />
                           </TouchableOpacity>
                         </View>
-                      ) : null}
+                      ) : (
+                        <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+                      )}
                     </View>
                   </View>
 
@@ -622,18 +628,23 @@ export default function ExpensesScreen() {
                       if (!person) return null;
                       const isMe = personId === currentUserId;
                       const isOwer = personId !== item.paidBy;
+                      const hasPaidBack = !!(item.paidBack ?? {})[personId];
                       return (
                         <View
                           key={personId}
                           style={[
                             styles.iouChip,
                             {
-                              backgroundColor: isOwer
+                              backgroundColor: hasPaidBack
+                                ? colors.success + "14"
+                                : isOwer
                                 ? isMe
                                   ? colors.destructive + "14"
                                   : colors.muted
                                 : colors.success + "14",
-                              borderColor: isOwer
+                              borderColor: hasPaidBack
+                                ? colors.success + "50"
+                                : isOwer
                                 ? isMe
                                   ? colors.destructive + "50"
                                   : colors.border
@@ -641,35 +652,234 @@ export default function ExpensesScreen() {
                             },
                           ]}
                         >
-                          <View
-                            style={[
-                              styles.iouDot,
-                              { backgroundColor: person.color },
-                            ]}
-                          />
+                          {hasPaidBack ? (
+                            <Feather name="check" size={10} color={colors.success} style={{ marginRight: 3 }} />
+                          ) : (
+                            <View
+                              style={[
+                                styles.iouDot,
+                                { backgroundColor: person.color },
+                              ]}
+                            />
+                          )}
                           <Text
                             style={[
                               styles.iouChipText,
                               {
-                                color: isOwer
+                                color: hasPaidBack
+                                  ? colors.success
+                                  : isOwer
                                   ? isMe
                                     ? colors.destructive
                                     : colors.foreground
                                   : colors.success,
+                                textDecorationLine: hasPaidBack ? "line-through" : "none",
                               },
                             ]}
                           >
-                            {isMe ? "You" : person.name} owes $
-                            {(amount as number).toFixed(2)}
+                            {isMe ? "You" : person.name}{hasPaidBack ? " paid" : ` owes $${(amount as number).toFixed(2)}`}
                           </Text>
                         </View>
                       );
                     })}
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             }}
           />
+          {/* ── IOU Detail Modal ── */}
+          {(() => {
+            const detailExp = expenses.find((e) => e.id === detailExpenseId);
+            if (!detailExp) return null;
+            const payer = roommates.find((r) => r.id === detailExp.paidBy);
+            const cat = EXPENSE_CATEGORIES.find((c) => c.key === detailExp.category) ?? EXPENSE_CATEGORIES[4];
+            const iAmPayer = detailExp.paidBy === currentUserId;
+            const myShare = (detailExp.splits ?? {})[currentUserId] ?? 0;
+            const iAmOwer = !iAmPayer && myShare > 0;
+            const alreadyPaidBack = !!(detailExp.paidBack ?? {})[currentUserId];
+            return (
+              <Modal
+                visible={!!detailExpenseId}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setDetailExpenseId(null)}
+              >
+                <Pressable
+                  style={styles.detailOverlay}
+                  onPress={() => setDetailExpenseId(null)}
+                />
+                <View style={[styles.detailSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                  {/* Handle */}
+                  <View style={[styles.detailHandle, { backgroundColor: colors.border }]} />
+
+                  {/* Header */}
+                  <View style={styles.detailHeader}>
+                    <View style={[styles.expCatIcon, { backgroundColor: colors.primary + "18" }]}>
+                      <Feather name={cat.icon} size={18} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.detailTitle, { color: colors.foreground }]}>{detailExp.title}</Text>
+                      <Text style={[styles.detailMeta, { color: colors.mutedForeground }]}>
+                        Paid by {payer?.name ?? "?"} · {formatDate(detailExp.date)}
+                      </Text>
+                    </View>
+                    <Text style={[styles.detailAmount, { color: colors.foreground }]}>
+                      ${detailExp.amount.toFixed(2)}
+                    </Text>
+                  </View>
+
+                  {/* Divider */}
+                  <View style={[styles.detailDivider, { backgroundColor: colors.border }]} />
+
+                  {/* Who owes what */}
+                  <Text style={[styles.detailSectionLabel, { color: colors.mutedForeground }]}>Who owes</Text>
+                  <View style={{ gap: 8 }}>
+                    {Object.entries(detailExp.splits ?? {}).map(([personId, amount]) => {
+                      const person = roommates.find((r) => r.id === personId);
+                      if (!person) return null;
+                      const isOwer = personId !== detailExp.paidBy;
+                      const hasPaid = !!(detailExp.paidBack ?? {})[personId];
+                      const isMe = personId === currentUserId;
+                      return (
+                        <View
+                          key={personId}
+                          style={[
+                            styles.detailPersonRow,
+                            {
+                              backgroundColor: hasPaid
+                                ? colors.success + "0C"
+                                : colors.card,
+                              borderColor: hasPaid
+                                ? colors.success + "40"
+                                : colors.border,
+                            },
+                          ]}
+                        >
+                          <RoommateAvatar name={person.name} color={person.color} size={32} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.detailPersonName, { color: colors.foreground }]}>
+                              {isMe ? "You" : person.name}
+                              {!isOwer ? " (paid)" : ""}
+                            </Text>
+                            <Text style={[
+                              styles.detailPersonAmount,
+                              {
+                                color: hasPaid
+                                  ? colors.success
+                                  : isOwer
+                                  ? isMe ? colors.destructive : colors.mutedForeground
+                                  : colors.success,
+                                textDecorationLine: hasPaid ? "line-through" : "none",
+                              },
+                            ]}>
+                              {isOwer
+                                ? hasPaid
+                                  ? `Paid back $${(amount as number).toFixed(2)}`
+                                  : `Owes $${(amount as number).toFixed(2)}`
+                                : `Covered $${(amount as number).toFixed(2)}`}
+                            </Text>
+                          </View>
+                          {isOwer && (
+                            hasPaid ? (
+                              <View style={[styles.detailPaidBadge, { backgroundColor: colors.success + "20" }]}>
+                                <Feather name="check-circle" size={14} color={colors.success} />
+                                <Text style={[styles.detailPaidBadgeText, { color: colors.success }]}>Paid</Text>
+                              </View>
+                            ) : isMe ? (
+                              <TouchableOpacity
+                                style={[styles.detailMarkPaidBtn, { backgroundColor: colors.primary }]}
+                                onPress={() => {
+                                  Alert.alert(
+                                    "Mark as paid back?",
+                                    `Confirm that you've paid ${payer?.name ?? "them"} back $${(amount as number).toFixed(2)}?`,
+                                    [
+                                      { text: "Cancel", style: "cancel" },
+                                      {
+                                        text: "Yes, I paid",
+                                        onPress: () => {
+                                          markPersonPaid(detailExp.id, currentUserId);
+                                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                                        },
+                                      },
+                                    ]
+                                  );
+                                }}
+                              >
+                                <Feather name="check" size={13} color="#fff" />
+                                <Text style={styles.detailMarkPaidText}>I paid</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <View style={[styles.detailPendingBadge, { borderColor: colors.border }]}>
+                                <Text style={[styles.detailPendingText, { color: colors.mutedForeground }]}>Pending</Text>
+                              </View>
+                            )
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+
+                  {/* My action summary */}
+                  {iAmOwer && !alreadyPaidBack && (
+                    <View style={[styles.detailMyOweBanner, { backgroundColor: colors.destructive + "10", borderColor: colors.destructive + "30" }]}>
+                      <Feather name="alert-circle" size={14} color={colors.destructive} />
+                      <Text style={[styles.detailMyOweText, { color: colors.destructive }]}>
+                        You owe {payer?.name ?? "them"} ${myShare.toFixed(2)} — tap "I paid" to mark it done
+                      </Text>
+                    </View>
+                  )}
+                  {iAmOwer && alreadyPaidBack && (
+                    <View style={[styles.detailMyOweBanner, { backgroundColor: colors.success + "10", borderColor: colors.success + "30" }]}>
+                      <Feather name="check-circle" size={14} color={colors.success} />
+                      <Text style={[styles.detailMyOweText, { color: colors.success }]}>
+                        You've marked your share as paid back
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Payer actions */}
+                  {iAmPayer && (
+                    <View style={styles.detailPayerActions}>
+                      <TouchableOpacity
+                        style={[styles.detailActionBtn, { backgroundColor: colors.primary + "14", borderColor: colors.primary + "30" }]}
+                        onPress={() => { setDetailExpenseId(null); openEditModal(detailExp); }}
+                      >
+                        <Feather name="edit-2" size={14} color={colors.primary} />
+                        <Text style={[styles.detailActionBtnText, { color: colors.primary }]}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.detailActionBtn, { backgroundColor: colors.success + "14", borderColor: colors.success + "30" }]}
+                        onPress={() => Alert.alert("Settle Up", "Mark this entire IOU as settled?", [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Settle", onPress: () => { settleExpense(detailExp.id); setDetailExpenseId(null); } },
+                        ])}
+                      >
+                        <Feather name="check-circle" size={14} color={colors.success} />
+                        <Text style={[styles.detailActionBtnText, { color: colors.success }]}>Settle all</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.detailActionBtn, { backgroundColor: colors.destructive + "10", borderColor: colors.destructive + "20" }]}
+                        onPress={() => Alert.alert("Delete IOU", "Remove this expense?", [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Delete", style: "destructive", onPress: () => { deleteExpense(detailExp.id); setDetailExpenseId(null); } },
+                        ])}
+                      >
+                        <Feather name="trash-2" size={14} color={colors.destructive} />
+                        <Text style={[styles.detailActionBtnText, { color: colors.destructive }]}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    style={[styles.detailCloseBtn, { backgroundColor: colors.muted }]}
+                    onPress={() => setDetailExpenseId(null)}
+                  >
+                    <Text style={[styles.detailCloseBtnText, { color: colors.foreground }]}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </Modal>
+            );
+          })()}
         </>
       ) : (
         /* ── Shopping lists ── */
@@ -1699,5 +1909,149 @@ const styles = StyleSheet.create({
   recurringBadgeText: {
     fontFamily: "Inter_500Medium",
     fontSize: 10,
+  },
+  detailOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  detailSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    padding: 20,
+    paddingBottom: 36,
+    gap: 12,
+  },
+  detailHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 4,
+  },
+  detailHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  detailTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 17,
+  },
+  detailMeta: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    marginTop: 2,
+  },
+  detailAmount: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 20,
+  },
+  detailDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 2,
+  },
+  detailSectionLabel: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  detailPersonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+  },
+  detailPersonName: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+  },
+  detailPersonAmount: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    marginTop: 1,
+  },
+  detailPaidBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  detailPaidBadgeText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+  },
+  detailMarkPaidBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  detailMarkPaidText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+    color: "#fff",
+  },
+  detailPendingBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  detailPendingText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+  },
+  detailMyOweBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  detailMyOweText: {
+    flex: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  detailPayerActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  detailActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  detailActionBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+  },
+  detailCloseBtn: {
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  detailCloseBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 15,
   },
 });
