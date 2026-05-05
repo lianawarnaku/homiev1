@@ -122,6 +122,8 @@ interface AppContextType {
   getRoommateById: (id: string) => Roommate | undefined;
   getChoresByRoommate: (id: string) => Chore[];
   getBalances: () => Record<string, number>;
+  essentialsAssignees: Record<string, Record<string, string>>;
+  setEssentialAssignee: (sectionKey: string, item: string, roommateId: string | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -365,6 +367,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     useState<ShoppingItem[]>(INITIAL_SHOPPING);
   const [borrowItems, setBorrowItems] = useState<BorrowItem[]>(INITIAL_BORROWS);
   const [nudges, setNudges] = useState<Nudge[]>([]);
+  const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -379,6 +382,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (data.shoppingItems) setShoppingItems(data.shoppingItems);
           if (data.borrowItems) setBorrowItems(data.borrowItems);
           if (data.nudges) setNudges(data.nudges);
+          if (data.essentialsAssignees) setEssentialsAssignees(data.essentialsAssignees);
         } catch {}
       }
       setLoaded(true);
@@ -389,9 +393,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!loaded) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges })
+      JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees })
     );
-  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges]);
+  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees]);
 
   const addChore = useCallback((chore: Omit<Chore, "id">) => {
     setChores((prev) => [...prev, { ...chore, id: makeId() }]);
@@ -527,6 +531,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setBorrowItems((prev) => prev.filter((b) => b.id !== id));
   }, []);
 
+  const setEssentialAssignee = useCallback((sectionKey: string, item: string, roommateId: string | null) => {
+    setEssentialsAssignees((prev) => {
+      const section = { ...(prev[sectionKey] ?? {}) };
+      if (roommateId === null) {
+        delete section[item];
+      } else {
+        section[item] = roommateId;
+      }
+      return { ...prev, [sectionKey]: section };
+    });
+  }, []);
+
   const sendNudge = useCallback((toRoommateId: string, choreId: string) => {
     setNudges((prev) => [
       ...prev,
@@ -599,6 +615,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         getRoommateById,
         getChoresByRoommate,
         getBalances,
+        essentialsAssignees,
+        setEssentialAssignee,
       }}
     >
       {children}

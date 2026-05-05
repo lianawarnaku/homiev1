@@ -217,7 +217,7 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
 export default function MyChoresScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { currentUserId, chores, roommates, completeChore, deleteChore, addChore } =
+  const { currentUserId, chores, roommates, completeChore, deleteChore, addChore, essentialsAssignees, setEssentialAssignee } =
     useAppContext();
 
   const currentUser = roommates.find((r) => r.id === currentUserId);
@@ -226,6 +226,23 @@ export default function MyChoresScreen() {
   const [newTitle, setNewTitle] = useState("");
   const [newCategory, setNewCategory] = useState<ChoreCategory>("cleaning");
   const [newPoints, setNewPoints] = useState("20");
+
+  const SECTION_NAMES: Record<string, string> = {
+    room: "Room & Bedroom",
+    kitchen: "Kitchen",
+    cleaning: "Cleaning",
+    bedding: "Bedding",
+    bathroom: "Bathroom",
+    utility: "Utility",
+    food: "Food",
+  };
+
+  const myToBuyItems = Object.entries(essentialsAssignees).flatMap(
+    ([sectionKey, items]) =>
+      Object.entries(items)
+        .filter(([, roommateId]) => roommateId === currentUserId)
+        .map(([item]) => ({ sectionKey, item }))
+  );
 
   const myChores = chores.filter((c) => c.assignedTo === currentUserId);
   const filtered = myChores.filter((c) => {
@@ -296,6 +313,44 @@ export default function MyChoresScreen() {
           />
         </View>
       </View>
+
+      {myToBuyItems.length > 0 && (
+        <View
+          style={[
+            styles.toBuyCard,
+            { backgroundColor: colors.card, borderColor: colors.border, marginHorizontal: 16, marginBottom: 12 },
+          ]}
+        >
+          <View style={styles.toBuyHeader}>
+            <View style={[styles.toBuyIconWrap, { backgroundColor: colors.primary + "18" }]}>
+              <Feather name="shopping-bag" size={14} color={colors.primary} />
+            </View>
+            <Text style={[styles.toBuyTitle, { color: colors.foreground }]}>To Buy</Text>
+            <Text style={[styles.toBuyCount, { color: colors.mutedForeground }]}>
+              {myToBuyItems.length} item{myToBuyItems.length !== 1 ? "s" : ""}
+            </Text>
+          </View>
+          {myToBuyItems.map(({ sectionKey, item }) => (
+            <TouchableOpacity
+              key={`${sectionKey}:${item}`}
+              style={[styles.toBuyRow, { borderTopColor: colors.border }]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setEssentialAssignee(sectionKey, item, null);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.toBuyCheck, { borderColor: colors.border }]} />
+              <Text style={[styles.toBuyItem, { color: colors.foreground }]} numberOfLines={1}>
+                {item}
+              </Text>
+              <Text style={[styles.toBuySection, { color: colors.mutedForeground }]}>
+                {SECTION_NAMES[sectionKey] ?? sectionKey}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       <View style={styles.filterRow}>
         {(["all", "today", "done"] as Filter[]).map((f) => (
@@ -701,4 +756,41 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 6,
   },
+  toBuyCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  toBuyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  toBuyIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toBuyTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, flex: 1 },
+  toBuyCount: { fontFamily: "Inter_400Regular", fontSize: 12 },
+  toBuyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  toBuyCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+  },
+  toBuyItem: { fontFamily: "Inter_500Medium", fontSize: 14, flex: 1 },
+  toBuySection: { fontFamily: "Inter_400Regular", fontSize: 11 },
 });

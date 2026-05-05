@@ -581,7 +581,7 @@ function SectionCard({
 export default function PlanningScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { roommates, addChore } = useAppContext();
+  const { roommates, addChore, essentialsAssignees, setEssentialAssignee } = useAppContext();
 
   const [selectedType, setSelectedType] = useState<PlanType>(null);
   const [housingType, setHousingType] = useState<HousingType>(null);
@@ -596,7 +596,6 @@ export default function PlanningScreen() {
   const [checkedEssentials, setCheckedEssentials] = useState<Record<string, Set<string>>>({});
   const [customEssentials, setCustomEssentials] = useState<Record<string, string[]>>({});
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
-  const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
   const [preferences, setPreferences] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -645,18 +644,6 @@ export default function PlanningScreen() {
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
-    });
-  }
-
-  function setEssentialAssignee(sectionKey: string, item: string, roommateId: string | null) {
-    setEssentialsAssignees((prev) => {
-      const section = { ...(prev[sectionKey] ?? {}) };
-      if (roommateId === null) {
-        delete section[item];
-      } else {
-        section[item] = roommateId;
-      }
-      return { ...prev, [sectionKey]: section };
     });
   }
 
