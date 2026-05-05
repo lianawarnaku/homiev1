@@ -37,13 +37,35 @@ router.post("/planning/suggest", async (req, res) => {
       "Include estimated time for each task. " +
       "Format clearly with days of the week and clear assignments.";
   } else {
+    const referenceList = `
+REFERENCE ITEM LIST (draw from these when relevant — do not just copy paste, curate and organise thoughtfully):
+
+Room / Dorm Essentials: Shower Caddy, Standing Fan / Box Fan, Room Decor (string lights, posters, pictures), Small Rug, Mirror, Towel Hook (command strip), Hangers, Plastic Storage Bins (under bed / top of wardrobe), Lamp, Alarm Clock, Whiteboard for Door, Key Nostalgic Items.
+
+Kitchen: Water Filter / Brita, Hot Water Kettle, Reusable Utensil Kit, Plastic Silverware (backup), Paper Plates (backup), Tupperware, Microwave-safe Bowls, Coffee Maker, Coffee Pods, Chip Clips, Paper Towels, Dish Towel, Dish Towels, Sponge, Dish Soap, Trash Bags, Plastic Bags, Reusable Water Bottle, Tumbler, Mug, Mugs, Cups, Bottle Brush, Saran Wrap / Cling Film, Parchment Paper, Aluminium Foil, Dishwasher Pods, Air Fryer, Blender, Pans, Pots, Cutting Board, Silverware, Silverware Organizer, Oven / Baking Tray, Rice Cooker, Plates, Bowls, Toaster, Strainer / Colander, Whisk, Measuring Cups, Knives, Dish Drying Mat, Dish Drying Stand / Rack, Spatulas, Mixing Spoons, Can Opener, Bottle Opener, Tongs, Food Storage Containers, Peeler, Kitchen Scissors, Oil Dispenser.
+
+Cleaning Supplies: Laundry Detergent, Laundry Basket, All-purpose Cleaner, Mini Vacuum, Clorox / Disinfectant Wipes, Windex / Glass Cleaner, Swiffer / Mop, Toilet Cleaner, Mirror Cleaner, Cleaning Rags, Trash Bags, Febreze / Air Freshener.
+
+Potentially Shared with Roommates: Mini-fridge, Microwave, Trash Can, Rice Cooker, Air Fryer, Blender, Coffee Maker.
+
+Bedding / Linens: Bath Towels, Hand Towels, Sheets, Pillowcases, Pillows, Mattress Pad / Topper, Duvet / Comforter, Throw Blanket, Lint Roller, Steamer / Iron.
+
+Bathroom: Toilet Paper, Hand Soap, Hand Soap Refills, Shower Toiletries Holder / Caddy, Toilet Cleaner, Mirror Cleaner, Febreze, Hand Towels, Trashcan.
+
+Utility / Misc: Batteries, Duct Tape, Painters Tape, Extension Cord, Power Strip, Lock or Lockbox, Lint Roller, Tissues, Lighter, Pocket Knife, Scissors, Calendar, Desk Drawer Organizers, Rag, Steamer / Iron.
+
+Food Staples: Ramen, Instant Oatmeal, Chips / Crackers / Cookies, Granola Bars, Microwave Popcorn, Gum and Mints, Tea, Hot Chocolate, Coffee Pods, Soup (canned), Rice, Pasta, Tomato Sauce, Bread, Butter, Milk, Eggs, Sugar, Salt, Pepper, Oil, Cinnamon, Garlic, Ginger, Garlic Powder, Chilli Flakes, Soy Sauce, Hot Sauce, Ketchup, Honey, Nutella, Peanut Butter, Jam, Cereal, Yogurt, Frozen Veggies, Tofu, Dahl.
+`;
+
     userPrompt =
-      `Create a comprehensive home essentials checklist for a new home or dorm. ` +
+      `Create a comprehensive, well-curated home essentials checklist for a new home or dorm room. ` +
       (preferences ? `Context: ${preferences}. ` : "") +
-      "Organize by room/category: Kitchen, Bathroom, Bedroom, Living Room, Cleaning Supplies, Laundry. " +
-      "Mark each item as Must-Have or Nice-to-Have. " +
-      "Include estimated cost ranges where relevant. " +
-      "Keep it practical and budget-friendly.";
+      "Use the following reference list as your primary source — select, prioritise and organise the most relevant items rather than listing everything: " +
+      referenceList +
+      "Organise your output into clear sections: Room & Bedroom, Kitchen, Bathroom, Cleaning Supplies, Bedding & Linens, Shared / Communal Items, Utility & Misc, Food Staples. " +
+      "Mark each item as Must-Have ✓ or Nice-to-Have ○. " +
+      "Add a short note or estimated cost range for items where it's helpful. " +
+      "Keep it practical, budget-friendly, and tailored to roommate living.";
   }
 
   try {
