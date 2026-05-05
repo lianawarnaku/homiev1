@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -105,6 +105,7 @@ export default function ExpensesScreen() {
   const [showNewListModal, setShowNewListModal] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
+  const flatListRef = useRef<FlatList>(null);
 
   const toggleListCollapse = (id: string) => {
     setCollapsedLists((prev) => {
@@ -138,6 +139,19 @@ export default function ExpensesScreen() {
     if (e.paidBy === currentUserId) return sum;
     return sum + ((e.splits ?? {})[currentUserId] as number || 0);
   }, 0);
+
+  const firstIOweIndex = activeExpenses.findIndex(
+    (e) => e.paidBy !== currentUserId && ((e.splits ?? {})[currentUserId] as number || 0) > 0
+  );
+  const firstOwedToMeIndex = activeExpenses.findIndex(
+    (e) => e.paidBy === currentUserId
+  );
+
+  const scrollToExpense = (index: number) => {
+    if (index < 0) return;
+    flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.1 });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
 
   // ── Recalculate even split when total or participants change ───────────────
   const recalcEvenSplit = useCallback(() => {
@@ -341,11 +355,13 @@ export default function ExpensesScreen() {
           {/* Balance cards — You owe on top, Owed to you below */}
           <View style={styles.balanceRow}>
             {iOwe > 0 && (
-              <View
+              <TouchableOpacity
                 style={[
                   styles.balanceCard,
                   { backgroundColor: colors.destructive + "14", borderColor: colors.destructive + "40" },
                 ]}
+                onPress={() => scrollToExpense(firstIOweIndex)}
+                activeOpacity={0.75}
               >
                 <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>
                   You owe
@@ -354,16 +370,18 @@ export default function ExpensesScreen() {
                   -${iOwe.toFixed(2)}
                 </Text>
                 <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>
-                  To others
+                  Tap to view
                 </Text>
-              </View>
+              </TouchableOpacity>
             )}
             {owedToMe > 0 && (
-              <View
+              <TouchableOpacity
                 style={[
                   styles.balanceCard,
                   { backgroundColor: colors.success + "14", borderColor: colors.success + "40" },
                 ]}
+                onPress={() => scrollToExpense(firstOwedToMeIndex)}
+                activeOpacity={0.75}
               >
                 <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>
                   Owed to you
@@ -372,9 +390,9 @@ export default function ExpensesScreen() {
                   +${owedToMe.toFixed(2)}
                 </Text>
                 <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>
-                  Others owe you
+                  Tap to view
                 </Text>
-              </View>
+              </TouchableOpacity>
             )}
             {owedToMe === 0 && iOwe === 0 && (
               <View
@@ -453,8 +471,15 @@ export default function ExpensesScreen() {
 
           {/* Expense list */}
           <FlatList
+            ref={flatListRef}
             data={activeExpenses}
             keyExtractor={(e) => e.id}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
+              flatListRef.current?.scrollToOffset({
+                offset: index * averageItemLength,
+                animated: true,
+              });
+            }}
             contentContainerStyle={[
               styles.listContent,
               { paddingBottom: 90 + botPad },
