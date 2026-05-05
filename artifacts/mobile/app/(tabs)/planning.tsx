@@ -45,9 +45,7 @@ const BATHROOM_ITEMS = [
 const BATHROOM_CHORES = [
   { key: "clean_floor", label: "Clean bathroom floor", points: 15 },
   { key: "restock", label: "Restock supplies (soap, TP, napkins)", points: 10 },
-  { key: "scrub_toilet", label: "Scrub & sanitize toilet", points: 20 },
   { key: "clean_mirror", label: "Clean mirror & fixtures", points: 10 },
-  { key: "wipe_sink", label: "Wipe & disinfect sink", points: 10 },
 ];
 
 // ── Living area fixtures (apartment only) ──────────────────────────────────
