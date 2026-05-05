@@ -649,17 +649,7 @@ export default function PlanningScreen() {
   function createChores(): number {
     if (!housingType) return 0;
     const n = roommates.length;
-    let ri = 0;
     let count = 0;
-
-    function next(): string {
-      return roommates[ri++ % n].id;
-    }
-
-    function addG(title: string, cat: ChoreCategory, pts: number, who: string) {
-      count++;
-      addChore({ title, assignedTo: who, dueDate: daysFromNow(7), completed: false, points: pts, category: cat });
-    }
 
     // ── Derive group titles from user selections ──
     const bathHeavy =
@@ -690,98 +680,41 @@ export default function PlanningScreen() {
     const vacMop = "Vacuum & mop — common areas, hallway & living room";
     const adHoc = "Ad hoc helper — check in & assist where needed";
 
-    // ── Assign Week 1 by group size ──
-    if (n <= 2) {
-      const a = next(), b = next();
-      addG(bathHeavy, "bathroom", 35, a);
-      addG(kitHeavy, "kitchen", 30, a);
-      addG(bathLight, "bathroom", 20, b);
-      addG(kitLight, "kitchen", 20, b);
-      addG(vacMop, "cleaning", 20, b);
-    } else if (n === 3) {
-      addG(bathHeavy, "bathroom", 35, next());
-      addG(kitHeavy, "kitchen", 30, next());
-      const c = next();
-      addG(kitLight, "kitchen", 20, c);
-      addG(vacMop, "cleaning", 20, c);
-    } else if (n === 4) {
-      addG(bathHeavy, "bathroom", 35, next());
-      const b = next();
-      addG(bathLight, "bathroom", 20, b);
-      addG(vacMop, "cleaning", 20, b);
-      addG(kitHeavy, "kitchen", 30, next());
-      addG(kitLight, "kitchen", 20, next());
-    } else if (n <= 6) {
-      // 5–6 people: two tiers, ad hoc for 6th
-      addG(bathHeavy, "bathroom", 35, next());
-      addG(kitHeavy, "kitchen", 30, next());
-      addG(bathLight, "bathroom", 20, next());
-      addG(kitLight, "kitchen", 20, next());
-      addG(vacMop, "cleaning", 20, next());
-      for (let i = 5; i < n; i++) addG(adHoc, "other", 10, next());
-    } else {
-      // 7+ people: 5 main slots then remaining as ad hoc
-      addG(bathHeavy, "bathroom", 35, next());
-      addG(bathLight, "bathroom", 20, next());
-      addG(kitHeavy, "kitchen", 30, next());
-      addG(kitLight, "kitchen", 20, next());
-      addG(vacMop, "cleaning", 20, next());
-      while (ri < n) addG(adHoc, "other", 10, next());
+    // ── Ordered chore groups: one per person, most important first ──
+    // Fold user's appliance/bathroom selections into the group descriptions
+    const groups: [string, ChoreCategory, number][] = [
+      [bathHeavy, "bathroom", 35],
+      [kitHeavy, "kitchen", 30],
+      [bathLight, "bathroom", 20],
+      [kitLight, "kitchen", 20],
+      [vacMop, "cleaning", 20],
+    ];
+
+    // Assign exactly ONE chore group per person
+    for (let i = 0; i < n; i++) {
+      const [title, cat, pts] =
+        i < groups.length ? groups[i] : [adHoc, "other" as ChoreCategory, 10];
+      count++;
+      addChore({
+        title,
+        assignedTo: roommates[i].id,
+        dueDate: daysFromNow(7),
+        completed: false,
+        points: pts,
+        category: cat,
+      });
     }
 
-    // ── Always-on shared chores ──
-    addG("Take out trash & recycling", "other", 10, next());
-    addG("Wipe down appliances", "kitchen", 10, next());
-
-    // ── Extra kitchen appliance chores not covered by the main groups ──
-    const groupCovered = new Set(["stove", "microwave", "air_fryer", "oven", "dishwasher", "drying_rack", "fridge", "dining_table"]);
-    kitchenAmenities.forEach((key) => {
-      if (!groupCovered.has(key)) {
-        const c = KITCHEN_CHORE_MAP[key];
-        if (c) {
-          count++;
-          addChore({ title: c.title, assignedTo: next(), dueDate: daysFromNow(7), completed: false, points: c.points, category: "kitchen" });
-        }
-      }
+    // ── Custom chores (user-defined additions) — rotate through roommates ──
+    const allCustom: [string, ChoreCategory, number][] = [
+      ...customKitchenChores.map((t): [string, ChoreCategory, number] => [t, "kitchen", 15]),
+      ...customBathroomChores.map((t): [string, ChoreCategory, number] => [t, "bathroom", 15]),
+      ...customLivingChores.map((t): [string, ChoreCategory, number] => [t, "cleaning", 15]),
+    ];
+    allCustom.forEach(([title, cat, pts], idx) => {
+      count++;
+      addChore({ title, assignedTo: roommates[idx % n].id, dueDate: daysFromNow(7), completed: false, points: pts, category: cat });
     });
-
-    // ── Explicit bathroom chore selections ──
-    if (housingType !== "traditional") {
-      bathroomChores.forEach((key) => {
-        const c = BATHROOM_CHORES.find((b) => b.key === key);
-        if (c) {
-          count++;
-          addChore({ title: c.label, assignedTo: next(), dueDate: daysFromNow(7), completed: false, points: c.points, category: "bathroom" });
-        }
-      });
-      if (bathroomItems.has("shower")) {
-        count++;
-        addChore({ title: "Scrub shower & clean grout", assignedTo: next(), dueDate: daysFromNow(7), completed: false, points: 25, category: "bathroom" });
-      }
-    }
-
-    // ── Living area chores (apartment) ──
-    if (housingType === "apartment") {
-      livingItems.forEach((key) => {
-        const c = LIVING_ITEM_CHORE_MAP[key];
-        if (c) {
-          count++;
-          addChore({ title: c.title, assignedTo: next(), dueDate: daysFromNow(7), completed: false, points: c.points, category: "cleaning" });
-        }
-      });
-      livingChores.forEach((key) => {
-        const c = LIVING_CHORES.find((l) => l.key === key);
-        if (c) {
-          count++;
-          addChore({ title: c.label, assignedTo: next(), dueDate: daysFromNow(7), completed: false, points: c.points, category: "cleaning" });
-        }
-      });
-    }
-
-    // ── Custom chores ──
-    customKitchenChores.forEach((title) => { count++; addChore({ title, assignedTo: next(), dueDate: daysFromNow(7), completed: false, points: 15, category: "kitchen" }); });
-    customBathroomChores.forEach((title) => { count++; addChore({ title, assignedTo: next(), dueDate: daysFromNow(7), completed: false, points: 15, category: "bathroom" }); });
-    customLivingChores.forEach((title) => { count++; addChore({ title, assignedTo: next(), dueDate: daysFromNow(7), completed: false, points: 15, category: "cleaning" }); });
 
     return count;
   }
