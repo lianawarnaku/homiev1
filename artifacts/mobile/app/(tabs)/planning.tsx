@@ -95,6 +95,105 @@ const LIVING_ITEM_CHORE_MAP: Record<string, { title: string; points: number }> =
   oven: { title: "Deep clean oven", points: 30 },
 };
 
+// ── Home Essentials sections (from dorm essentials reference list) ─────────
+const HOME_ESSENTIALS_SECTIONS = [
+  {
+    key: "room",
+    title: "Room & Bedroom",
+    icon: "home",
+    color: "#8B5CF6",
+    items: [
+      "Shower Caddy", "Standing Fan / Box Fan", "Room Decor (string lights, posters, pictures)",
+      "Small Rug", "Mirror", "Towel Hook (Command Strip)", "Hangers",
+      "Plastic Storage Bins (under bed / wardrobe)", "Lamp", "Alarm Clock", "Whiteboard for Door",
+    ],
+  },
+  {
+    key: "kitchen",
+    title: "Kitchen",
+    icon: "coffee",
+    color: "#F97316",
+    items: [
+      "Water Filter / Brita", "Hot Water Kettle", "Reusable Utensil Kit", "Tupperware",
+      "Microwave-safe Bowls", "Coffee Maker", "Chip Clips", "Paper Towels", "Dish Towel",
+      "Sponge", "Dish Soap", "Trash Bags", "Plastic Bags", "Reusable Water Bottle",
+      "Tumbler", "Mug", "Bottle Brush", "Saran Wrap / Cling Film", "Parchment Paper",
+      "Aluminium Foil", "Dishwasher Pods", "Air Fryer", "Blender", "Pans", "Pots",
+      "Cutting Board", "Silverware / Cutlery", "Silverware Organizer", "Oven / Baking Tray",
+      "Rice Cooker", "Plates", "Bowls", "Toaster", "Strainer / Colander", "Whisk",
+      "Measuring Cups", "Knives", "Dish Drying Mat", "Dish Drying Rack", "Spatulas",
+      "Mixing Spoons", "Can Opener", "Bottle Opener", "Tongs", "Food Storage Containers",
+      "Peeler", "Kitchen Scissors", "Oil Dispenser",
+    ],
+  },
+  {
+    key: "cleaning",
+    title: "Cleaning Supplies",
+    icon: "wind",
+    color: "#22C55E",
+    items: [
+      "Laundry Detergent", "Laundry Basket", "All-purpose Cleaner", "Mini Vacuum",
+      "Clorox / Disinfectant Wipes", "Windex / Glass Cleaner", "Swiffer / Mop",
+      "Toilet Cleaner", "Mirror Cleaner", "Cleaning Rags", "Febreze / Air Freshener",
+    ],
+  },
+  {
+    key: "shared",
+    title: "Potentially Shared",
+    icon: "users",
+    color: "#14B8A6",
+    items: [
+      "Mini-fridge", "Microwave", "Trash Can", "Rice Cooker", "Air Fryer", "Blender", "Coffee Maker",
+    ],
+  },
+  {
+    key: "bedding",
+    title: "Bedding & Linens",
+    icon: "moon",
+    color: "#EC4899",
+    items: [
+      "Bath Towels", "Hand Towels", "Sheets", "Pillowcases", "Pillows",
+      "Mattress Pad / Topper", "Duvet / Comforter", "Throw Blanket", "Lint Roller", "Steamer / Iron",
+    ],
+  },
+  {
+    key: "bathroom",
+    title: "Bathroom",
+    icon: "droplet",
+    color: "#5B7FF2",
+    items: [
+      "Toilet Paper", "Hand Soap", "Hand Soap Refills", "Shower Toiletries Holder / Caddy",
+      "Toilet Cleaner", "Mirror Cleaner", "Febreze", "Hand Towels", "Trashcan",
+    ],
+  },
+  {
+    key: "utility",
+    title: "Utility & Misc",
+    icon: "tool",
+    color: "#F59E0B",
+    items: [
+      "Batteries", "Duct Tape", "Painters Tape", "Extension Cord", "Power Strip",
+      "Lock or Lockbox", "Lint Roller", "Tissues", "Lighter", "Scissors",
+      "Calendar", "Desk Drawer Organizers", "Rag", "Steamer / Iron",
+    ],
+  },
+  {
+    key: "food",
+    title: "Food Staples",
+    icon: "shopping-bag",
+    color: "#EF4444",
+    items: [
+      "Ramen", "Instant Oatmeal", "Chips / Crackers / Cookies", "Granola Bars",
+      "Microwave Popcorn", "Tea", "Hot Chocolate", "Coffee Pods", "Soup (canned)",
+      "Rice", "Pasta", "Tomato Sauce", "Bread", "Butter", "Milk", "Eggs",
+      "Sugar", "Salt", "Pepper", "Oil", "Cinnamon", "Garlic", "Ginger",
+      "Garlic Powder", "Chilli Flakes", "Soy Sauce", "Hot Sauce", "Ketchup",
+      "Honey", "Nutella", "Peanut Butter", "Jam", "Cereal", "Yogurt",
+      "Frozen Veggies", "Tofu", "Dahl",
+    ],
+  },
+];
+
 function daysFromNow(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
@@ -388,6 +487,9 @@ export default function PlanningScreen() {
   const [customKitchenChores, setCustomKitchenChores] = useState<string[]>([]);
   const [customBathroomChores, setCustomBathroomChores] = useState<string[]>([]);
   const [customLivingChores, setCustomLivingChores] = useState<string[]>([]);
+  const [checkedEssentials, setCheckedEssentials] = useState<Record<string, Set<string>>>({});
+  const [customEssentials, setCustomEssentials] = useState<Record<string, string[]>>({});
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [preferences, setPreferences] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -405,6 +507,38 @@ export default function PlanningScreen() {
     if (next.has(key)) next.delete(key);
     else next.add(key);
     return next;
+  }
+
+  function toggleEssential(sectionKey: string, item: string) {
+    setCheckedEssentials((prev) => {
+      const cur = new Set(prev[sectionKey] ?? []);
+      if (cur.has(item)) cur.delete(item);
+      else cur.add(item);
+      return { ...prev, [sectionKey]: cur };
+    });
+  }
+
+  function addCustomEssential(sectionKey: string, item: string) {
+    setCustomEssentials((prev) => ({
+      ...prev,
+      [sectionKey]: [...(prev[sectionKey] ?? []), item],
+    }));
+  }
+
+  function removeCustomEssential(sectionKey: string, idx: number) {
+    setCustomEssentials((prev) => ({
+      ...prev,
+      [sectionKey]: (prev[sectionKey] ?? []).filter((_, i) => i !== idx),
+    }));
+  }
+
+  function toggleExpandSection(key: string) {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   // ── Build + create chores ────────────────────────────────────────────────
@@ -518,6 +652,18 @@ export default function PlanningScreen() {
       if (livingChores.size > 0)
         parts.push(`Living area tasks: ${[...livingChores].map((k) => LIVING_CHORES.find((a) => a.key === k)?.label).filter(Boolean).join(", ")}`);
     }
+    // ── Home essentials selections ──
+    if (selectedType === "home-checklist") {
+      HOME_ESSENTIALS_SECTIONS.forEach((section) => {
+        const checked = checkedEssentials[section.key];
+        const custom = customEssentials[section.key] ?? [];
+        const items = [...(checked ? [...checked] : []), ...custom];
+        if (items.length > 0) {
+          parts.push(`${section.title} (already have / planning to get): ${items.join(", ")}`);
+        }
+      });
+    }
+
     if (preferences.trim()) parts.push(preferences.trim());
     return parts.join(". ");
   }
@@ -945,6 +1091,75 @@ export default function PlanningScreen() {
         </View>
       )}
 
+      {/* ── Home Essentials checklist ── */}
+      {selectedType === "home-checklist" && (
+        <View style={[styles.amenityArea, { marginTop: 4 }]}>
+          {HOME_ESSENTIALS_SECTIONS.map((section) => {
+            const sectionChecked = checkedEssentials[section.key] ?? new Set<string>();
+            const sectionCustom = customEssentials[section.key] ?? [];
+            const checkedCount = sectionChecked.size + sectionCustom.length;
+            const isExpanded = expandedSections.has(section.key);
+            return (
+              <View
+                key={section.key}
+                style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <TouchableOpacity
+                  style={styles.sectionCardHeader}
+                  onPress={() => toggleExpandSection(section.key)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.sectionCardIcon, { backgroundColor: section.color + "18" }]}>
+                    <Feather name={section.icon as any} size={16} color={section.color} />
+                  </View>
+                  <Text style={[styles.sectionCardTitle, { color: colors.foreground, flex: 1 }]}>
+                    {section.title}
+                  </Text>
+                  {checkedCount > 0 && (
+                    <View style={[styles.checkedBadge, { backgroundColor: section.color + "20" }]}>
+                      <Text style={[styles.checkedBadgeText, { color: section.color }]}>
+                        {checkedCount}
+                      </Text>
+                    </View>
+                  )}
+                  <Feather
+                    name={isExpanded ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color={colors.mutedForeground}
+                  />
+                </TouchableOpacity>
+
+                {isExpanded && (
+                  <View style={{ marginTop: 4 }}>
+                    {section.items.map((item) => (
+                      <CheckRow
+                        key={item}
+                        label={item}
+                        checked={sectionChecked.has(item)}
+                        onToggle={() => toggleEssential(section.key, item)}
+                        accentColor={section.color}
+                        textColor={colors.foreground}
+                        mutedColor={colors.mutedForeground}
+                      />
+                    ))}
+                    <CustomChoreInput
+                      chores={sectionCustom}
+                      onAdd={(item) => addCustomEssential(section.key, item)}
+                      onRemove={(i) => removeCustomEssential(section.key, i)}
+                      accentColor={section.color}
+                      textColor={colors.foreground}
+                      mutedColor={colors.mutedForeground}
+                      borderColor={colors.border}
+                      cardBg={colors.card}
+                    />
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {/* ── Preferences ── */}
       <Text
         style={[
@@ -992,6 +1207,8 @@ export default function PlanningScreen() {
             <Text style={styles.generateText}>
               {isChoreChart && housingType
                 ? "Build Chore Chart & Add Tasks"
+                : selectedType === "home-checklist"
+                ? "Generate Suggestions"
                 : "Generate"}
             </Text>
           </>
@@ -1244,6 +1461,16 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   successText: { fontFamily: "Inter_600SemiBold", fontSize: 13, flex: 1 },
+  checkedBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginRight: 6,
+  },
+  checkedBadgeText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 11,
+  },
   errorBox: {
     flexDirection: "row",
     alignItems: "center",
