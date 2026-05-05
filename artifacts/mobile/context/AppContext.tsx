@@ -71,6 +71,7 @@ export interface ShoppingItem {
   quantity: string;
   addedBy: string;
   completed: boolean;
+  assignedTo?: string;
 }
 
 export interface BorrowItem {
@@ -114,6 +115,7 @@ interface AppContextType {
   addShoppingItem: (item: Omit<ShoppingItem, "id">) => void;
   toggleShoppingItem: (id: string) => void;
   deleteShoppingItem: (id: string) => void;
+  assignShoppingItem: (id: string, roommateId: string | null) => void;
   addBorrowItem: (item: Omit<BorrowItem, "id">) => void;
   returnBorrowItem: (id: string) => void;
   deleteBorrowItem: (id: string) => void;
@@ -513,6 +515,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setShoppingItems((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
+  const assignShoppingItem = useCallback((id: string, roommateId: string | null) => {
+    setShoppingItems((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? { ...s, assignedTo: roommateId ?? undefined }
+          : s
+      )
+    );
+  }, []);
+
   const addBorrowItem = useCallback((item: Omit<BorrowItem, "id">) => {
     setBorrowItems((prev) => [...prev, { ...item, id: makeId() }]);
   }, []);
@@ -607,6 +619,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addShoppingItem,
         toggleShoppingItem,
         deleteShoppingItem,
+        assignShoppingItem,
         addBorrowItem,
         returnBorrowItem,
         deleteBorrowItem,

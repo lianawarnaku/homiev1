@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -31,6 +32,7 @@ export default function ShoppingScreen() {
     addShoppingItem,
     toggleShoppingItem,
     deleteShoppingItem,
+    assignShoppingItem,
     currentUserId,
   } = useAppContext();
 
@@ -44,6 +46,7 @@ export default function ShoppingScreen() {
   const [showNewListModal, setShowNewListModal] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
+  const [assignPickerItemId, setAssignPickerItemId] = useState<string | null>(null);
 
   const toggleListCollapse = (id: string) => {
     setCollapsedLists((prev) => {
@@ -77,6 +80,10 @@ export default function ShoppingScreen() {
     setShowNewListModal(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
+
+  const pickerItem = assignPickerItemId
+    ? shoppingItems.find((s) => s.id === assignPickerItemId)
+    : null;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -192,7 +199,9 @@ export default function ShoppingScreen() {
                       </Text>
                     ) : (
                       items.map((item) => {
-                        const addedBy = roommates.find((r) => r.id === item.addedBy);
+                        const assignee = item.assignedTo
+                          ? roommates.find((r) => r.id === item.assignedTo)
+                          : null;
                         return (
                           <View
                             key={item.id}
@@ -223,6 +232,7 @@ export default function ShoppingScreen() {
                                 <Feather name="check" size={12} color={colors.success} />
                               ) : null}
                             </TouchableOpacity>
+
                             <View style={{ flex: 1 }}>
                               <Text
                                 style={[
@@ -237,9 +247,35 @@ export default function ShoppingScreen() {
                                 {item.name}
                               </Text>
                               <Text style={[styles.shopMeta, { color: colors.mutedForeground }]}>
-                                {item.quantity} · {addedBy?.name ?? "?"}
+                                {item.quantity}
+                                {assignee ? ` · for ${assignee.id === currentUserId ? "you" : assignee.name}` : ""}
                               </Text>
                             </View>
+
+                            {/* Assignee avatar / assign button */}
+                            <TouchableOpacity
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              onPress={() => {
+                                if (!item.completed) setAssignPickerItemId(item.id);
+                              }}
+                              style={styles.assignBtn}
+                            >
+                              {assignee ? (
+                                <View style={[styles.assignedPill, { backgroundColor: assignee.color + "22", borderColor: assignee.color + "55" }]}>
+                                  <View style={[styles.pillDot, { backgroundColor: assignee.color }]} />
+                                  <Text style={[styles.pillText, { color: assignee.color }]}>
+                                    {assignee.id === currentUserId ? "You" : assignee.name}
+                                  </Text>
+                                </View>
+                              ) : (
+                                !item.completed && (
+                                  <View style={[styles.assignGhost, { borderColor: colors.border }]}>
+                                    <Feather name="user-plus" size={12} color={colors.mutedForeground} />
+                                  </View>
+                                )
+                              )}
+                            </TouchableOpacity>
+
                             <TouchableOpacity
                               onPress={() => deleteShoppingItem(item.id)}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -257,6 +293,80 @@ export default function ShoppingScreen() {
           })
         )}
       </ScrollView>
+
+      {/* ── Assignee Picker Modal ── */}
+      <Modal
+        visible={!!assignPickerItemId}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAssignPickerItemId(null)}
+      >
+        <Pressable style={styles.overlay} onPress={() => setAssignPickerItemId(null)} />
+        <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 }]}>
+          <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Assign to</Text>
+          {pickerItem && (
+            <Text style={[styles.assignPickerItemName, { color: colors.mutedForeground }]}>
+              {pickerItem.name}
+            </Text>
+          )}
+          <View style={styles.assignAvatarGrid}>
+            {roommates.map((r) => {
+              const selected = pickerItem?.assignedTo === r.id;
+              return (
+                <TouchableOpacity
+                  key={r.id}
+                  style={[
+                    styles.assignAvatarCell,
+                    {
+                      backgroundColor: selected ? r.color + "22" : colors.muted,
+                      borderColor: selected ? r.color : colors.border,
+                      borderWidth: selected ? 2 : 1,
+                    },
+                  ]}
+                  onPress={() => {
+                    assignShoppingItem(
+                      assignPickerItemId!,
+                      selected ? null : r.id
+                    );
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setAssignPickerItemId(null);
+                  }}
+                >
+                  <RoommateAvatar name={r.name} color={r.color} size={40} />
+                  <Text
+                    style={[
+                      styles.assignAvatarName,
+                      { color: selected ? r.color : colors.foreground, fontFamily: selected ? "Inter_600SemiBold" : "Inter_400Regular" },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {r.id === currentUserId ? "You" : r.name}
+                  </Text>
+                  {selected && (
+                    <View style={[styles.assignSelectedCheck, { backgroundColor: r.color }]}>
+                      <Feather name="check" size={9} color="#fff" />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {pickerItem?.assignedTo && (
+            <TouchableOpacity
+              style={[styles.clearAssignBtn, { borderColor: colors.border }]}
+              onPress={() => {
+                assignShoppingItem(assignPickerItemId!, null);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setAssignPickerItemId(null);
+              }}
+            >
+              <Feather name="x" size={14} color={colors.mutedForeground} />
+              <Text style={[styles.clearAssignText, { color: colors.mutedForeground }]}>Clear assignment</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Modal>
 
       {/* ── Add Item Modal ── */}
       <Modal visible={showShoppingModal} transparent animationType="slide">
@@ -407,7 +517,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 11,
     borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 12,
+    gap: 10,
   },
   shopCheck: {
     width: 20,
@@ -419,6 +529,27 @@ const styles = StyleSheet.create({
   },
   shopName: { fontFamily: "Inter_500Medium", fontSize: 14 },
   shopMeta: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 1 },
+  assignBtn: { alignItems: "center", justifyContent: "center" },
+  assignedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  pillDot: { width: 7, height: 7, borderRadius: 4 },
+  pillText: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  assignGhost: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
@@ -454,4 +585,52 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   addBtnText: { fontFamily: "Inter_700Bold", fontSize: 16, color: "#fff" },
+  assignPickerItemName: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    marginTop: -6,
+    marginBottom: 4,
+  },
+  assignAvatarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 4,
+  },
+  assignAvatarCell: {
+    width: "30%",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderRadius: 14,
+    gap: 6,
+    position: "relative",
+  },
+  assignAvatarName: {
+    fontSize: 13,
+    textAlign: "center",
+  },
+  assignSelectedCheck: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  clearAssignBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  clearAssignText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+  },
 });
