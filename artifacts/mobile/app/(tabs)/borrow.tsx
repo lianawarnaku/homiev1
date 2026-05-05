@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { useConfirm } from "@/hooks/useConfirm";
 
 function daysBetween(a: string, b: string) {
   return Math.round(
@@ -49,6 +50,7 @@ export default function BorrowScreen() {
     deleteBorrowItem,
   } = useAppContext();
 
+  const { confirm } = useConfirm();
   const [showModal, setShowModal] = useState(false);
   const [item, setItem] = useState("");
   const [borrowedFrom, setBorrowedFrom] = useState(
@@ -309,14 +311,7 @@ export default function BorrowScreen() {
                   ) : null}
                   <TouchableOpacity
                     onPress={() =>
-                      Alert.alert("Delete", "Remove this item?", [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Delete",
-                          style: "destructive",
-                          onPress: () => deleteBorrowItem(borrow.id),
-                        },
-                      ])
+                      confirm("delete_borrow", "Delete", "Remove this item?", () => deleteBorrowItem(borrow.id), { confirmText: "Delete", destructive: true })
                     }
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >

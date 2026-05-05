@@ -126,6 +126,8 @@ interface AppContextType {
   getBalances: () => Record<string, number>;
   essentialsAssignees: Record<string, Record<string, string>>;
   setEssentialAssignee: (sectionKey: string, item: string, roommateId: string | null) => void;
+  suppressedAlerts: Record<string, boolean>;
+  suppressAlert: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -370,6 +372,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [borrowItems, setBorrowItems] = useState<BorrowItem[]>(INITIAL_BORROWS);
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
+  const [suppressedAlerts, setSuppressedAlerts] = useState<Record<string, boolean>>({});
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -385,6 +388,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (data.borrowItems) setBorrowItems(data.borrowItems);
           if (data.nudges) setNudges(data.nudges);
           if (data.essentialsAssignees) setEssentialsAssignees(data.essentialsAssignees);
+          if (data.suppressedAlerts) setSuppressedAlerts(data.suppressedAlerts);
         } catch {}
       }
       setLoaded(true);
@@ -395,9 +399,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!loaded) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees })
+      JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts })
     );
-  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees]);
+  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts]);
 
   const addChore = useCallback((chore: Omit<Chore, "id">) => {
     setChores((prev) => [...prev, { ...chore, id: makeId() }]);
@@ -562,6 +566,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     ]);
   }, []);
 
+  const suppressAlert = useCallback((id: string) => {
+    setSuppressedAlerts((prev) => ({ ...prev, [id]: true }));
+  }, []);
+
   const removeNudge = useCallback((toRoommateId: string, choreId: string) => {
     setNudges((prev) =>
       prev.filter((n) => !(n.toRoommateId === toRoommateId && n.choreId === choreId))
@@ -630,6 +638,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         getBalances,
         essentialsAssignees,
         setEssentialAssignee,
+        suppressedAlerts,
+        suppressAlert,
       }}
     >
       {children}

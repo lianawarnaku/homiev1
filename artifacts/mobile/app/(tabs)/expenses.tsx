@@ -19,12 +19,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
+import { useColors } from "@/hooks/useColors";
+import { useConfirm } from "@/hooks/useConfirm";
 import {
   type ExpenseCategory,
   type RecurringInterval,
   useAppContext,
 } from "@/context/AppContext";
-import { useColors } from "@/hooks/useColors";
 
 const EXPENSE_CATEGORIES: {
   key: ExpenseCategory;
@@ -71,6 +72,7 @@ export default function ExpensesScreen() {
     currentUserId,
   } = useAppContext();
 
+  const { confirm } = useConfirm();
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [detailExpenseId, setDetailExpenseId] = useState<string | null>(null);
@@ -490,17 +492,7 @@ export default function ExpensesScreen() {
                           <TouchableOpacity
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             onPress={() =>
-                              Alert.alert(
-                                "Settle Up",
-                                "Mark this IOU as settled?",
-                                [
-                                  { text: "Cancel", style: "cancel" },
-                                  {
-                                    text: "Settle",
-                                    onPress: () => settleExpense(item.id),
-                                  },
-                                ]
-                              )
+                              confirm("settle_expense", "Settle Up", "Mark this IOU as settled?", () => settleExpense(item.id), { confirmText: "Settle" })
                             }
                           >
                             <Feather
@@ -512,14 +504,7 @@ export default function ExpensesScreen() {
                           <TouchableOpacity
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             onPress={() =>
-                              Alert.alert("Delete IOU", "Remove this expense?", [
-                                { text: "Cancel", style: "cancel" },
-                                {
-                                  text: "Delete",
-                                  style: "destructive",
-                                  onPress: () => deleteExpense(item.id),
-                                },
-                              ])
+                              confirm("delete_expense", "Delete IOU", "Remove this expense?", () => deleteExpense(item.id), { confirmText: "Delete", destructive: true })
                             }
                           >
                             <Feather
@@ -703,19 +688,15 @@ export default function ExpensesScreen() {
                               <TouchableOpacity
                                 style={[styles.detailMarkPaidBtn, { backgroundColor: colors.primary }]}
                                 onPress={() => {
-                                  Alert.alert(
+                                  confirm(
+                                    "mark_paid",
                                     "Mark as paid back?",
                                     `Confirm that you've paid ${payer?.name ?? "them"} back $${(amount as number).toFixed(2)}?`,
-                                    [
-                                      { text: "Cancel", style: "cancel" },
-                                      {
-                                        text: "Yes, I paid",
-                                        onPress: () => {
-                                          markPersonPaid(detailExp.id, currentUserId);
-                                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                                        },
-                                      },
-                                    ]
+                                    () => {
+                                      markPersonPaid(detailExp.id, currentUserId);
+                                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                                    },
+                                    { confirmText: "Yes, I paid" }
                                   );
                                 }}
                               >
@@ -763,20 +744,14 @@ export default function ExpensesScreen() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.detailActionBtn, { backgroundColor: colors.success + "14", borderColor: colors.success + "30" }]}
-                        onPress={() => Alert.alert("Settle Up", "Mark this entire IOU as settled?", [
-                          { text: "Cancel", style: "cancel" },
-                          { text: "Settle", onPress: () => { settleExpense(detailExp.id); setDetailExpenseId(null); } },
-                        ])}
+                        onPress={() => confirm("settle_expense", "Settle Up", "Mark this entire IOU as settled?", () => { settleExpense(detailExp.id); setDetailExpenseId(null); }, { confirmText: "Settle" })}
                       >
                         <Feather name="check-circle" size={14} color={colors.success} />
                         <Text style={[styles.detailActionBtnText, { color: colors.success }]}>Settle all</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.detailActionBtn, { backgroundColor: colors.destructive + "10", borderColor: colors.destructive + "20" }]}
-                        onPress={() => Alert.alert("Delete IOU", "Remove this expense?", [
-                          { text: "Cancel", style: "cancel" },
-                          { text: "Delete", style: "destructive", onPress: () => { deleteExpense(detailExp.id); setDetailExpenseId(null); } },
-                        ])}
+                        onPress={() => confirm("delete_expense", "Delete IOU", "Remove this expense?", () => { deleteExpense(detailExp.id); setDetailExpenseId(null); }, { confirmText: "Delete", destructive: true })}
                       >
                         <Feather name="trash-2" size={14} color={colors.destructive} />
                         <Text style={[styles.detailActionBtnText, { color: colors.destructive }]}>Delete</Text>

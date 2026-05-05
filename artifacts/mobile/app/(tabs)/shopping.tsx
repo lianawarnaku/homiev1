@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { useConfirm } from "@/hooks/useConfirm";
 
 export default function ShoppingScreen() {
   const colors = useColors();
@@ -36,6 +37,7 @@ export default function ShoppingScreen() {
     currentUserId,
   } = useAppContext();
 
+  const { confirm } = useConfirm();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
 
@@ -171,18 +173,7 @@ export default function ShoppingScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() =>
-                      Alert.alert(
-                        "Delete List",
-                        `Delete "${list.name}" and all its items?`,
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          {
-                            text: "Delete",
-                            style: "destructive",
-                            onPress: () => deleteShoppingList(list.id),
-                          },
-                        ]
-                      )
+                      confirm("delete_shopping_list", "Delete List", `Delete "${list.name}" and all its items?`, () => deleteShoppingList(list.id), { confirmText: "Delete", destructive: true })
                     }
                     hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   >

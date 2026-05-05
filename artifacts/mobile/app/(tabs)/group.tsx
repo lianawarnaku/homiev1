@@ -18,6 +18,7 @@ import { HomePlant } from "@/components/HomePlant";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { useConfirm } from "@/hooks/useConfirm";
 
 function isOverdue(dateStr: string) {
   return new Date(dateStr) < new Date();
@@ -62,6 +63,7 @@ export default function GroupChoresScreen() {
   const insets = useSafeAreaInsets();
   const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges } = useAppContext();
 
+  const { confirm, info } = useConfirm();
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
   const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
 
@@ -70,36 +72,32 @@ export default function GroupChoresScreen() {
     if (!chore || chore.completed) return;
 
     if (assignedTo === currentUserId) {
-      Alert.alert("Complete chore?", `Mark "${choreName}" as done?`, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Done ✓",
-          onPress: () => {
-            completeChore(choreId);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          },
+      confirm(
+        "complete_chore",
+        "Complete chore?",
+        `Mark "${choreName}" as done?`,
+        () => {
+          completeChore(choreId);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         },
-      ]);
+        { confirmText: "Done ✓" }
+      );
     } else {
-      Alert.alert(
+      confirm(
+        "pickup_chore",
         "Pick up this chore? 🙌",
         `Complete "${choreName}" for them and earn ${chorePoints + 25} pts (${chorePoints} + 25 bonus)!`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Pick it up!",
-            onPress: () => {
-              pickUpChore(choreId, currentUserId);
-              setPickedUpChores((prev) => new Set([...prev, choreId]));
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert(
-                "Nice one! 🌟",
-                `You earned ${chorePoints + 25} pts — ${chorePoints} for the chore + 25 bonus!`,
-                [{ text: "🎉" }]
-              );
-            },
-          },
-        ]
+        () => {
+          pickUpChore(choreId, currentUserId);
+          setPickedUpChores((prev) => new Set([...prev, choreId]));
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          info(
+            "pickup_success",
+            "Nice one! 🌟",
+            `You earned ${chorePoints + 25} pts — ${chorePoints} for the chore + 25 bonus!`
+          );
+        },
+        { confirmText: "Pick it up!" }
       );
     }
   };
@@ -156,22 +154,18 @@ export default function GroupChoresScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       return;
     }
-    Alert.alert("Send Anonymous Nudge", `Remind about "${choreName}"?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Nudge 👋",
-        onPress: () => {
-          sendNudge(roommateId, choreId);
-          setNudgedChores((prev) => new Set([...prev, key]));
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          Alert.alert(
-            "Nudge sent!",
-            "Your roommate got an anonymous reminder.",
-            [{ text: "Got it" }]
-          );
-        },
+    confirm(
+      "send_nudge",
+      "Send Anonymous Nudge",
+      `Remind about "${choreName}"?`,
+      () => {
+        sendNudge(roommateId, choreId);
+        setNudgedChores((prev) => new Set([...prev, key]));
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        info("nudge_sent", "Nudge sent!", "Your roommate got an anonymous reminder.");
       },
-    ]);
+      { confirmText: "Nudge 👋" }
+    );
   };
 
   return (

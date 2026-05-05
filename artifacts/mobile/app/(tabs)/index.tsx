@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState } from "@/components/EmptyState";
 import { type ChoreCategory, useAppContext } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feather.glyphMap }[] = [
   { key: "cleaning", label: "Cleaning", icon: "wind" },
@@ -73,6 +74,7 @@ interface ChoreRowProps {
 
 function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProps) {
   const colors = useColors();
+  const { confirm } = useConfirm();
   const cat = CATEGORIES.find((c) => c.key === chore.category) ?? CATEGORIES[5];
   const overdue = isOverdue(chore.dueDate, chore.completed);
   const [calState, setCalState] = useState<"idle" | "loading" | "done" | "error">("idle");
@@ -201,10 +203,7 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
 
       <TouchableOpacity
         onPress={() =>
-          Alert.alert("Delete Chore", "Are you sure?", [
-            { text: "Cancel", style: "cancel" },
-            { text: "Delete", style: "destructive", onPress: () => onDelete(chore.id) },
-          ])
+          confirm("delete_chore", "Delete Chore", "Are you sure?", () => onDelete(chore.id), { confirmText: "Delete", destructive: true })
         }
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
