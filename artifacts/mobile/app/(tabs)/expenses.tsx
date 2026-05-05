@@ -589,7 +589,7 @@ export default function ExpensesScreen() {
                               },
                             ]}
                           >
-                            {isMe ? "You" : person.name}{hasPaidBack ? " paid" : ` owes $${(amount as number).toFixed(2)}`}
+                            {isMe ? "You" : person.name}{hasPaidBack ? " paid" : ` ${isMe ? "owe" : "owes"} $${(amount as number).toFixed(2)}`}
                           </Text>
                         </View>
                       );
