@@ -68,12 +68,14 @@ interface ChoreRowProps {
   };
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
+  onAddToCalendar: () => Promise<void>;
 }
 
-function ChoreRow({ chore, onComplete, onDelete }: ChoreRowProps) {
+function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProps) {
   const colors = useColors();
   const cat = CATEGORIES.find((c) => c.key === chore.category) ?? CATEGORIES[5];
   const overdue = isOverdue(chore.dueDate, chore.completed);
+  const [calState, setCalState] = useState<"idle" | "loading" | "done" | "error">("idle");
 
   const dueDateColor = chore.completed
     ? colors.mutedForeground
@@ -82,6 +84,29 @@ function ChoreRow({ chore, onComplete, onDelete }: ChoreRowProps) {
     : isToday(chore.dueDate)
     ? colors.primary
     : colors.mutedForeground;
+
+  const handleCalendar = async () => {
+    if (calState === "loading" || calState === "done") return;
+    setCalState("loading");
+    try {
+      await onAddToCalendar();
+      setCalState("done");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      setCalState("error");
+      Alert.alert("Couldn't add to calendar", "Please try again.");
+      setTimeout(() => setCalState("idle"), 2000);
+    }
+  };
+
+  const calColor =
+    calState === "done"
+      ? colors.success
+      : calState === "error"
+      ? colors.destructive
+      : calState === "loading"
+      ? colors.mutedForeground
+      : colors.primary;
 
   return (
     <View
@@ -145,6 +170,34 @@ function ChoreRow({ chore, onComplete, onDelete }: ChoreRowProps) {
           +{chore.points}
         </Text>
       </View>
+
+      {/* Add to Google Calendar */}
+      <TouchableOpacity
+        onPress={handleCalendar}
+        disabled={calState === "loading" || calState === "done"}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={[
+          styles.calBtn,
+          {
+            backgroundColor:
+              calState === "done"
+                ? colors.success + "18"
+                : calState === "loading"
+                ? colors.muted
+                : colors.primary + "14",
+            borderColor:
+              calState === "done"
+                ? colors.success + "55"
+                : colors.primary + "30",
+          },
+        ]}
+      >
+        <Feather
+          name={calState === "done" ? "check" : "calendar"}
+          size={13}
+          color={calColor}
+        />
+      </TouchableOpacity>
 
       <TouchableOpacity
         onPress={() =>
@@ -296,6 +349,21 @@ export default function MyChoresScreen() {
             chore={item}
             onComplete={completeChore}
             onDelete={deleteChore}
+            onAddToCalendar={async () => {
+              const domain = process.env.EXPO_PUBLIC_DOMAIN;
+              const baseUrl = domain ? `https://${domain}` : "";
+              const res = await fetch(`${baseUrl}/api/calendar/add-chore`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  title: item.title,
+                  dueDate: item.dueDate,
+                  category: item.category,
+                  points: item.points,
+                }),
+              });
+              if (!res.ok) throw new Error("Calendar API error");
+            }}
           />
         )}
       />
@@ -623,5 +691,14 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontFamily: "Inter_700Bold",
     fontSize: 16,
+  },
+  calBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
   },
 });
