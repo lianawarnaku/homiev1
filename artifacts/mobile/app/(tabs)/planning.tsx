@@ -292,6 +292,7 @@ function CustomChoreInput({
   mutedColor,
   borderColor,
   cardBg,
+  triggerLabel,
 }: {
   chores: string[];
   onAdd: (chore: string) => void;
