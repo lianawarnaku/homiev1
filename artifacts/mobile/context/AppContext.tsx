@@ -146,7 +146,7 @@ const INITIAL_ROOMMATES: Roommate[] = [
   },
   {
     id: "2",
-    name: "Maya",
+    name: "Roha",
     color: "#22C55E",
     points: 320,
     weeklyPoints: 60,
@@ -351,7 +351,7 @@ const INITIAL_BORROWS: BorrowItem[] = [
   },
 ];
 
-const STORAGE_KEY = "homebase_data_v6";
+const STORAGE_KEY = "homebase_data_v7";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [roommates, setRoommates] = useState<Roommate[]>(INITIAL_ROOMMATES);
