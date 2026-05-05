@@ -26,7 +26,6 @@ const KITCHEN_AMENITIES = [
   { key: "fridge", label: "Refrigerator" },
   { key: "coffee", label: "Coffee Machine" },
   { key: "ice_maker", label: "Ice Maker" },
-  { key: "kettle", label: "Kettle" },
   { key: "toaster_oven", label: "Toaster Oven" },
 ];
 
@@ -79,7 +78,6 @@ const KITCHEN_CHORE_MAP: Record<string, { title: string; points: number }> = {
   fridge: { title: "Wipe fridge shelves & door", points: 20 },
   coffee: { title: "Descale & clean coffee machine", points: 15 },
   ice_maker: { title: "Clean ice maker", points: 15 },
-  kettle: { title: "Descale kettle", points: 10 },
   toaster_oven: { title: "Clean toaster oven tray", points: 10 },
 };
 
