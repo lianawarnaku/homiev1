@@ -334,8 +334,8 @@ export default function ExpensesScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-            style={{ marginBottom: 10 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: "center" }}
+            style={{ marginBottom: 10, minHeight: 96 }}
           >
             {roommates
               .filter((r) => r.id !== currentUserId)

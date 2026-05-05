@@ -35,8 +35,12 @@ function formatDueDate(dateStr: string) {
 }
 
 const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
+  blooming: {
+    title: "In full bloom! 🌸",
+    subtitle: "look! your home looks beautiful",
+  },
   thriving: {
-    title: "Thriving! 🌸",
+    title: "Thriving! 🌿",
     subtitle: "Your home is in great shape",
   },
   healthy: {
@@ -108,7 +112,9 @@ export default function GroupChoresScreen() {
   const healthPct = totalChores > 0 ? completedChores / totalChores : 0;
 
   const stage =
-    healthPct >= 0.75
+    healthPct >= 1
+      ? "blooming"
+      : healthPct >= 0.75
       ? "thriving"
       : healthPct >= 0.5
       ? "healthy"
@@ -117,7 +123,9 @@ export default function GroupChoresScreen() {
       : "dying";
 
   const healthColor =
-    healthPct >= 0.75
+    healthPct >= 1
+      ? "#E879A0"
+      : healthPct >= 0.75
       ? colors.success
       : healthPct >= 0.5
       ? colors.primary

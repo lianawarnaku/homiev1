@@ -1,9 +1,10 @@
 import React from "react";
-import Svg, { Circle, Ellipse, Path } from "react-native-svg";
+import Svg, { Circle, Ellipse, Path, G } from "react-native-svg";
 
-export type PlantStage = "thriving" | "healthy" | "struggling" | "dying";
+export type PlantStage = "blooming" | "thriving" | "healthy" | "struggling" | "dying";
 
 export function getPlantStage(health: number): PlantStage {
+  if (health >= 1) return "blooming";
   if (health >= 0.75) return "thriving";
   if (health >= 0.5) return "healthy";
   if (health >= 0.25) return "struggling";
@@ -21,6 +22,7 @@ export function HomePlant({ health, size = 140 }: HomePlantProps) {
 
   // Stem + leaf colors per stage
   const stemColor = {
+    blooming: "#15803D",
     thriving: "#15803D",
     healthy: "#16A34A",
     struggling: "#65A30D",
@@ -28,6 +30,7 @@ export function HomePlant({ health, size = 140 }: HomePlantProps) {
   }[stage];
 
   const leaf1 = {
+    blooming: "#16A34A",
     thriving: "#16A34A",
     healthy: "#22C55E",
     struggling: "#84CC16",
@@ -35,6 +38,7 @@ export function HomePlant({ health, size = 140 }: HomePlantProps) {
   }[stage];
 
   const leaf2 = {
+    blooming: "#22C55E",
     thriving: "#22C55E",
     healthy: "#4ADE80",
     struggling: "#BEF264",
@@ -43,6 +47,7 @@ export function HomePlant({ health, size = 140 }: HomePlantProps) {
 
   // Soil richness reflects health too
   const soilDeep = {
+    blooming: "#3A1E0C",
     thriving: "#4A2C16",
     healthy: "#5C3D1E",
     struggling: "#7A5030",
@@ -50,6 +55,7 @@ export function HomePlant({ health, size = 140 }: HomePlantProps) {
   }[stage];
 
   const soilTop = {
+    blooming: "#5B3218",
     thriving: "#6B4226",
     healthy: "#7C5230",
     struggling: "#9A7050",
@@ -77,6 +83,50 @@ export function HomePlant({ health, size = 140 }: HomePlantProps) {
       <Ellipse cx={70} cy={146} rx={33} ry={5} fill={soilTop} />
 
       {/* ── Plant per stage ────────────────────────────── */}
+
+      {stage === "blooming" && (
+        <>
+          {/* Straight, sturdy stem */}
+          <Path
+            d="M70,144 L70,28"
+            stroke={stemColor}
+            strokeWidth={5}
+            fill="none"
+            strokeLinecap="round"
+          />
+          {/* Bottom-left leaf */}
+          <Path
+            d="M70,108 C50,88 8,93 5,110 C8,127 50,125 70,108 Z"
+            fill={leaf1}
+          />
+          {/* Right leaf */}
+          <Path
+            d="M70,82 C90,62 132,66 135,83 C132,100 90,100 70,82 Z"
+            fill={leaf1}
+          />
+          {/* Upper-left leaf */}
+          <Path
+            d="M70,54 C50,34 12,40 10,56 C12,72 50,70 70,54 Z"
+            fill={leaf2}
+          />
+          {/* Full flower — 8 petals radiating from center */}
+          <G>
+            {/* Petals: top, bottom, left, right, diagonals */}
+            <Ellipse cx={70} cy={10}  rx={7} ry={11} fill="#FCA5A5" />
+            <Ellipse cx={70} cy={38}  rx={7} ry={11} fill="#FCA5A5" />
+            <Ellipse cx={56} cy={24}  rx={11} ry={7} fill="#FCA5A5" />
+            <Ellipse cx={84} cy={24}  rx={11} ry={7} fill="#FCA5A5" />
+            <Ellipse cx={60} cy={14}  rx={7} ry={10} fill="#FBBF24" opacity={0.7} />
+            <Ellipse cx={80} cy={14}  rx={7} ry={10} fill="#FBBF24" opacity={0.7} />
+            <Ellipse cx={60} cy={34}  rx={7} ry={10} fill="#FBBF24" opacity={0.7} />
+            <Ellipse cx={80} cy={34}  rx={7} ry={10} fill="#FBBF24" opacity={0.7} />
+            {/* Flower centre */}
+            <Circle cx={70} cy={24} r={10} fill="#FDE68A" />
+            <Circle cx={70} cy={24} r={6}  fill="#FACC15" />
+            <Circle cx={70} cy={24} r={3}  fill="#F59E0B" />
+          </G>
+        </>
+      )}
 
       {stage === "thriving" && (
         <>
