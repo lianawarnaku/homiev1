@@ -351,7 +351,7 @@ const INITIAL_BORROWS: BorrowItem[] = [
   },
 ];
 
-const STORAGE_KEY = "homebase_data_v5";
+const STORAGE_KEY = "homebase_data_v6";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [roommates, setRoommates] = useState<Roommate[]>(INITIAL_ROOMMATES);
