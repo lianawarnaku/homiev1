@@ -183,6 +183,161 @@ function ChipToggle({
   );
 }
 
+// ── Custom chore inline adder ──────────────────────────────────────────────
+function CustomChoreInput({
+  chores,
+  onAdd,
+  onRemove,
+  accentColor,
+  textColor,
+  mutedColor,
+  borderColor,
+  cardBg,
+}: {
+  chores: string[];
+  onAdd: (chore: string) => void;
+  onRemove: (index: number) => void;
+  accentColor: string;
+  textColor: string;
+  mutedColor: string;
+  borderColor: string;
+  cardBg: string;
+}) {
+  const [inputVisible, setInputVisible] = useState(false);
+  const [text, setText] = useState("");
+
+  const confirm = () => {
+    const trimmed = text.trim();
+    if (trimmed) {
+      onAdd(trimmed);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setText("");
+    setInputVisible(false);
+  };
+
+  return (
+    <View style={customStyles.wrapper}>
+      {/* Existing custom chores */}
+      {chores.map((chore, i) => (
+        <View
+          key={i}
+          style={[
+            customStyles.customRow,
+            { backgroundColor: accentColor + "10", borderColor: accentColor + "30" },
+          ]}
+        >
+          <Feather name="edit-3" size={12} color={accentColor} />
+          <Text style={[customStyles.customText, { color: textColor }]} numberOfLines={1}>
+            {chore}
+          </Text>
+          <TouchableOpacity
+            onPress={() => onRemove(i)}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Feather name="x" size={14} color={mutedColor} />
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      {/* Input row or trigger button */}
+      {inputVisible ? (
+        <View
+          style={[
+            customStyles.inputRow,
+            { backgroundColor: cardBg, borderColor: accentColor + "55" },
+          ]}
+        >
+          <TextInput
+            style={[customStyles.inlineInput, { color: textColor }]}
+            placeholder="Type a chore name..."
+            placeholderTextColor={mutedColor}
+            value={text}
+            onChangeText={setText}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={confirm}
+          />
+          <TouchableOpacity onPress={confirm} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <Feather name="check" size={18} color={accentColor} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { setInputVisible(false); setText(""); }}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Feather name="x" size={16} color={mutedColor} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[customStyles.trigger, { borderColor: accentColor + "50" }]}
+          onPress={() => setInputVisible(true)}
+          activeOpacity={0.7}
+        >
+          <View style={[customStyles.triggerIcon, { backgroundColor: accentColor + "18" }]}>
+            <Feather name="plus" size={13} color={accentColor} />
+          </View>
+          <Text style={[customStyles.triggerText, { color: accentColor }]}>
+            Add a custom chore
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+const customStyles = StyleSheet.create({
+  wrapper: { marginTop: 14, gap: 6 },
+  customRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  customText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    flex: 1,
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  inlineInput: {
+    flex: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    paddingVertical: 4,
+  },
+  trigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderRadius: 10,
+    paddingLeft: 10,
+  },
+  triggerIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  triggerText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
+});
+
 // ── Section card wrapper ───────────────────────────────────────────────────
 function SectionCard({
   title,
@@ -230,6 +385,9 @@ export default function PlanningScreen() {
   const [bathroomChores, setBathroomChores] = useState<Set<string>>(new Set());
   const [livingItems, setLivingItems] = useState<Set<string>>(new Set());
   const [livingChores, setLivingChores] = useState<Set<string>>(new Set());
+  const [customKitchenChores, setCustomKitchenChores] = useState<string[]>([]);
+  const [customBathroomChores, setCustomBathroomChores] = useState<string[]>([]);
+  const [customLivingChores, setCustomLivingChores] = useState<string[]>([]);
   const [preferences, setPreferences] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -324,6 +482,11 @@ export default function PlanningScreen() {
         if (c) assign(c.label, "cleaning", c.points, 7);
       });
     }
+
+    // ── Custom chores ──
+    customKitchenChores.forEach((title) => assign(title, "kitchen", 15, 7));
+    customBathroomChores.forEach((title) => assign(title, "bathroom", 15, 7));
+    customLivingChores.forEach((title) => assign(title, "cleaning", 15, 7));
 
     return count;
   }
@@ -638,6 +801,16 @@ export default function PlanningScreen() {
                 />
               ))}
             </View>
+            <CustomChoreInput
+              chores={customKitchenChores}
+              onAdd={(c) => setCustomKitchenChores((prev) => [...prev, c])}
+              onRemove={(i) => setCustomKitchenChores((prev) => prev.filter((_, idx) => idx !== i))}
+              accentColor={colors.primary}
+              textColor={colors.foreground}
+              mutedColor={colors.mutedForeground}
+              borderColor={colors.border}
+              cardBg={colors.card}
+            />
           </SectionCard>
 
           {/* Bathroom Setup (suite + apartment) */}
@@ -692,6 +865,16 @@ export default function PlanningScreen() {
                   mutedColor={colors.mutedForeground}
                 />
               ))}
+              <CustomChoreInput
+                chores={customBathroomChores}
+                onAdd={(c) => setCustomBathroomChores((prev) => [...prev, c])}
+                onRemove={(i) => setCustomBathroomChores((prev) => prev.filter((_, idx) => idx !== i))}
+                accentColor={colors.success}
+                textColor={colors.foreground}
+                mutedColor={colors.mutedForeground}
+                borderColor={colors.border}
+                cardBg={colors.card}
+              />
             </SectionCard>
           )}
 
@@ -747,6 +930,16 @@ export default function PlanningScreen() {
                   mutedColor={colors.mutedForeground}
                 />
               ))}
+              <CustomChoreInput
+                chores={customLivingChores}
+                onAdd={(c) => setCustomLivingChores((prev) => [...prev, c])}
+                onRemove={(i) => setCustomLivingChores((prev) => prev.filter((_, idx) => idx !== i))}
+                accentColor={colors.warning}
+                textColor={colors.foreground}
+                mutedColor={colors.mutedForeground}
+                borderColor={colors.border}
+                cardBg={colors.card}
+              />
             </SectionCard>
           )}
         </View>
