@@ -675,10 +675,12 @@ export default function PlanningScreen() {
     // ── Auto-chores by housing type ──
     if (housingType === "traditional") {
       assign("Clean communal bathroom", "bathroom", 25, 7);
+      assign("Vacuum floors & rugs", "cleaning", 20, 7);
     }
     if (housingType === "suite") {
       assign("Clean bedroom", "cleaning", 20, 7);
       assign("Clean en-suite bathroom", "bathroom", 25, 7);
+      assign("Vacuum floors & rugs", "cleaning", 20, 7);
     }
     if (housingType === "apartment") {
       assign("Clean bedroom", "cleaning", 20, 7);
