@@ -85,17 +85,9 @@ export default function BorrowScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const handleReturn = (id: string, itemName: string) => {
-    Alert.alert("Return Item", `Mark "${itemName}" as returned?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Returned",
-        onPress: () => {
-          returnBorrowItem(id);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        },
-      },
-    ]);
+  const handleReturn = (id: string) => {
+    returnBorrowItem(id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   return (
@@ -305,7 +297,7 @@ export default function BorrowScreen() {
                         styles.returnBtn,
                         { backgroundColor: colors.success + "18", borderColor: colors.success + "44" },
                       ]}
-                      onPress={() => handleReturn(borrow.id, borrow.item)}
+                      onPress={() => handleReturn(borrow.id)}
                     >
                       <Feather name="check" size={14} color={colors.success} />
                       <Text
