@@ -29,13 +29,45 @@ router.post("/planning/suggest", async (req, res) => {
   let userPrompt = "";
 
   if (type === "chore-chart") {
+    const names = roommateNames;
+    const n = Array.isArray(roommates) ? roommates.length : 6;
+
+    // Size-appropriate grouping guidance
+    let sizeGuide = "";
+    if (n <= 2) {
+      sizeGuide = "2 people: Person A alternates bathroom heavy + kitchen heavy; Person B does kitchen light + vacuum/mop + bathroom light. Swap each week.";
+    } else if (n === 3) {
+      sizeGuide = "3 people: A=Bathroom heavy, B=Kitchen heavy, C=Kitchen light + vacuum. Rotate each week.";
+    } else if (n === 4) {
+      sizeGuide = "4 people: A=Bathroom heavy, B=Bathroom light + vacuum, C=Kitchen heavy, D=Kitchen light + counters. Rotate each week.";
+    } else if (n <= 6) {
+      sizeGuide = `${n} people (5–6): Tier 1 (harder): Bathroom heavy, Kitchen heavy. Tier 2 (easier): Bathroom light, Kitchen light, Vacuum/mop. ${n === 6 ? "1 person on ad hoc rotation." : ""} Rotate tiers each week.`;
+    } else {
+      sizeGuide = `${n} people (7+): 5 main chore slots (bathroom heavy, bathroom light, kitchen heavy, kitchen light, vacuum/mop), remaining people on ad hoc rotation. Bathroom heavy rotates through a sub-group. Rotate slots weekly.`;
+    }
+
     userPrompt =
-      `Create a fair and balanced weekly chore chart for: ${roommateNames}. ` +
-      (preferences ? `Additional context: ${preferences}. ` : "") +
-      "Include: daily tasks, weekly tasks, and monthly tasks. " +
-      "Assign tasks fairly and rotate where possible. " +
-      "Include estimated time for each task. " +
-      "Format clearly with days of the week and clear assignments.";
+      `Generate a 12-week chore rotation chart for these ${n} roommates: ${names}.\n\n` +
+      `CHORE GROUPS (treat each as a single weekly assignment — do NOT split into daily tasks):\n` +
+      `1. Bathroom Heavy — toilet, shower/tub, floor sweep & mop (hardest, highest priority for fairness)\n` +
+      `2. Bathroom Light — sink, mirror, restock supplies, empty bathroom trash, bathmat\n` +
+      `3. Kitchen Heavy — stove, microwave, air fryer, wipe all appliances\n` +
+      `4. Kitchen Light — countertops, run/unload dishwasher or dish rack, check fridge\n` +
+      `5. Vacuum/Mop — common areas, hallway, living room\n` +
+      `6. Ad Hoc — on-call helper, check in with roommates and assist where needed\n\n` +
+      `GROUP SIZE GUIDE: ${sizeGuide}\n\n` +
+      `ROTATION RULES (strictly enforce these):\n` +
+      `- CRITICAL: No person does Bathroom Heavy two weeks in a row. This is the #1 fairness constraint.\n` +
+      `- It is okay for a person to repeat any other chore group in consecutive weeks.\n` +
+      `- Bathroom Heavy must be distributed as evenly as possible across all ${n} people over 12 weeks.\n` +
+      `- Lighter chores (Ad Hoc, Vacuum/Mop) should not consistently fall to the same people.\n` +
+      `- After 12 weeks the cycle can repeat.\n\n` +
+      (preferences ? `Home details: ${preferences}\n\n` : "") +
+      `OUTPUT FORMAT — produce a clean, readable plain-text table like this:\n` +
+      `Week | Bathroom Heavy | Bathroom Light | Kitchen Heavy | Kitchen Light | Vacuum/Mop | Ad Hoc\n` +
+      `Then list weeks 1–12 in rows.\n` +
+      `After the table, add a one-paragraph "Fairness check" noting how many times each person does Bathroom Heavy.\n` +
+      `Do not use markdown headers with ##. Keep it scannable.`;
   } else {
     const masterList = `
 Room & Bedroom: Shower Caddy, Standing Fan / Box Fan, Room Decor (string lights, posters, pictures), Small Rug, Mirror, Towel Hook (Command Strip), Hangers, Plastic Storage Bins (under bed / top of wardrobe), Lamp, Alarm Clock, Whiteboard for Door.
@@ -77,7 +109,7 @@ Food Staples: Ramen, Instant Oatmeal, Chips / Crackers / Cookies, Granola Bars, 
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      max_completion_tokens: 1800,
+      max_completion_tokens: 3000,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },

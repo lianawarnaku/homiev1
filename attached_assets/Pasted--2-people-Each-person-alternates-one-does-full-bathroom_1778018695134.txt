@@ -1,0 +1,95 @@
+**2 people:**
+- Each person alternates: one does full bathroom + kitchen heavy, other does kitchen light + vacuum. Swap weekly.
+
+**3 people:**
+- Person A: Bathroom (heavy)
+- Person B: Kitchen (heavy)
+- Person C: Kitchen (light) + vacuum
+- Rotate each week.
+
+**4 people:**
+- Person A: Bathroom (heavy)
+- Person B: Bathroom (light) / common area
+- Person C: Kitchen (heavy)
+- Person D: Kitchen (light) + vacuum
+- Rotate.
+
+**5–6 people:**
+- Split into two chore "tiers":
+  - Tier 1 (harder): Bathroom heavy, Kitchen heavy
+  - Tier 2 (easier): Bathroom light, Kitchen light, Vacuum/mop
+  - 1–2 people on ad hoc each week (rotate)
+- Ensure no one does bathroom heavy back-to-back weeks.
+
+**7 people (reference implementation from existing chart):**
+- 3-person group handles small bathroom rotation (e.g., Amarah → Akshaya → Cassandra)
+- 4-person group handles big bathroom rotation (e.g., Roha → Esha → Safa → Sumaiya)
+- Kitchen light and kitchen heavy rotate through all 7 independently
+- Vacuum rotates through all 7
+- 2 remaining people each week = ad hoc/unassigned helpers
+- No person repeats a chore in consecutive weeks
+
+**8–10 people:**
+- Assign 2 people per chore category (they share the work)
+- More ad hoc slots
+- Consider splitting into sub-groups by floor or bathroom cluster
+- Rotate sub-groups as units for bathroom duty
+
+---
+
+## ROTATION RULES
+
+1. No person should repeat the same chore two weeks in a row.
+2. Bathroom (heavy) should be spread as evenly as possible. It is the highest-priority fairness constraint.
+3. Lighter chores (ad hoc, vacuum) should not always fall to the same people.
+4. Generate at minimum a 12-week rotation (one semester/quarter).
+5. After 12 weeks, the cycle can repeat or be reshuffled.
+
+---
+
+## OUTPUT FORMAT
+
+Return the chart as:
+- A structured JSON object (for programmatic use), AND
+- A human-readable table
+
+JSON shape:
+```json
+{
+  "weeks": [
+    {
+      "week": 1,
+      "assignments": {
+        "bathroom_heavy": ["Name"],
+        "bathroom_light": ["Name"],
+        "kitchen_heavy": ["Name"],
+        "kitchen_light": ["Name"],
+        "vacuum_mop": ["Name"],
+        "ad_hoc": ["Name", "Name"]
+      }
+    }
+  ]
+}
+```
+
+---
+
+## CHORE DESCRIPTIONS (show these as tooltips or legend in the UI)
+
+- **Bathroom Heavy**: Toilet, shower/tub, floor sweep & mop
+- **Bathroom Light**: Sink, mirror, restock supplies, empty trash, bathmat
+- **Kitchen Heavy**: Stove, microwave, air fryer, wipe all appliances
+- **Kitchen Light**: Countertops, run/unload dishwasher, check fridge
+- **Vacuum/Mop**: Common areas, hallway, living room (1–2x/week recommended)
+- **Ad Hoc**: On-call helper — check in with roommates, assist where needed
+
+This gives your bot everything it needs: the data model, the grouping logic, the fairness constraints, and the output format. You can feed names and living situation type as variables and it'll generate the full schedule. Want me to also build a visual UI mockup for the chore chart creator itself?
+        .cc-install-nudge { container-type: inline-size; }
+        @keyframes ccInstallNudgeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @container (max-width: 450px) {
+          .cc-install-nudge-icon { display: none; }
+        }
+      
