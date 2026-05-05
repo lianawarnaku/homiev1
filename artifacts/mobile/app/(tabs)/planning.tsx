@@ -28,6 +28,13 @@ const KITCHEN_AMENITIES = [
   { key: "coffee", label: "Coffee Machine" },
   { key: "ice_maker", label: "Ice Maker" },
   { key: "toaster_oven", label: "Toaster Oven" },
+  { key: "dining_table", label: "Dining Table" },
+  { key: "stove", label: "Stove / Cooktop" },
+  { key: "air_fryer", label: "Air Fryer" },
+  { key: "toaster", label: "Toaster" },
+  { key: "dishwasher", label: "Dishwasher" },
+  { key: "drying_rack", label: "Drying Rack" },
+  { key: "oven", label: "Oven" },
 ];
 
 // ── Bathroom fixtures (suite + apartment) ──────────────────────────────────
@@ -51,13 +58,6 @@ const BATHROOM_CHORES = [
 // ── Living area fixtures (apartment only) ──────────────────────────────────
 const LIVING_ITEMS = [
   { key: "couches", label: "Couches / Sofa" },
-  { key: "dining_table", label: "Dining Table" },
-  { key: "stove", label: "Stove / Cooktop" },
-  { key: "air_fryer", label: "Air Fryer" },
-  { key: "toaster", label: "Toaster" },
-  { key: "dishwasher", label: "Dishwasher" },
-  { key: "drying_rack", label: "Drying Rack" },
-  { key: "oven", label: "Oven" },
 ];
 
 // ── Living area chores (apartment only) ────────────────────────────────────
@@ -79,11 +79,6 @@ const KITCHEN_CHORE_MAP: Record<string, { title: string; points: number }> = {
   coffee: { title: "Descale & clean coffee machine", points: 15 },
   ice_maker: { title: "Clean ice maker", points: 15 },
   toaster_oven: { title: "Clean toaster oven tray", points: 10 },
-};
-
-// ── Living item chore map ──────────────────────────────────────────────────
-const LIVING_ITEM_CHORE_MAP: Record<string, { title: string; points: number }> = {
-  couches: { title: "Vacuum & lint-roll couches", points: 15 },
   dining_table: { title: "Wipe & disinfect dining table", points: 10 },
   stove: { title: "Clean stovetop & burners", points: 20 },
   air_fryer: { title: "Clean air fryer basket", points: 10 },
@@ -91,6 +86,11 @@ const LIVING_ITEM_CHORE_MAP: Record<string, { title: string; points: number }> =
   dishwasher: { title: "Run/empty dishwasher & wipe door", points: 10 },
   drying_rack: { title: "Put away dishes from drying rack", points: 10 },
   oven: { title: "Deep clean oven", points: 30 },
+};
+
+// ── Living item chore map ──────────────────────────────────────────────────
+const LIVING_ITEM_CHORE_MAP: Record<string, { title: string; points: number }> = {
+  couches: { title: "Vacuum & lint-roll couches", points: 15 },
 };
 
 // ── Home Essentials sections (from dorm essentials reference list) ─────────
