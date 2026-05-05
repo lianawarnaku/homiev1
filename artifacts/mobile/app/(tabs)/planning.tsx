@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAppContext, type ChoreCategory } from "@/context/AppContext";
+import { useAppContext, type ChoreCategory, type Roommate } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 
 type PlanType = "chore-chart" | "home-checklist" | null;
@@ -301,6 +301,7 @@ function CustomChoreInput({
   mutedColor: string;
   borderColor: string;
   cardBg: string;
+  triggerLabel?: string;
 }) {
   const [inputVisible, setInputVisible] = useState(false);
   const [text, setText] = useState("");
@@ -377,7 +378,7 @@ function CustomChoreInput({
             <Feather name="plus" size={13} color={accentColor} />
           </View>
           <Text style={[customStyles.triggerText, { color: accentColor }]}>
-            Add a custom chore
+            {triggerLabel ?? "Add a custom chore"}
           </Text>
         </TouchableOpacity>
       )}
@@ -437,6 +438,118 @@ const customStyles = StyleSheet.create({
   triggerText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
 });
 
+// ── Essential item row with optional roommate assignment ───────────────────
+function EssentialItemRow({
+  item,
+  checked,
+  onToggle,
+  assigneeId,
+  onAssign,
+  accentColor,
+  textColor,
+  mutedColor,
+  roommates,
+}: {
+  item: string;
+  checked: boolean;
+  onToggle: () => void;
+  assigneeId: string | null;
+  onAssign: (id: string | null) => void;
+  accentColor: string;
+  textColor: string;
+  mutedColor: string;
+  roommates: Roommate[];
+}) {
+  return (
+    <View>
+      <TouchableOpacity style={styles.checkRow} onPress={onToggle} activeOpacity={0.7}>
+        <View
+          style={[
+            styles.checkBox,
+            {
+              borderColor: checked ? accentColor : mutedColor + "66",
+              backgroundColor: checked ? accentColor + "20" : "transparent",
+            },
+          ]}
+        >
+          {checked ? <Feather name="check" size={11} color={accentColor} /> : null}
+        </View>
+        <Text style={[styles.checkLabel, { color: textColor, flex: 1 }]}>{item}</Text>
+        {checked && assigneeId && (() => {
+          const r = roommates.find((x) => x.id === assigneeId);
+          return r ? (
+            <View style={[essentialRowStyles.assignedPill, { backgroundColor: r.color + "22", borderColor: r.color + "55" }]}>
+              <View style={[essentialRowStyles.pillDot, { backgroundColor: r.color }]} />
+              <Text style={[essentialRowStyles.pillText, { color: r.color }]}>{r.name}</Text>
+            </View>
+          ) : null;
+        })()}
+      </TouchableOpacity>
+      {checked && (
+        <View style={essentialRowStyles.assignRow}>
+          <Text style={[essentialRowStyles.assignLabel, { color: mutedColor }]}>Who's getting it?</Text>
+          <View style={essentialRowStyles.avatarRow}>
+            {roommates.map((r) => {
+              const selected = assigneeId === r.id;
+              return (
+                <TouchableOpacity
+                  key={r.id}
+                  onPress={() => onAssign(selected ? null : r.id)}
+                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                  style={[
+                    essentialRowStyles.avatar,
+                    {
+                      backgroundColor: selected ? r.color : r.color + "22",
+                      borderColor: selected ? r.color : r.color + "44",
+                    },
+                  ]}
+                >
+                  <Text style={[essentialRowStyles.avatarText, { color: selected ? "#fff" : r.color }]}>
+                    {r.name[0]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const essentialRowStyles = StyleSheet.create({
+  assignRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 30,
+    paddingBottom: 8,
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  assignLabel: { fontFamily: "Inter_400Regular", fontSize: 11 },
+  avatarRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  assignedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  pillDot: { width: 6, height: 6, borderRadius: 3 },
+  pillText: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
+});
+
 // ── Section card wrapper ───────────────────────────────────────────────────
 function SectionCard({
   title,
@@ -490,6 +603,7 @@ export default function PlanningScreen() {
   const [checkedEssentials, setCheckedEssentials] = useState<Record<string, Set<string>>>({});
   const [customEssentials, setCustomEssentials] = useState<Record<string, string[]>>({});
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
   const [preferences, setPreferences] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -538,6 +652,18 @@ export default function PlanningScreen() {
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
+    });
+  }
+
+  function setEssentialAssignee(sectionKey: string, item: string, roommateId: string | null) {
+    setEssentialsAssignees((prev) => {
+      const section = { ...(prev[sectionKey] ?? {}) };
+      if (roommateId === null) {
+        delete section[item];
+      } else {
+        section[item] = roommateId;
+      }
+      return { ...prev, [sectionKey]: section };
     });
   }
 
@@ -659,7 +785,13 @@ export default function PlanningScreen() {
         const custom = customEssentials[section.key] ?? [];
         const items = [...(checked ? [...checked] : []), ...custom];
         if (items.length > 0) {
-          parts.push(`${section.title} (already have / planning to get): ${items.join(", ")}`);
+          const assignments = essentialsAssignees[section.key] ?? {};
+          const itemsWithAssignment = items.map((item) => {
+            const rid = assignments[item];
+            const rname = rid ? roommates.find((r) => r.id === rid)?.name : null;
+            return rname ? `${item} (${rname})` : item;
+          });
+          parts.push(`${section.title} (selected): ${itemsWithAssignment.join(", ")}`);
         }
       });
     }
@@ -1132,14 +1264,17 @@ export default function PlanningScreen() {
                 {isExpanded && (
                   <View style={{ marginTop: 4 }}>
                     {section.items.map((item) => (
-                      <CheckRow
+                      <EssentialItemRow
                         key={item}
-                        label={item}
+                        item={item}
                         checked={sectionChecked.has(item)}
                         onToggle={() => toggleEssential(section.key, item)}
+                        assigneeId={essentialsAssignees[section.key]?.[item] ?? null}
+                        onAssign={(id) => setEssentialAssignee(section.key, item, id)}
                         accentColor={section.color}
                         textColor={colors.foreground}
                         mutedColor={colors.mutedForeground}
+                        roommates={roommates}
                       />
                     ))}
                     <CustomChoreInput
@@ -1151,6 +1286,7 @@ export default function PlanningScreen() {
                       mutedColor={colors.mutedForeground}
                       borderColor={colors.border}
                       cardBg={colors.card}
+                      triggerLabel="Add a custom item"
                     />
                   </View>
                 )}
