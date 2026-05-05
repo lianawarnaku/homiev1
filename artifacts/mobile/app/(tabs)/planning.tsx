@@ -22,6 +22,7 @@ type HousingType = "traditional" | "suite" | "apartment" | null;
 
 // ── Kitchen amenities (all housing types) ──────────────────────────────────
 const KITCHEN_AMENITIES = [
+  { key: "kettle", label: "Kettle" },
   { key: "microwave", label: "Microwave" },
   { key: "fridge", label: "Refrigerator" },
   { key: "coffee", label: "Coffee Machine" },
@@ -74,6 +75,7 @@ const LIVING_CHORES = [
 
 // ── Kitchen chore map ──────────────────────────────────────────────────────
 const KITCHEN_CHORE_MAP: Record<string, { title: string; points: number }> = {
+  kettle: { title: "Descale kettle", points: 10 },
   microwave: { title: "Clean microwave (inside & out)", points: 10 },
   fridge: { title: "Wipe fridge shelves & door", points: 20 },
   coffee: { title: "Descale & clean coffee machine", points: 15 },
