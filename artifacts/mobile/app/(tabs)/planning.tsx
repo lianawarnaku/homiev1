@@ -114,6 +114,7 @@ const HOME_ESSENTIALS_SECTIONS = [
     icon: "coffee",
     color: "#F97316",
     items: [
+      "Mini-fridge", "Microwave", "Trash Can",
       "Water Filter / Brita", "Hot Water Kettle", "Reusable Utensil Kit", "Tupperware",
       "Microwave-safe Bowls", "Coffee Maker", "Chip Clips", "Paper Towels", "Dish Towel",
       "Sponge", "Dish Soap", "Trash Bags", "Plastic Bags", "Reusable Water Bottle",
@@ -135,15 +136,6 @@ const HOME_ESSENTIALS_SECTIONS = [
       "Laundry Detergent", "Laundry Basket", "All-purpose Cleaner", "Mini Vacuum",
       "Clorox / Disinfectant Wipes", "Windex / Glass Cleaner", "Swiffer / Mop",
       "Toilet Cleaner", "Mirror Cleaner", "Cleaning Rags", "Febreze / Air Freshener",
-    ],
-  },
-  {
-    key: "shared",
-    title: "Potentially Shared",
-    icon: "users",
-    color: "#14B8A6",
-    items: [
-      "Mini-fridge", "Microwave", "Trash Can", "Rice Cooker", "Air Fryer", "Blender", "Coffee Maker",
     ],
   },
   {
