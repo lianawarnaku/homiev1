@@ -20,6 +20,26 @@ import { useColors } from "@/hooks/useColors";
 type PlanType = "chore-chart" | "home-checklist" | null;
 type HousingType = "traditional" | "suite" | "apartment" | null;
 
+type ChoreAssignment = {
+  bathroom_heavy?: string;
+  bathroom_light?: string;
+  kitchen_heavy?: string;
+  kitchen_light?: string;
+  vacuum_mop?: string;
+  ad_hoc?: string;
+};
+type WeekEntry = { week: number; assignments: ChoreAssignment };
+type ChoreChartData = { weeks: WeekEntry[]; fairness_note?: string };
+
+const CHORE_SLOTS: { key: keyof ChoreAssignment; label: string; icon: keyof typeof Feather.glyphMap; color: string }[] = [
+  { key: "bathroom_heavy", label: "Bathroom Heavy", icon: "droplet", color: "#5B7FF2" },
+  { key: "bathroom_light", label: "Bathroom Light", icon: "wind", color: "#60A5FA" },
+  { key: "kitchen_heavy",  label: "Kitchen Heavy",  icon: "zap",     color: "#F97316" },
+  { key: "kitchen_light",  label: "Kitchen Light",  icon: "coffee",  color: "#FBBF24" },
+  { key: "vacuum_mop",     label: "Vacuum & Mop",   icon: "layers",  color: "#22C55E" },
+  { key: "ad_hoc",         label: "Ad Hoc",         icon: "help-circle", color: "#8B5CF6" },
+];
+
 // ── Kitchen amenities (all housing types) ──────────────────────────────────
 const KITCHEN_AMENITIES = [
   { key: "kettle", label: "Kettle" },
@@ -596,6 +616,7 @@ export default function PlanningScreen() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [preferences, setPreferences] = useState("");
   const [result, setResult] = useState<string | null>(null);
+  const [choreChartData, setChoreChartData] = useState<ChoreChartData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [choresAdded, setChoresAdded] = useState(0);
@@ -773,10 +794,10 @@ export default function PlanningScreen() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setChoreChartData(null);
     setChoresAdded(0);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Create chores from selections
     let added = 0;
     if (selectedType === "chore-chart" && housingType) {
       added = createChores();
@@ -794,7 +815,19 @@ export default function PlanningScreen() {
       });
       if (!res.ok) throw new Error("Request failed");
       const data = (await res.json()) as { suggestion: string };
-      setResult(data.suggestion);
+
+      if (selectedType === "chore-chart") {
+        try {
+          const parsed = JSON.parse(data.suggestion) as ChoreChartData;
+          setChoreChartData(parsed);
+        } catch {
+          // Fallback: show raw text if JSON parse fails
+          setResult(data.suggestion);
+        }
+      } else {
+        setResult(data.suggestion);
+      }
+
       setChoresAdded(added);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
@@ -1355,7 +1388,74 @@ export default function PlanningScreen() {
         </View>
       ) : null}
 
-      {/* ── AI result ── */}
+      {/* ── Chore chart structured result ── */}
+      {choreChartData ? (
+        <View style={{ marginHorizontal: 16, marginTop: 12, gap: 10 }}>
+          {/* Header */}
+          <View style={[styles.resultHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.resultHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
+              <Feather name="calendar" size={16} color={colors.primary} />
+            </View>
+            <Text style={[styles.resultTitle, { color: colors.foreground }]}>12-Week Chore Chart</Text>
+            <TouchableOpacity
+              onPress={() => { setChoreChartData(null); setChoresAdded(0); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x" size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Week cards */}
+          {choreChartData.weeks.map((entry) => (
+            <View
+              key={entry.week}
+              style={[styles.weekCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              {/* Week badge */}
+              <View style={[styles.weekBadge, { backgroundColor: colors.primary + "14" }]}>
+                <Text style={[styles.weekBadgeText, { color: colors.primary }]}>
+                  Week {entry.week}
+                </Text>
+              </View>
+
+              {/* Assignment rows */}
+              {CHORE_SLOTS.map((slot) => {
+                const personName = entry.assignments[slot.key];
+                if (!personName) return null;
+                const roommate = roommates.find((r) => r.name === personName);
+                const chipColor = roommate?.color ?? slot.color;
+                return (
+                  <View key={slot.key} style={styles.weekRow}>
+                    <View style={[styles.weekRowIcon, { backgroundColor: slot.color + "18" }]}>
+                      <Feather name={slot.icon} size={12} color={slot.color} />
+                    </View>
+                    <Text style={[styles.weekRowLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {slot.label}
+                    </Text>
+                    <View style={[styles.weekPersonChip, { backgroundColor: chipColor + "20", borderColor: chipColor + "55" }]}>
+                      <Text style={[styles.weekPersonName, { color: chipColor }]} numberOfLines={1}>
+                        {personName}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ))}
+
+          {/* Fairness note */}
+          {choreChartData.fairness_note ? (
+            <View style={[styles.fairnessNote, { backgroundColor: colors.success + "10", borderColor: colors.success + "30" }]}>
+              <Feather name="shield" size={13} color={colors.success} />
+              <Text style={[styles.fairnessNoteText, { color: colors.mutedForeground }]}>
+                {choreChartData.fairness_note}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* ── Home checklist / fallback text result ── */}
       {result ? (
         <View
           style={[
@@ -1363,17 +1463,14 @@ export default function PlanningScreen() {
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <View style={styles.resultHeader}>
+          <View style={styles.resultHeaderRow}>
             <Feather name="check-circle" size={16} color={colors.success} />
             <Text style={[styles.resultTitle, { color: colors.foreground }]}>
               Your{" "}
               {selectedType === "chore-chart" ? "Chore Chart" : "Home Checklist"}
             </Text>
             <TouchableOpacity
-              onPress={() => {
-                setResult(null);
-                setChoresAdded(0);
-              }}
+              onPress={() => { setResult(null); setChoresAdded(0); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Feather name="x" size={16} color={colors.mutedForeground} />
@@ -1587,14 +1684,14 @@ const styles = StyleSheet.create({
   },
   errorText: { fontFamily: "Inter_500Medium", fontSize: 13, flex: 1 },
 
-  // ── Result card ──
+  // ── Result card (home checklist / fallback) ──
   resultCard: {
     margin: 16,
     borderRadius: 16,
     borderWidth: 1,
     padding: 16,
   },
-  resultHeader: {
+  resultHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -1605,5 +1702,82 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 13,
     lineHeight: 20,
+  },
+
+  // ── Chore chart structured output ──
+  resultHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+  },
+  resultHeaderIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  weekCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: "hidden",
+    gap: 0,
+  },
+  weekBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  weekBadgeText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 13,
+  },
+  weekRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(0,0,0,0.06)",
+  },
+  weekRowIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  weekRowLabel: {
+    flex: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+  },
+  weekPersonChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  weekPersonName: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+  },
+  fairnessNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 8,
+  },
+  fairnessNoteText: {
+    flex: 1,
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

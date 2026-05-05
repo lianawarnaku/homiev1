@@ -23,8 +23,8 @@ router.post("/planning/suggest", async (req, res) => {
   const systemPrompt =
     "You are a friendly and practical home management assistant helping roommates organize their shared living space. " +
     "Provide clear, well-organized, and actionable advice. " +
-    "Format your response using plain text with clear sections. " +
-    "Be concise but thorough. Do not use markdown headers with ##, use plain labels instead.";
+    "When asked for a chore chart, respond ONLY with valid JSON — no extra text, no markdown, no code fences. " +
+    "For home checklists, use plain text with clear sections and no markdown ## headers.";
 
   let userPrompt = "";
 
@@ -63,11 +63,14 @@ router.post("/planning/suggest", async (req, res) => {
       `- Lighter chores (Ad Hoc, Vacuum/Mop) should not consistently fall to the same people.\n` +
       `- After 12 weeks the cycle can repeat.\n\n` +
       (preferences ? `Home details: ${preferences}\n\n` : "") +
-      `OUTPUT FORMAT — produce a clean, readable plain-text table like this:\n` +
-      `Week | Bathroom Heavy | Bathroom Light | Kitchen Heavy | Kitchen Light | Vacuum/Mop | Ad Hoc\n` +
-      `Then list weeks 1–12 in rows.\n` +
-      `After the table, add a one-paragraph "Fairness check" noting how many times each person does Bathroom Heavy.\n` +
-      `Do not use markdown headers with ##. Keep it scannable.`;
+      `OUTPUT — respond with ONLY this JSON shape, no other text:\n` +
+      `{\n` +
+      `  "weeks": [\n` +
+      `    { "week": 1, "assignments": { "bathroom_heavy": "Name", "bathroom_light": "Name", "kitchen_heavy": "Name", "kitchen_light": "Name", "vacuum_mop": "Name", "ad_hoc": "Name" } }\n` +
+      `  ],\n` +
+      `  "fairness_note": "One sentence noting how evenly bathroom heavy is distributed."\n` +
+      `}\n` +
+      `Rules: use exact first names from the list. Omit "ad_hoc" key entirely if no ad hoc slot needed. Produce all 12 weeks.`;
   } else {
     const masterList = `
 Room & Bedroom: Shower Caddy, Standing Fan / Box Fan, Room Decor (string lights, posters, pictures), Small Rug, Mirror, Towel Hook (Command Strip), Hangers, Plastic Storage Bins (under bed / top of wardrobe), Lamp, Alarm Clock, Whiteboard for Door.
