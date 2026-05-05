@@ -56,9 +56,49 @@ const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
 export default function GroupChoresScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, sendNudge, removeNudge, nudges } = useAppContext();
+  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges } = useAppContext();
 
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
+  const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
+
+  const handleChorePress = (choreId: string, assignedTo: string, choreName: string, chorePoints: number) => {
+    const chore = chores.find((c) => c.id === choreId);
+    if (!chore || chore.completed) return;
+
+    if (assignedTo === currentUserId) {
+      Alert.alert("Complete chore?", `Mark "${choreName}" as done?`, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Done ✓",
+          onPress: () => {
+            completeChore(choreId);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ]);
+    } else {
+      Alert.alert(
+        "Pick up this chore? 🙌",
+        `Complete "${choreName}" for them and earn ${chorePoints + 25} pts (${chorePoints} + 25 bonus)!`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Pick it up!",
+            onPress: () => {
+              pickUpChore(choreId, currentUserId);
+              setPickedUpChores((prev) => new Set([...prev, choreId]));
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert(
+                "Nice one! 🌟",
+                `You earned ${chorePoints + 25} pts — ${chorePoints} for the chore + 25 bonus!`,
+                [{ text: "🎉" }]
+              );
+            },
+          },
+        ]
+      );
+    }
+  };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
@@ -360,15 +400,23 @@ export default function GroupChoresScreen() {
                         !chore.completed && isOverdue(chore.dueDate);
                       const key = `${roommate.id}-${chore.id}`;
                       const nudged = nudgedChores.has(key);
+                      const isPickedUp = pickedUpChores.has(chore.id);
+                      const isSomeoneElse = chore.assignedTo !== currentUserId;
 
                       return (
-                        <View
+                        <TouchableOpacity
                           key={chore.id}
+                          activeOpacity={chore.completed ? 1 : 0.7}
+                          onPress={() =>
+                            handleChorePress(chore.id, chore.assignedTo, chore.title, chore.points)
+                          }
                           style={[
                             styles.choreRow,
                             {
                               borderTopColor: colors.border,
-                              backgroundColor: overdue
+                              backgroundColor: isPickedUp
+                                ? colors.success + "10"
+                                : overdue
                                 ? colors.warning + "08"
                                 : "transparent",
                             },
@@ -471,7 +519,7 @@ export default function GroupChoresScreen() {
                               </Text>
                             </TouchableOpacity>
                           )}
-                        </View>
+                        </TouchableOpacity>
                       );
                     })
                   )}

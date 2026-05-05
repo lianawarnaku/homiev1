@@ -101,6 +101,7 @@ interface AppContextType {
   nudges: Nudge[];
   addChore: (chore: Omit<Chore, "id">) => void;
   completeChore: (id: string) => void;
+  pickUpChore: (choreId: string, completedById: string) => void;
   deleteChore: (id: string) => void;
   addExpense: (expense: Omit<Expense, "id">) => void;
   updateExpense: (id: string, updates: Partial<Omit<Expense, "id">>) => void;
@@ -417,6 +418,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
   }, [chores]);
 
+  const PICKUP_BONUS = 25;
+
+  const pickUpChore = useCallback((choreId: string, completedById: string) => {
+    setChores((prev) =>
+      prev.map((c) =>
+        c.id === choreId
+          ? { ...c, completed: true, completedAt: new Date().toISOString() }
+          : c
+      )
+    );
+    setRoommates((prev) =>
+      prev.map((r) => {
+        if (r.id === completedById) {
+          const chore = chores.find((c) => c.id === choreId);
+          const earned = (chore?.points ?? 0) + PICKUP_BONUS;
+          return {
+            ...r,
+            points: r.points + earned,
+            weeklyPoints: r.weeklyPoints + earned,
+          };
+        }
+        return r;
+      })
+    );
+  }, [chores]);
+
   const deleteChore = useCallback((id: string) => {
     setChores((prev) => prev.filter((c) => c.id !== id));
   }, []);
@@ -537,6 +564,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         nudges,
         addChore,
         completeChore,
+        pickUpChore,
         deleteChore,
         addExpense,
         updateExpense,
