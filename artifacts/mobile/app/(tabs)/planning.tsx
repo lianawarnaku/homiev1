@@ -798,11 +798,6 @@ export default function PlanningScreen() {
     setChoresAdded(0);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    let added = 0;
-    if (selectedType === "chore-chart" && housingType) {
-      added = createChores();
-    }
-
     try {
       const res = await fetch(`${baseUrl}/api/planning/suggest`, {
         method: "POST",
@@ -821,14 +816,12 @@ export default function PlanningScreen() {
           const parsed = JSON.parse(data.suggestion) as ChoreChartData;
           setChoreChartData(parsed);
         } catch {
-          // Fallback: show raw text if JSON parse fails
           setResult(data.suggestion);
         }
       } else {
         setResult(data.suggestion);
       }
 
-      setChoresAdded(added);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       setError("Unable to generate suggestion. Please try again.");
@@ -838,6 +831,13 @@ export default function PlanningScreen() {
     }
   };
 
+  const addTasks = () => {
+    if (!housingType) return;
+    const added = createChores();
+    setChoresAdded(added);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
   const isChoreChart = selectedType === "chore-chart";
   const canGenerate =
     selectedType !== null &&
@@ -845,9 +845,10 @@ export default function PlanningScreen() {
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
     <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingBottom: 90 + botPad }}
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
@@ -1324,74 +1325,18 @@ export default function PlanningScreen() {
         numberOfLines={3}
       />
 
-      {/* ── Generate button ── */}
-      <Pressable
-        style={[
-          styles.generateBtn,
-          {
-            backgroundColor:
-              canGenerate && !loading ? colors.primary : colors.muted,
-          },
-        ]}
-        disabled={!canGenerate || loading}
-        onPress={generate}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <>
-            <Feather name="zap" size={18} color="#fff" />
-            <Text style={styles.generateText}>
-              {isChoreChart && housingType
-                ? "Build Chore Chart & Add Tasks"
-                : selectedType === "home-checklist"
-                ? "Generate Suggestions"
-                : "Generate"}
-            </Text>
-          </>
-        )}
-      </Pressable>
-
-      {/* ── Chores added banner ── */}
-      {choresAdded > 0 && (
-        <View
-          style={[
-            styles.successBanner,
-            {
-              backgroundColor: colors.success + "14",
-              borderColor: colors.success + "44",
-            },
-          ]}
-        >
-          <Feather name="check-circle" size={16} color={colors.success} />
-          <Text style={[styles.successText, { color: colors.success }]}>
-            {choresAdded} chore{choresAdded !== 1 ? "s" : ""} added to My Home!
-          </Text>
-        </View>
-      )}
-
       {/* ── Error ── */}
       {error ? (
-        <View
-          style={[
-            styles.errorBox,
-            {
-              backgroundColor: colors.destructive + "12",
-              borderColor: colors.destructive + "33",
-            },
-          ]}
-        >
+        <View style={[styles.errorBox, { backgroundColor: colors.destructive + "12", borderColor: colors.destructive + "33" }]}>
           <Feather name="alert-circle" size={16} color={colors.destructive} />
-          <Text style={[styles.errorText, { color: colors.destructive }]}>
-            {error}
-          </Text>
+          <Text style={[styles.errorText, { color: colors.destructive }]}>{error}</Text>
         </View>
       ) : null}
 
-      {/* ── Chore chart structured result ── */}
+      {/* ── Chore chart: category-section tiles ── */}
       {choreChartData ? (
         <View style={{ marginHorizontal: 16, marginTop: 12, gap: 10 }}>
-          {/* Header */}
+          {/* Header row */}
           <View style={[styles.resultHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.resultHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
               <Feather name="calendar" size={16} color={colors.primary} />
@@ -1405,50 +1350,56 @@ export default function PlanningScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Week cards */}
-          {choreChartData.weeks.map((entry) => (
-            <View
-              key={entry.week}
-              style={[styles.weekCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-            >
-              {/* Week badge */}
-              <View style={[styles.weekBadge, { backgroundColor: colors.primary + "14" }]}>
-                <Text style={[styles.weekBadgeText, { color: colors.primary }]}>
-                  Week {entry.week}
-                </Text>
-              </View>
-
-              {/* Assignment rows */}
-              {CHORE_SLOTS.map((slot) => {
-                const personName = entry.assignments[slot.key];
-                if (!personName) return null;
-                const roommate = roommates.find((r) => r.name === personName);
-                const chipColor = roommate?.color ?? slot.color;
-                return (
-                  <View key={slot.key} style={styles.weekRow}>
-                    <View style={[styles.weekRowIcon, { backgroundColor: slot.color + "18" }]}>
-                      <Feather name={slot.icon} size={12} color={slot.color} />
-                    </View>
-                    <Text style={[styles.weekRowLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
-                      {slot.label}
-                    </Text>
-                    <View style={[styles.weekPersonChip, { backgroundColor: chipColor + "20", borderColor: chipColor + "55" }]}>
-                      <Text style={[styles.weekPersonName, { color: chipColor }]} numberOfLines={1}>
-                        {personName}
-                      </Text>
-                    </View>
+          {/* One card per chore category */}
+          {CHORE_SLOTS.map((slot) => {
+            const weeks = choreChartData.weeks.filter((e) => !!e.assignments[slot.key]);
+            if (weeks.length === 0) return null;
+            return (
+              <View key={slot.key} style={[styles.slotSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                {/* Section header */}
+                <View style={styles.slotHeader}>
+                  <View style={[styles.slotIcon, { backgroundColor: slot.color + "18" }]}>
+                    <Feather name={slot.icon} size={14} color={slot.color} />
                   </View>
-                );
-              })}
-            </View>
-          ))}
+                  <Text style={[styles.slotLabel, { color: colors.foreground }]}>{slot.label}</Text>
+                </View>
+                {/* Week tiles — horizontal scroll */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 12, paddingTop: 4, gap: 8 }}
+                >
+                  {weeks.map((entry) => {
+                    const personName = entry.assignments[slot.key]!;
+                    const roommate = roommates.find((r) => r.name === personName);
+                    const chipColor = roommate?.color ?? slot.color;
+                    return (
+                      <View key={entry.week} style={[styles.weekTile, { borderColor: chipColor + "44", backgroundColor: chipColor + "10" }]}>
+                        <Text style={[styles.weekTileNum, { color: colors.mutedForeground }]}>Wk {entry.week}</Text>
+                        <View style={[styles.weekTileDot, { backgroundColor: chipColor }]} />
+                        <Text style={[styles.weekTileName, { color: chipColor }]} numberOfLines={1}>{personName}</Text>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            );
+          })}
 
           {/* Fairness note */}
           {choreChartData.fairness_note ? (
             <View style={[styles.fairnessNote, { backgroundColor: colors.success + "10", borderColor: colors.success + "30" }]}>
               <Feather name="shield" size={13} color={colors.success} />
-              <Text style={[styles.fairnessNoteText, { color: colors.mutedForeground }]}>
-                {choreChartData.fairness_note}
+              <Text style={[styles.fairnessNoteText, { color: colors.mutedForeground }]}>{choreChartData.fairness_note}</Text>
+            </View>
+          ) : null}
+
+          {/* Chores added banner */}
+          {choresAdded > 0 ? (
+            <View style={[styles.successBanner, { backgroundColor: colors.success + "14", borderColor: colors.success + "44" }]}>
+              <Feather name="check-circle" size={16} color={colors.success} />
+              <Text style={[styles.successText, { color: colors.success }]}>
+                {choresAdded} chore{choresAdded !== 1 ? "s" : ""} added to My Home!
               </Text>
             </View>
           ) : null}
@@ -1457,31 +1408,75 @@ export default function PlanningScreen() {
 
       {/* ── Home checklist / fallback text result ── */}
       {result ? (
-        <View
-          style={[
-            styles.resultCard,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
+        <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.resultHeaderRow}>
             <Feather name="check-circle" size={16} color={colors.success} />
             <Text style={[styles.resultTitle, { color: colors.foreground }]}>
-              Your{" "}
-              {selectedType === "chore-chart" ? "Chore Chart" : "Home Checklist"}
+              Your {selectedType === "chore-chart" ? "Chore Chart" : "Home Checklist"}
             </Text>
-            <TouchableOpacity
-              onPress={() => { setResult(null); setChoresAdded(0); }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
+            <TouchableOpacity onPress={() => { setResult(null); setChoresAdded(0); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Feather name="x" size={16} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
-          <Text style={[styles.resultText, { color: colors.foreground }]}>
-            {result}
-          </Text>
+          <Text style={[styles.resultText, { color: colors.foreground }]}>{result}</Text>
         </View>
       ) : null}
     </ScrollView>
+
+    {/* ── Sticky bottom button area ── */}
+    <View style={[styles.stickyBottom, { backgroundColor: colors.background, borderTopColor: colors.border, paddingBottom: botPad + 16 }]}>
+      {/* Add Tasks button — shown after chart is generated */}
+      {choreChartData && choresAdded === 0 ? (
+        <Pressable
+          style={[styles.addTasksBtn, { backgroundColor: colors.success }]}
+          onPress={addTasks}
+        >
+          <Feather name="plus-circle" size={18} color="#fff" />
+          <Text style={styles.generateText}>Add Tasks to My Home</Text>
+        </Pressable>
+      ) : null}
+
+      {/* Build / Generate button */}
+      {!choreChartData && (
+        <Pressable
+          style={[styles.generateBtn, { backgroundColor: canGenerate && !loading ? colors.primary : colors.muted }]}
+          disabled={!canGenerate || loading}
+          onPress={generate}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Feather name="zap" size={18} color="#fff" />
+              <Text style={styles.generateText}>
+                {isChoreChart
+                  ? "Build Chore Chart"
+                  : selectedType === "home-checklist"
+                  ? "Generate Suggestions"
+                  : "Generate"}
+              </Text>
+            </>
+          )}
+        </Pressable>
+      )}
+
+      {/* Rebuild button — shown after chart exists */}
+      {choreChartData ? (
+        <Pressable
+          style={[styles.rebuildBtn, { borderColor: colors.border }]}
+          onPress={generate}
+          disabled={loading}
+        >
+          {loading ? <ActivityIndicator color={colors.mutedForeground} size="small" /> : (
+            <>
+              <Feather name="refresh-cw" size={15} color={colors.mutedForeground} />
+              <Text style={[styles.rebuildText, { color: colors.mutedForeground }]}>Rebuild Chart</Text>
+            </>
+          )}
+        </Pressable>
+      ) : null}
+    </View>
+    </View>
   );
 }
 
@@ -1720,50 +1715,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  weekCard: {
+  slotSection: {
     borderRadius: 14,
     borderWidth: 1,
     overflow: "hidden",
-    gap: 0,
   },
-  weekBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  weekBadgeText: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 13,
-  },
-  weekRow: {
+  slotHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(0,0,0,0.06)",
+    paddingVertical: 12,
   },
-  weekRowIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 7,
+  slotIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
   },
-  weekRowLabel: {
-    flex: 1,
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
+  slotLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
   },
-  weekPersonChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
+  weekTile: {
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
     borderWidth: 1,
+    gap: 5,
+    minWidth: 72,
   },
-  weekPersonName: {
+  weekTileNum: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+  },
+  weekTileDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  weekTileName: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 12,
+    textAlign: "center",
   },
   fairnessNote: {
     flexDirection: "row",
@@ -1772,12 +1768,40 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
-    marginBottom: 8,
   },
   fairnessNoteText: {
     flex: 1,
     fontFamily: "Inter_400Regular",
     fontSize: 12,
     lineHeight: 18,
+  },
+
+  // ── Sticky bottom ──
+  stickyBottom: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 8,
+  },
+  addTasksBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  rebuildBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+  },
+  rebuildText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
   },
 });
