@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Platform,
@@ -94,6 +95,38 @@ export default function GroupChoresScreen() {
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
   const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
   const [weekOffset, setWeekOffset] = useState(0);
+
+  // ── Availability ──────────────────────────────────────────────────────────
+  const [availabilityMode, setAvailabilityMode] = useState(false);
+  const [myBusyDays, setMyBusyDays] = useState<Set<string>>(new Set());
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+
+  const domain = process.env.EXPO_PUBLIC_DOMAIN;
+  const baseUrl = domain ? `https://${domain}` : "";
+
+  const fetchAvailability = async (offset: number) => {
+    setAvailabilityLoading(true);
+    setAvailabilityError(null);
+    try {
+      const days = getWeekDays(offset);
+      const weekStart = toDateKey(days[0]);
+      const res = await fetch(`${baseUrl}/api/calendar/availability?weekStart=${weekStart}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = (await res.json()) as { busyDays: string[]; connected: boolean };
+      setMyBusyDays(new Set(data.busyDays));
+    } catch {
+      setAvailabilityError("Could not load calendar data");
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  };
+
+  const toggleAvailability = () => {
+    const next = !availabilityMode;
+    setAvailabilityMode(next);
+    if (next) fetchAvailability(weekOffset);
+  };
 
   const handleChorePress = (choreId: string, assignedTo: string, choreName: string, chorePoints: number) => {
     const chore = chores.find((c) => c.id === choreId);
@@ -333,9 +366,12 @@ export default function GroupChoresScreen() {
           const weekRange = formatWeekRange(weekDays);
           const isCurrentWeek = weekOffset === 0;
 
+          // ── Availability state for this render ──────────────────────────
+          const currentUser = roommates.find((r) => r.id === currentUserId);
+
           return (
             <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {/* Card header */}
+              {/* Card header row 1: icon + title + availability toggle */}
               <View style={styles.calHeader}>
                 <View style={[styles.calHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
                   <Feather name="calendar" size={14} color={colors.primary} />
@@ -344,33 +380,78 @@ export default function GroupChoresScreen() {
                   <Text style={[styles.calTitle, { color: colors.foreground }]}>Weekly Schedule</Text>
                   <Text style={[styles.calRange, { color: colors.mutedForeground }]}>{weekRange}</Text>
                 </View>
-                {/* Week navigation */}
-                <View style={styles.calNav}>
-                  <TouchableOpacity
-                    style={[styles.calNavBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
-                    onPress={() => setWeekOffset((o) => o - 1)}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Feather name="chevron-left" size={14} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                  {!isCurrentWeek && (
-                    <TouchableOpacity
-                      style={[styles.calNavBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "44" }]}
-                      onPress={() => setWeekOffset(0)}
-                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                    >
-                      <Text style={[styles.calNavToday, { color: colors.primary }]}>Today</Text>
-                    </TouchableOpacity>
+
+                {/* Availability toggle */}
+                <TouchableOpacity
+                  style={[
+                    styles.availBtn,
+                    {
+                      backgroundColor: availabilityMode ? colors.success + "18" : colors.secondary,
+                      borderColor: availabilityMode ? colors.success + "55" : colors.border,
+                    },
+                  ]}
+                  onPress={toggleAvailability}
+                >
+                  {availabilityLoading ? (
+                    <ActivityIndicator size="small" color={colors.success} style={{ width: 12, height: 12 }} />
+                  ) : (
+                    <Feather
+                      name="radio"
+                      size={12}
+                      color={availabilityMode ? colors.success : colors.mutedForeground}
+                    />
                   )}
+                  <Text style={[styles.availBtnText, { color: availabilityMode ? colors.success : colors.mutedForeground }]}>
+                    Availability
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Week navigation row */}
+              <View style={styles.calNavRow}>
+                <TouchableOpacity
+                  style={[styles.calNavBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+                  onPress={() => {
+                    const next = weekOffset - 1;
+                    setWeekOffset(next);
+                    if (availabilityMode) fetchAvailability(next);
+                  }}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Feather name="chevron-left" size={14} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                {!isCurrentWeek && (
                   <TouchableOpacity
-                    style={[styles.calNavBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
-                    onPress={() => setWeekOffset((o) => o + 1)}
+                    style={[styles.calNavBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "44" }]}
+                    onPress={() => {
+                      setWeekOffset(0);
+                      if (availabilityMode) fetchAvailability(0);
+                    }}
                     hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   >
-                    <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+                    <Text style={[styles.calNavToday, { color: colors.primary }]}>Today</Text>
                   </TouchableOpacity>
-                </View>
+                )}
+                <TouchableOpacity
+                  style={[styles.calNavBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+                  onPress={() => {
+                    const next = weekOffset + 1;
+                    setWeekOffset(next);
+                    if (availabilityMode) fetchAvailability(next);
+                  }}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+                </TouchableOpacity>
               </View>
+
+              {/* Availability error */}
+              {availabilityError ? (
+                <View style={[styles.availErrorRow, { backgroundColor: colors.destructive + "10" }]}>
+                  <Feather name="alert-circle" size={12} color={colors.destructive} />
+                  <Text style={[styles.availErrorText, { color: colors.destructive }]}>{availabilityError}</Text>
+                </View>
+              ) : null}
 
               {/* Day columns */}
               <ScrollView
@@ -383,6 +464,7 @@ export default function GroupChoresScreen() {
                   const isToday = key === todayKey;
                   const dayChores = chores.filter((c) => c.dueDate.slice(0, 10) === key);
                   const isWeekend = idx >= 5;
+                  const isMeBusy = availabilityMode && myBusyDays.has(key);
 
                   return (
                     <View
@@ -390,12 +472,18 @@ export default function GroupChoresScreen() {
                       style={[
                         styles.calDayCol,
                         {
-                          backgroundColor: isToday
+                          backgroundColor: isMeBusy
+                            ? colors.warning + "0D"
+                            : isToday
                             ? colors.primary + "0D"
                             : isWeekend
                             ? colors.secondary + "88"
                             : "transparent",
-                          borderColor: isToday ? colors.primary + "44" : colors.border,
+                          borderColor: isMeBusy
+                            ? colors.warning + "55"
+                            : isToday
+                            ? colors.primary + "44"
+                            : colors.border,
                         },
                       ]}
                     >
@@ -404,21 +492,18 @@ export default function GroupChoresScreen() {
                         {DAY_NAMES[idx]}
                       </Text>
                       {/* Day number */}
-                      <View
-                        style={[
-                          styles.calDayNum,
-                          isToday && { backgroundColor: colors.primary },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.calDayNumText,
-                            { color: isToday ? "#fff" : colors.foreground },
-                          ]}
-                        >
+                      <View style={[styles.calDayNum, isToday && { backgroundColor: colors.primary }]}>
+                        <Text style={[styles.calDayNumText, { color: isToday ? "#fff" : colors.foreground }]}>
                           {day.getDate()}
                         </Text>
                       </View>
+
+                      {/* Busy badge */}
+                      {isMeBusy && (
+                        <View style={[styles.busyBadge, { backgroundColor: colors.warning + "22", borderColor: colors.warning + "44" }]}>
+                          <Text style={[styles.busyBadgeText, { color: colors.warning }]}>busy</Text>
+                        </View>
+                      )}
 
                       {/* Chore pills */}
                       <View style={styles.calChores}>
@@ -441,10 +526,7 @@ export default function GroupChoresScreen() {
                                 ]}
                               >
                                 <View style={[styles.calPillDot, { backgroundColor: color }]} />
-                                <Text
-                                  style={[styles.calPillName, { color: color }]}
-                                  numberOfLines={1}
-                                >
+                                <Text style={[styles.calPillName, { color: color }]} numberOfLines={1}>
                                   {rm?.name?.split(" ")[0] ?? "?"}
                                 </Text>
                               </View>
@@ -452,17 +534,39 @@ export default function GroupChoresScreen() {
                           })
                         )}
                       </View>
+
+                      {/* Availability dots (one per roommate) */}
+                      {availabilityMode && (
+                        <View style={styles.availDotRow}>
+                          {roommates.map((rm) => {
+                            const isMe = rm.id === currentUserId;
+                            const isBusy = isMe && myBusyDays.has(key);
+                            const dotColor = isMe
+                              ? isBusy ? colors.warning : colors.success
+                              : colors.muted;
+                            return (
+                              <View
+                                key={rm.id}
+                                style={[
+                                  styles.availDot,
+                                  {
+                                    backgroundColor: isMe ? dotColor : "transparent",
+                                    borderColor: isMe ? dotColor : colors.border,
+                                    borderWidth: isMe ? 0 : 1,
+                                  },
+                                ]}
+                              />
+                            );
+                          })}
+                        </View>
+                      )}
                     </View>
                   );
                 })}
               </ScrollView>
 
               {/* Legend */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.calLegend}
-              >
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.calLegend}>
                 {roommates.map((rm) => (
                   <View key={rm.id} style={styles.calLegendItem}>
                     <View style={[styles.calLegendDot, { backgroundColor: rm.color }]} />
@@ -472,6 +576,61 @@ export default function GroupChoresScreen() {
                   </View>
                 ))}
               </ScrollView>
+
+              {/* Availability connections panel */}
+              {availabilityMode && (
+                <View style={[styles.availPanel, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.availPanelTitle, { color: colors.foreground }]}>Calendar Connections</Text>
+
+                  {/* Current user — connected */}
+                  <View style={[styles.availRoommateRow, { backgroundColor: colors.success + "0C", borderColor: colors.success + "33" }]}>
+                    <View style={[styles.availRoommateDot, { backgroundColor: currentUser?.color ?? colors.primary }]}>
+                      <Text style={styles.availRoommateInitial}>
+                        {currentUser?.name?.charAt(0) ?? "?"}
+                      </Text>
+                    </View>
+                    <Text style={[styles.availRoommateName, { color: colors.foreground }]}>
+                      {currentUser?.name ?? "You"} <Text style={{ color: colors.mutedForeground }}>(you)</Text>
+                    </Text>
+                    <View style={[styles.availConnectedBadge, { backgroundColor: colors.success + "20", borderColor: colors.success + "44" }]}>
+                      <Feather name="check-circle" size={10} color={colors.success} />
+                      <Text style={[styles.availConnectedText, { color: colors.success }]}>Connected</Text>
+                    </View>
+                  </View>
+
+                  {/* Other roommates — not connected */}
+                  {roommates.filter((r) => r.id !== currentUserId).map((rm) => (
+                    <View key={rm.id} style={[styles.availRoommateRow, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+                      <View style={[styles.availRoommateDot, { backgroundColor: rm.color + "44" }]}>
+                        <Text style={[styles.availRoommateInitial, { color: rm.color }]}>
+                          {rm.name.charAt(0)}
+                        </Text>
+                      </View>
+                      <Text style={[styles.availRoommateName, { color: colors.mutedForeground }]}>{rm.name}</Text>
+                      <View style={[styles.availInviteBtn, { backgroundColor: colors.primary + "14", borderColor: colors.primary + "33" }]}>
+                        <Feather name="send" size={9} color={colors.primary} />
+                        <Text style={[styles.availInviteText, { color: colors.primary }]}>Invite</Text>
+                      </View>
+                    </View>
+                  ))}
+
+                  {/* Availability legend */}
+                  <View style={styles.availLegendRow}>
+                    <View style={styles.availLegendItem}>
+                      <View style={[styles.availDot, { backgroundColor: colors.success }]} />
+                      <Text style={[styles.availLegendLabel, { color: colors.mutedForeground }]}>Free</Text>
+                    </View>
+                    <View style={styles.availLegendItem}>
+                      <View style={[styles.availDot, { backgroundColor: colors.warning }]} />
+                      <Text style={[styles.availLegendLabel, { color: colors.mutedForeground }]}>Busy</Text>
+                    </View>
+                    <View style={styles.availLegendItem}>
+                      <View style={[styles.availDot, { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border }]} />
+                      <Text style={[styles.availLegendLabel, { color: colors.mutedForeground }]}>Not connected</Text>
+                    </View>
+                  </View>
+                </View>
+              )}
             </View>
           );
         })()}
@@ -946,4 +1105,124 @@ const styles = StyleSheet.create({
   calLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   calLegendDot: { width: 8, height: 8, borderRadius: 4 },
   calLegendName: { fontFamily: "Inter_400Regular", fontSize: 11 },
+
+  // ── Calendar nav row ──
+  calNavRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+    gap: 6,
+    justifyContent: "flex-end",
+  },
+
+  // ── Busy badge ──
+  busyBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 1,
+    alignSelf: "center",
+  },
+  busyBadgeText: { fontFamily: "Inter_700Bold", fontSize: 8 },
+
+  // ── Availability toggle button ──
+  availBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  availBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
+
+  // ── Availability dot row inside each day column ──
+  availDotRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 2,
+    justifyContent: "center",
+    marginTop: 4,
+    paddingHorizontal: 2,
+  },
+  availDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+
+  // ── Availability panel ──
+  availPanel: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
+    gap: 8,
+  },
+  availPanelTitle: { fontFamily: "Inter_600SemiBold", fontSize: 13, marginBottom: 2 },
+  availRoommateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  availRoommateDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  availRoommateInitial: { fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff" },
+  availRoommateName: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 13 },
+  availConnectedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  availConnectedText: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
+  availInviteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  availInviteText: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
+
+  // ── Availability error ──
+  availErrorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginHorizontal: 14,
+    marginBottom: 6,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  availErrorText: { fontFamily: "Inter_400Regular", fontSize: 11 },
+
+  // ── Availability legend ──
+  availLegendRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 2,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(0,0,0,0.06)",
+  },
+  availLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  availLegendLabel: { fontFamily: "Inter_400Regular", fontSize: 11 },
 });
