@@ -58,6 +58,33 @@ const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
   },
 };
 
+// ── Calendar helpers ──────────────────────────────────────────────────────
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function getWeekDays(offset: number): Date[] {
+  const now = new Date();
+  const dow = now.getDay(); // 0=Sun
+  const diffToMon = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMon + offset * 7);
+  monday.setHours(0, 0, 0, 0);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
+}
+
+function toDateKey(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function formatWeekRange(days: Date[]) {
+  const fmt = (d: Date) =>
+    d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${fmt(days[0])} – ${fmt(days[6])}`;
+}
+
 export default function GroupChoresScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -66,6 +93,7 @@ export default function GroupChoresScreen() {
   const { confirm, info } = useConfirm();
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
   const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
+  const [weekOffset, setWeekOffset] = useState(0);
 
   const handleChorePress = (choreId: string, assignedTo: string, choreName: string, chorePoints: number) => {
     const chore = chores.find((c) => c.id === choreId);
@@ -297,6 +325,156 @@ export default function GroupChoresScreen() {
             </View>
           </View>
         </View>
+
+        {/* ── Weekly Schedule Calendar ─────────────────── */}
+        {(() => {
+          const weekDays = getWeekDays(weekOffset);
+          const todayKey = toDateKey(new Date());
+          const weekRange = formatWeekRange(weekDays);
+          const isCurrentWeek = weekOffset === 0;
+
+          return (
+            <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {/* Card header */}
+              <View style={styles.calHeader}>
+                <View style={[styles.calHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
+                  <Feather name="calendar" size={14} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.calTitle, { color: colors.foreground }]}>Weekly Schedule</Text>
+                  <Text style={[styles.calRange, { color: colors.mutedForeground }]}>{weekRange}</Text>
+                </View>
+                {/* Week navigation */}
+                <View style={styles.calNav}>
+                  <TouchableOpacity
+                    style={[styles.calNavBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+                    onPress={() => setWeekOffset((o) => o - 1)}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Feather name="chevron-left" size={14} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                  {!isCurrentWeek && (
+                    <TouchableOpacity
+                      style={[styles.calNavBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "44" }]}
+                      onPress={() => setWeekOffset(0)}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Text style={[styles.calNavToday, { color: colors.primary }]}>Today</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.calNavBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+                    onPress={() => setWeekOffset((o) => o + 1)}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Day columns */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.calDaysRow}
+              >
+                {weekDays.map((day, idx) => {
+                  const key = toDateKey(day);
+                  const isToday = key === todayKey;
+                  const dayChores = chores.filter((c) => c.dueDate.slice(0, 10) === key);
+                  const isWeekend = idx >= 5;
+
+                  return (
+                    <View
+                      key={key}
+                      style={[
+                        styles.calDayCol,
+                        {
+                          backgroundColor: isToday
+                            ? colors.primary + "0D"
+                            : isWeekend
+                            ? colors.secondary + "88"
+                            : "transparent",
+                          borderColor: isToday ? colors.primary + "44" : colors.border,
+                        },
+                      ]}
+                    >
+                      {/* Day name */}
+                      <Text style={[styles.calDayName, { color: isToday ? colors.primary : colors.mutedForeground }]}>
+                        {DAY_NAMES[idx]}
+                      </Text>
+                      {/* Day number */}
+                      <View
+                        style={[
+                          styles.calDayNum,
+                          isToday && { backgroundColor: colors.primary },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.calDayNumText,
+                            { color: isToday ? "#fff" : colors.foreground },
+                          ]}
+                        >
+                          {day.getDate()}
+                        </Text>
+                      </View>
+
+                      {/* Chore pills */}
+                      <View style={styles.calChores}>
+                        {dayChores.length === 0 ? (
+                          <View style={[styles.calEmpty, { backgroundColor: colors.muted + "60" }]} />
+                        ) : (
+                          dayChores.map((chore) => {
+                            const rm = roommates.find((r) => r.id === chore.assignedTo);
+                            const color = rm?.color ?? colors.primary;
+                            return (
+                              <View
+                                key={chore.id}
+                                style={[
+                                  styles.calPill,
+                                  {
+                                    backgroundColor: color + "18",
+                                    borderColor: color + "44",
+                                    opacity: chore.completed ? 0.5 : 1,
+                                  },
+                                ]}
+                              >
+                                <View style={[styles.calPillDot, { backgroundColor: color }]} />
+                                <Text
+                                  style={[styles.calPillName, { color: color }]}
+                                  numberOfLines={1}
+                                >
+                                  {rm?.name?.split(" ")[0] ?? "?"}
+                                </Text>
+                              </View>
+                            );
+                          })
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Legend */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.calLegend}
+              >
+                {roommates.map((rm) => (
+                  <View key={rm.id} style={styles.calLegendItem}>
+                    <View style={[styles.calLegendDot, { backgroundColor: rm.color }]} />
+                    <Text style={[styles.calLegendName, { color: colors.mutedForeground }]}>
+                      {rm.name.split(" ")[0]}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          );
+        })()}
 
         {/* ── Roommate chore sections ───────────────────── */}
         <View style={styles.listPad}>
@@ -679,4 +857,93 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   nudgeTxt: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
+
+  // ── Calendar ──
+  calCard: {
+    marginHorizontal: 16,
+    marginBottom: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  calHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  calHeaderIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  calRange: { fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 1 },
+  calNav: { flexDirection: "row", alignItems: "center", gap: 4 },
+  calNavBtn: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calNavToday: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
+  calDaysRow: {
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+    gap: 6,
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  calDayCol: {
+    width: 56,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    gap: 4,
+  },
+  calDayName: { fontFamily: "Inter_500Medium", fontSize: 10 },
+  calDayNum: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calDayNumText: { fontFamily: "Inter_700Bold", fontSize: 13 },
+  calChores: { width: "100%", gap: 3, marginTop: 2 },
+  calEmpty: {
+    height: 4,
+    borderRadius: 2,
+    width: "60%",
+    alignSelf: "center",
+    marginTop: 4,
+  },
+  calPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+  },
+  calPillDot: { width: 5, height: 5, borderRadius: 3 },
+  calPillName: { fontFamily: "Inter_600SemiBold", fontSize: 10, flex: 1 },
+  calLegend: {
+    flexDirection: "row",
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    gap: 12,
+  },
+  calLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  calLegendDot: { width: 8, height: 8, borderRadius: 4 },
+  calLegendName: { fontFamily: "Inter_400Regular", fontSize: 11 },
 });
