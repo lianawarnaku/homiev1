@@ -7,6 +7,14 @@ import React, {
   useState,
 } from "react";
 
+export type RoommateStatus = "home" | "away" | "asleep" | "unknown";
+
+export interface HomeLocation {
+  latitude: number;
+  longitude: number;
+  radius: number; // meters
+}
+
 export type ChoreCategory =
   | "cleaning"
   | "kitchen"
@@ -128,6 +136,10 @@ interface AppContextType {
   setEssentialAssignee: (sectionKey: string, item: string, roommateId: string | null) => void;
   suppressedAlerts: Record<string, boolean>;
   suppressAlert: (id: string) => void;
+  roommateStatuses: Record<string, RoommateStatus>;
+  setRoommateStatus: (id: string, status: RoommateStatus) => void;
+  homeLocation: HomeLocation | null;
+  setHomeLocation: (loc: HomeLocation | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -373,6 +385,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
   const [suppressedAlerts, setSuppressedAlerts] = useState<Record<string, boolean>>({});
+  const [roommateStatuses, setRoommateStatusesState] = useState<Record<string, RoommateStatus>>({});
+  const [homeLocation, setHomeLocationState] = useState<HomeLocation | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -389,6 +403,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (data.nudges) setNudges(data.nudges);
           if (data.essentialsAssignees) setEssentialsAssignees(data.essentialsAssignees);
           if (data.suppressedAlerts) setSuppressedAlerts(data.suppressedAlerts);
+          if (data.roommateStatuses) setRoommateStatusesState(data.roommateStatuses);
+          if (data.homeLocation) setHomeLocationState(data.homeLocation);
         } catch {}
       }
       setLoaded(true);
@@ -399,9 +415,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!loaded) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts })
+      JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, homeLocation })
     );
-  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts]);
+  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, homeLocation]);
 
   const addChore = useCallback((chore: Omit<Chore, "id">) => {
     setChores((prev) => [...prev, { ...chore, id: makeId() }]);
@@ -570,6 +586,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSuppressedAlerts((prev) => ({ ...prev, [id]: true }));
   }, []);
 
+  const setRoommateStatus = useCallback((id: string, status: RoommateStatus) => {
+    setRoommateStatusesState((prev) => ({ ...prev, [id]: status }));
+  }, []);
+
+  const setHomeLocation = useCallback((loc: HomeLocation | null) => {
+    setHomeLocationState(loc);
+  }, []);
+
   const removeNudge = useCallback((toRoommateId: string, choreId: string) => {
     setNudges((prev) =>
       prev.filter((n) => !(n.toRoommateId === toRoommateId && n.choreId === choreId))
@@ -640,6 +664,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setEssentialAssignee,
         suppressedAlerts,
         suppressAlert,
+        roommateStatuses,
+        setRoommateStatus,
+        homeLocation,
+        setHomeLocation,
       }}
     >
       {children}

@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useState } from "react";
+import * as Location from "expo-location";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +21,24 @@ import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 import { useConfirm } from "@/hooks/useConfirm";
+
+// ── Location helpers ───────────────────────────────────────────────────────
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const STATUS_CONFIG = {
+  home:    { icon: "home"      as const, label: "Home",    color: "#22C55E" },
+  away:    { icon: "map-pin"   as const, label: "Away",    color: "#F59E0B" },
+  asleep:  { icon: "moon"      as const, label: "Asleep",  color: "#8B5CF6" },
+  unknown: { icon: "help-circle" as const, label: "Unknown", color: "#94A3B8" },
+};
 
 function isOverdue(dateStr: string) {
   return new Date(dateStr) < new Date();
@@ -89,12 +108,99 @@ function formatWeekRange(days: Date[]) {
 export default function GroupChoresScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges } = useAppContext();
+  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, homeLocation, setHomeLocation } = useAppContext();
 
   const { confirm, info } = useConfirm();
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
   const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
   const [weekOffset, setWeekOffset] = useState(0);
+
+  // ── Location / Activity ───────────────────────────────────────────────────
+  const [locationPermission, setLocationPermission] = useState<"granted" | "denied" | "unknown">("unknown");
+  const [currentPosition, setCurrentPosition] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [distanceFromHome, setDistanceFromHome] = useState<number | null>(null);
+  const watchSubRef = useRef<Location.LocationSubscription | null>(null);
+
+  // Start location watching when permission granted (native only)
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    if (locationPermission !== "granted") return;
+
+    let active = true;
+    Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
+      (loc) => {
+        if (!active) return;
+        const pos = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        setCurrentPosition(pos);
+        if (homeLocation) {
+          const dist = haversineMeters(pos.latitude, pos.longitude, homeLocation.latitude, homeLocation.longitude);
+          setDistanceFromHome(Math.round(dist));
+          const currentStatus = roommateStatuses[currentUserId] ?? "unknown";
+          if (dist <= homeLocation.radius && currentStatus !== "asleep") {
+            setRoommateStatus(currentUserId, "home");
+          } else if (dist > homeLocation.radius && currentStatus !== "away") {
+            setRoommateStatus(currentUserId, "away");
+          }
+        }
+      }
+    ).then((sub) => { if (active) watchSubRef.current = sub; });
+
+    return () => {
+      active = false;
+      watchSubRef.current?.remove();
+      watchSubRef.current = null;
+    };
+  }, [locationPermission, homeLocation]);
+
+  const requestLocation = async () => {
+    setLocationLoading(true);
+    try {
+      if (Platform.OS === "web") {
+        // Web geolocation fallback
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const p = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+            setCurrentPosition(p);
+            setLocationPermission("granted");
+            setLocationLoading(false);
+          },
+          () => { setLocationPermission("denied"); setLocationLoading(false); }
+        );
+        return;
+      }
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(status === "granted" ? "granted" : "denied");
+    } catch {
+      setLocationPermission("denied");
+    } finally {
+      if (Platform.OS !== "web") setLocationLoading(false);
+    }
+  };
+
+  const captureHomeLocation = async () => {
+    setLocationLoading(true);
+    const capture = (lat: number, lon: number) => {
+      setHomeLocation({ latitude: lat, longitude: lon, radius: 100 });
+      setRoommateStatus(currentUserId, "home");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setLocationLoading(false);
+    };
+    try {
+      if (Platform.OS === "web") {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => capture(pos.coords.latitude, pos.coords.longitude),
+          () => setLocationLoading(false)
+        );
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      capture(loc.coords.latitude, loc.coords.longitude);
+    } catch {
+      setLocationLoading(false);
+    }
+  };
 
   // ── Availability ──────────────────────────────────────────────────────────
   const [availabilityMode, setAvailabilityMode] = useState(false);
@@ -635,6 +741,158 @@ export default function GroupChoresScreen() {
           );
         })()}
 
+        {/* ── Roommate Activity ────────────────────────── */}
+        {(() => {
+          const myStatus = roommateStatuses[currentUserId] ?? "unknown";
+          const myStatusCfg = STATUS_CONFIG[myStatus];
+          const isHome = myStatus === "home" || myStatus === "asleep";
+
+          return (
+            <View style={[styles.activityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {/* Header */}
+              <View style={styles.activityHeader}>
+                <View style={[styles.activityHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
+                  <Feather name="users" size={14} color={colors.primary} />
+                </View>
+                <Text style={[styles.activityTitle, { color: colors.foreground }]}>Roommate Activity</Text>
+                {homeLocation && locationPermission === "granted" && distanceFromHome !== null && (
+                  <View style={[styles.distBadge, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+                    <Feather name="navigation" size={9} color={colors.mutedForeground} />
+                    <Text style={[styles.distText, { color: colors.mutedForeground }]}>{distanceFromHome}m</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Current user row */}
+              <View style={[styles.activitySection, { borderColor: colors.border }]}>
+                <Text style={[styles.activitySectionLabel, { color: colors.mutedForeground }]}>Your status</Text>
+
+                {/* Status indicator */}
+                <View style={styles.myStatusRow}>
+                  {/* Avatar with status dot */}
+                  <View>
+                    <RoommateAvatar
+                      name={roommates.find((r) => r.id === currentUserId)?.name ?? "Me"}
+                      color={roommates.find((r) => r.id === currentUserId)?.color ?? colors.primary}
+                      size={42}
+                    />
+                    <View style={[styles.statusDotBig, { backgroundColor: myStatusCfg.color, borderColor: colors.card }]}>
+                      <Feather name={myStatusCfg.icon} size={8} color="#fff" />
+                    </View>
+                  </View>
+
+                  <View style={{ flex: 1, gap: 6 }}>
+                    {/* Current status display */}
+                    <View style={[styles.myStatusBadge, { backgroundColor: myStatusCfg.color + "18", borderColor: myStatusCfg.color + "44" }]}>
+                      <Feather name={myStatusCfg.icon} size={13} color={myStatusCfg.color} />
+                      <Text style={[styles.myStatusLabel, { color: myStatusCfg.color }]}>{myStatusCfg.label}</Text>
+                      {locationPermission === "granted" && homeLocation && (
+                        <Text style={[styles.myStatusSub, { color: myStatusCfg.color + "99" }]}>• auto-tracked</Text>
+                      )}
+                    </View>
+
+                    {/* Manual status buttons */}
+                    <View style={styles.statusBtnRow}>
+                      {locationPermission !== "granted" ? (
+                        <TouchableOpacity
+                          style={[styles.statusBtn, { backgroundColor: colors.primary, flex: 1 }]}
+                          onPress={requestLocation}
+                        >
+                          {locationLoading ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <>
+                              <Feather name="map-pin" size={12} color="#fff" />
+                              <Text style={[styles.statusBtnText, { color: "#fff" }]}>Enable Location</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.statusBtn, { backgroundColor: isHome ? colors.muted : colors.success + "18", borderColor: isHome ? colors.border : colors.success + "44", borderWidth: 1 }]}
+                            onPress={() => { setRoommateStatus(currentUserId, "home"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                          >
+                            <Feather name="home" size={12} color={isHome && myStatus === "home" ? colors.success : colors.mutedForeground} />
+                            <Text style={[styles.statusBtnText, { color: myStatus === "home" ? colors.success : colors.mutedForeground }]}>Home</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.statusBtn, { backgroundColor: myStatus === "asleep" ? colors.secondary : "transparent", borderColor: myStatus === "asleep" ? "#8B5CF6" + "55" : colors.border, borderWidth: 1, opacity: isHome ? 1 : 0.4 }]}
+                            disabled={!isHome}
+                            onPress={() => { setRoommateStatus(currentUserId, myStatus === "asleep" ? "home" : "asleep"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                          >
+                            <Feather name="moon" size={12} color={myStatus === "asleep" ? "#8B5CF6" : colors.mutedForeground} />
+                            <Text style={[styles.statusBtnText, { color: myStatus === "asleep" ? "#8B5CF6" : colors.mutedForeground }]}>Asleep</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.statusBtn, { backgroundColor: myStatus === "away" ? colors.warning + "18" : "transparent", borderColor: myStatus === "away" ? colors.warning + "55" : colors.border, borderWidth: 1 }]}
+                            onPress={() => { setRoommateStatus(currentUserId, "away"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                          >
+                            <Feather name="map-pin" size={12} color={myStatus === "away" ? colors.warning : colors.mutedForeground} />
+                            <Text style={[styles.statusBtnText, { color: myStatus === "away" ? colors.warning : colors.mutedForeground }]}>Away</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Home location control */}
+                {locationPermission === "granted" && (
+                  <TouchableOpacity
+                    style={[styles.homeLocBtn, { backgroundColor: homeLocation ? colors.success + "0C" : colors.primary + "10", borderColor: homeLocation ? colors.success + "33" : colors.primary + "33" }]}
+                    onPress={captureHomeLocation}
+                  >
+                    {locationLoading ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <>
+                        <Feather name="crosshair" size={13} color={homeLocation ? colors.success : colors.primary} />
+                        <Text style={[styles.homeLocText, { color: homeLocation ? colors.success : colors.primary }]}>
+                          {homeLocation ? `Home set · ${homeLocation.radius}m radius` : "Set Home Location"}
+                        </Text>
+                        {!homeLocation && (
+                          <Text style={[styles.homeLocHint, { color: colors.mutedForeground }]}>tap to use current location</Text>
+                        )}
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Other roommates */}
+              <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 8 }}>
+                <Text style={[styles.activitySectionLabel, { color: colors.mutedForeground }]}>Household</Text>
+                <View style={styles.activityGrid}>
+                  {roommates.filter((r) => r.id !== currentUserId).map((rm) => {
+                    const st = roommateStatuses[rm.id] ?? "unknown";
+                    const cfg = STATUS_CONFIG[st];
+                    return (
+                      <View key={rm.id} style={[styles.activityRmCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <View style={{ position: "relative" }}>
+                          <RoommateAvatar name={rm.name} color={rm.color} size={34} />
+                          <View style={[styles.statusDotSm, { backgroundColor: cfg.color, borderColor: colors.card }]}>
+                            <Feather name={cfg.icon} size={6} color="#fff" />
+                          </View>
+                        </View>
+                        <Text style={[styles.activityRmName, { color: colors.foreground }]} numberOfLines={1}>
+                          {rm.name.split(" ")[0]}
+                        </Text>
+                        <View style={[styles.activityRmBadge, { backgroundColor: cfg.color + "18" }]}>
+                          <Text style={[styles.activityRmStatus, { color: cfg.color }]}>{cfg.label}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.activityHint, { color: colors.mutedForeground }]}>
+                  Roommates update their own status when they join Homie
+                </Text>
+              </View>
+            </View>
+          );
+        })()}
+
         {/* ── Roommate chore sections ───────────────────── */}
         <View style={styles.listPad}>
           {roommatesWithChores.length === 0 ? (
@@ -1105,6 +1363,127 @@ const styles = StyleSheet.create({
   calLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   calLegendDot: { width: 8, height: 8, borderRadius: 4 },
   calLegendName: { fontFamily: "Inter_400Regular", fontSize: 11 },
+
+  // ── Roommate Activity ──
+  activityCard: {
+    marginHorizontal: 16,
+    marginBottom: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  activityHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 12,
+  },
+  activityHeaderIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activityTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, flex: 1 },
+  distBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  distText: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  activitySection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
+    gap: 10,
+  },
+  activitySectionLabel: { fontFamily: "Inter_500Medium", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 },
+  myStatusRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  statusDotBig: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusDotSm: {
+    position: "absolute",
+    bottom: -1,
+    right: -1,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  myStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: "flex-start",
+  },
+  myStatusLabel: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  myStatusSub: { fontFamily: "Inter_400Regular", fontSize: 11 },
+  statusBtnRow: { flexDirection: "row", gap: 6 },
+  statusBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  statusBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  homeLocBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  homeLocText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  homeLocHint: { fontFamily: "Inter_400Regular", fontSize: 11, marginLeft: "auto" as unknown as number },
+  activityGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  activityRmCard: {
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    minWidth: 72,
+  },
+  activityRmName: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  activityRmBadge: {
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  activityRmStatus: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
+  activityHint: { fontFamily: "Inter_400Regular", fontSize: 11, textAlign: "center", marginTop: 2 },
 
   // ── Calendar nav row ──
   calNavRow: {
