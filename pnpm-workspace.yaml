@@ -39,6 +39,7 @@ packages:
   - lib/*
   - lib/integrations/*
   - scripts
+  - lib/shell-quote-stub
 
 catalog:
   '@replit/vite-plugin-cartographer': ^0.5.1
@@ -75,6 +76,8 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # shell-quote is blocked by Replit's package firewall; use local stub
+  "shell-quote": "link:lib/shell-quote-stub"
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"
