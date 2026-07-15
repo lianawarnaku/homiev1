@@ -54,5 +54,9 @@
     "typescript": "~5.9.2",
     "zod": "catalog:",
     "zod-validation-error": "^3.4.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.5",
+    "expo-auth-session": "^7.0.11"
   }
 }
