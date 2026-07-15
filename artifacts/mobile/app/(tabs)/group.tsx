@@ -1139,8 +1139,8 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "space-between",
   },
-  headerSub: { fontFamily: "Inter_400Regular", fontSize: 13 },
-  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 28, marginTop: 2 },
+  headerSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginBottom: 2 },
+  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 28, marginTop: 0, letterSpacing: -0.5 },
   anonBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -1156,13 +1156,12 @@ const styles = StyleSheet.create({
   plantCard: {
     marginHorizontal: 16,
     marginBottom: 14,
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: 22,
     overflow: "hidden",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOpacity: 0.09,
+    shadowRadius: 16,
+    elevation: 4,
   },
   glowStrip: { height: 4, width: "100%" },
   plantCardInner: {
@@ -1212,11 +1211,15 @@ const styles = StyleSheet.create({
   stat: { fontFamily: "Inter_400Regular", fontSize: 11 },
 
   // Roommate list
-  listPad: { paddingHorizontal: 16, gap: 10 },
+  listPad: { paddingHorizontal: 16, gap: 12 },
   section: {
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: 20,
     overflow: "hidden",
+    shadowColor: "#1A1140",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 3,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -1279,9 +1282,13 @@ const styles = StyleSheet.create({
   calCard: {
     marginHorizontal: 16,
     marginBottom: 14,
-    borderRadius: 18,
-    borderWidth: 1,
+    borderRadius: 20,
     overflow: "hidden",
+    shadowColor: "#1A1140",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 3,
   },
   calHeader: {
     flexDirection: "row",
@@ -1368,9 +1375,13 @@ const styles = StyleSheet.create({
   activityCard: {
     marginHorizontal: 16,
     marginBottom: 14,
-    borderRadius: 18,
-    borderWidth: 1,
+    borderRadius: 20,
     overflow: "hidden",
+    shadowColor: "#1A1140",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 3,
   },
   activityHeader: {
     flexDirection: "row",

@@ -1,43 +1,43 @@
 const colors = {
   light: {
-    text: "#2D1F14",
-    tint: "#5B7FF2",
+    text: "#1A1140",
+    tint: "#7C3AED",
 
     // Warm neutral backgrounds
-    background: "#FBF8F4",
-    foreground: "#2D1F14",
+    background: "#F8F6F3",
+    foreground: "#1A1140",
 
-    // Cards & surfaces
+    // Cards & surfaces — pure white with elevation
     card: "#FFFFFF",
-    cardForeground: "#2D1F14",
+    cardForeground: "#1A1140",
 
-    // Brand colors
-    primary: "#5B7FF2",
+    // Brand — rich violet
+    primary: "#7C3AED",
     primaryForeground: "#FFFFFF",
 
-    // Warm secondary / muted tones
-    secondary: "#F5EEE6",
-    secondaryForeground: "#6B4226",
+    // Warm secondary tinted with violet
+    secondary: "#F3F0FC",
+    secondaryForeground: "#5B3F99",
 
-    muted: "#F2EBE3",
-    mutedForeground: "#8B7968",
+    muted: "#EDE8F8",
+    mutedForeground: "#9B8BB4",
 
     // Semantic
-    accent: "#F97316",
+    accent: "#E85D75",
     accentForeground: "#FFFFFF",
 
     destructive: "#EF4444",
     destructiveForeground: "#FFFFFF",
 
-    success: "#22C55E",
-    warning: "#F59E0B",
+    success: "#16A34A",
+    warning: "#D97706",
 
-    // Warm borders
-    border: "#E8DDD4",
-    input: "#E8DDD4",
+    // Subtle borders — almost invisible
+    border: "#EBE5F5",
+    input: "#EBE5F5",
   },
 
-  radius: 12,
+  radius: 18,
 };
 
 export default colors;

@@ -15,9 +15,18 @@ export function EmptyState({ icon, title, subtitle }: EmptyStateProps) {
   return (
     <View style={styles.container}>
       <View
-        style={[styles.iconContainer, { backgroundColor: colors.secondary }]}
+        style={[
+          styles.iconContainer,
+          {
+            backgroundColor: colors.secondary,
+            shadowColor: colors.primary,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.12,
+            shadowRadius: 12,
+          },
+        ]}
       >
-        <Feather name={icon} size={32} color={colors.mutedForeground} />
+        <Feather name={icon} size={34} color={colors.primary} />
       </View>
       <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
       {subtitle ? (
@@ -33,27 +42,28 @@ const styles = StyleSheet.create({
   container: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 48,
-    paddingHorizontal: 24,
-    gap: 12,
+    paddingVertical: 56,
+    paddingHorizontal: 32,
+    gap: 10,
   },
   iconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
+    marginBottom: 6,
   },
   title: {
-    fontSize: 17,
-    fontFamily: "Inter_600SemiBold",
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
     textAlign: "center",
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 21,
   },
 });

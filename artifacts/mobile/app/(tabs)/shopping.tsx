@@ -87,31 +87,43 @@ export default function ShoppingScreen() {
     ? shoppingItems.find((s) => s.id === assignPickerItemId)
     : null;
 
+  const totalRemaining = shoppingItems.filter((i) => !i.completed).length;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View
         style={[
           styles.header,
-          { paddingTop: topPad + 16, backgroundColor: colors.background },
+          { paddingTop: topPad + 20, backgroundColor: colors.background },
         ]}
       >
-        <Text style={[styles.title, { color: colors.foreground }]}>Shopping</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+            Shared lists
+          </Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>Shopping</Text>
+        </View>
         <TouchableOpacity
           style={[styles.addHeaderBtn, { backgroundColor: colors.primary }]}
           onPress={() => setShowNewListModal(true)}
         >
-          <Feather name="plus" size={18} color="#fff" />
+          <Feather name="plus" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
 
-      {/* Summary chip */}
+      {/* Summary strip */}
       {shoppingLists.length > 0 && (
-        <View style={[styles.summaryRow, { paddingHorizontal: 16, marginBottom: 8 }]}>
-          <View style={[styles.summaryChip, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "30" }]}>
-            <Feather name="shopping-cart" size={12} color={colors.primary} />
-            <Text style={[styles.summaryText, { color: colors.primary }]}>
-              {shoppingItems.filter((i) => !i.completed).length} items left across {shoppingLists.length} {shoppingLists.length === 1 ? "list" : "lists"}
+        <View style={[styles.summaryRow, { paddingHorizontal: 16, marginBottom: 12 }]}>
+          <View style={[styles.summaryChip, { backgroundColor: colors.card, shadowColor: "#1A1140" }]}>
+            <View style={[styles.summaryIconWrap, { backgroundColor: colors.primary + "15" }]}>
+              <Feather name="shopping-cart" size={13} color={colors.primary} />
+            </View>
+            <Text style={[styles.summaryText, { color: colors.foreground }]}>
+              <Text style={{ fontFamily: "Inter_700Bold", color: colors.primary }}>{totalRemaining}</Text>
+              {" "}items left across{" "}
+              <Text style={{ fontFamily: "Inter_700Bold" }}>{shoppingLists.length}</Text>
+              {" "}{shoppingLists.length === 1 ? "list" : "lists"}
             </Text>
           </View>
         </View>
@@ -136,12 +148,13 @@ export default function ShoppingScreen() {
             const items = shoppingItems.filter((s) => s.listId === list.id);
             const collapsed = collapsedLists.has(list.id);
             const doneCount = items.filter((i) => i.completed).length;
+            const pct = items.length > 0 ? doneCount / items.length : 0;
             return (
               <View
                 key={list.id}
                 style={[
                   styles.listSection,
-                  { backgroundColor: colors.card, borderColor: colors.border },
+                  { backgroundColor: colors.card, shadowColor: "#1A1140" },
                 ]}
               >
                 {/* Section header */}
@@ -150,36 +163,60 @@ export default function ShoppingScreen() {
                   onPress={() => toggleListCollapse(list.id)}
                   activeOpacity={0.7}
                 >
-                  <Feather
-                    name={collapsed ? "chevron-right" : "chevron-down"}
-                    size={18}
-                    color={colors.mutedForeground}
-                  />
-                  <Text style={[styles.listName, { color: colors.foreground }]}>
-                    {list.name}
-                  </Text>
-                  <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
-                    {items.length - doneCount}/{items.length}
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.listAddBtn, { backgroundColor: colors.primary + "18" }]}
-                    onPress={() => {
-                      setTargetListId(list.id);
-                      setShowShoppingModal(true);
-                    }}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Feather name="plus" size={15} color={colors.primary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() =>
-                      confirm("delete_shopping_list", "Delete List", `Delete "${list.name}" and all its items?`, () => deleteShoppingList(list.id), { confirmText: "Delete", destructive: true })
-                    }
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Feather name="trash-2" size={15} color={colors.mutedForeground} />
-                  </TouchableOpacity>
+                  <View style={styles.listHeaderLeft}>
+                    <View style={[styles.listIconWrap, { backgroundColor: colors.primary + "15" }]}>
+                      <Feather name="list" size={14} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.listName, { color: colors.foreground }]}>
+                        {list.name}
+                      </Text>
+                      <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
+                        {items.length - doneCount} of {items.length} remaining
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.listHeaderActions}>
+                    <TouchableOpacity
+                      style={[styles.listAddBtn, { backgroundColor: colors.primary + "15" }]}
+                      onPress={() => {
+                        setTargetListId(list.id);
+                        setShowShoppingModal(true);
+                      }}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Feather name="plus" size={16} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() =>
+                        confirm("delete_shopping_list", "Delete List", `Delete "${list.name}" and all its items?`, () => deleteShoppingList(list.id), { confirmText: "Delete", destructive: true })
+                      }
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Feather name="trash-2" size={15} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                    <Feather
+                      name={collapsed ? "chevron-right" : "chevron-down"}
+                      size={18}
+                      color={colors.mutedForeground}
+                    />
+                  </View>
                 </TouchableOpacity>
+
+                {/* Progress bar */}
+                {items.length > 0 && (
+                  <View style={[styles.listProgressTrack, { backgroundColor: colors.muted }]}>
+                    <View
+                      style={[
+                        styles.listProgressFill,
+                        {
+                          backgroundColor: pct >= 1 ? colors.success : colors.primary,
+                          width: `${Math.max(pct * 100, 2)}%` as `${number}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                )}
 
                 {/* Items */}
                 {!collapsed && (
@@ -200,7 +237,7 @@ export default function ShoppingScreen() {
                               styles.shopItem,
                               {
                                 borderTopColor: colors.border,
-                                opacity: item.completed ? 0.55 : 1,
+                                opacity: item.completed ? 0.5 : 1,
                               },
                             ]}
                           >
@@ -209,9 +246,7 @@ export default function ShoppingScreen() {
                                 styles.shopCheck,
                                 {
                                   borderColor: item.completed ? colors.success : colors.border,
-                                  backgroundColor: item.completed
-                                    ? colors.success + "22"
-                                    : "transparent",
+                                  backgroundColor: item.completed ? colors.success : "transparent",
                                 },
                               ]}
                               onPress={() => {
@@ -220,7 +255,7 @@ export default function ShoppingScreen() {
                               }}
                             >
                               {item.completed ? (
-                                <Feather name="check" size={12} color={colors.success} />
+                                <Feather name="check" size={11} color="#fff" />
                               ) : null}
                             </TouchableOpacity>
 
@@ -252,7 +287,7 @@ export default function ShoppingScreen() {
                               style={styles.assignBtn}
                             >
                               {assignee ? (
-                                <View style={[styles.assignedPill, { backgroundColor: assignee.color + "22", borderColor: assignee.color + "55" }]}>
+                                <View style={[styles.assignedPill, { backgroundColor: assignee.color + "20", borderColor: assignee.color + "55" }]}>
                                   <View style={[styles.pillDot, { backgroundColor: assignee.color }]} />
                                   <Text style={[styles.pillText, { color: assignee.color }]}>
                                     {assignee.id === currentUserId ? "You" : assignee.name}
@@ -294,7 +329,7 @@ export default function ShoppingScreen() {
       >
         <Pressable style={styles.overlay} onPress={() => setAssignPickerItemId(null)} />
         <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 }]}>
-          <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          <View style={[styles.handle, { backgroundColor: colors.muted }]} />
           <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Assign to</Text>
           {pickerItem && (
             <Text style={[styles.assignPickerItemName, { color: colors.mutedForeground }]}>
@@ -310,9 +345,9 @@ export default function ShoppingScreen() {
                   style={[
                     styles.assignAvatarCell,
                     {
-                      backgroundColor: selected ? r.color + "22" : colors.muted,
-                      borderColor: selected ? r.color : colors.border,
-                      borderWidth: selected ? 2 : 1,
+                      backgroundColor: selected ? r.color + "18" : colors.muted,
+                      borderColor: selected ? r.color : "transparent",
+                      borderWidth: selected ? 2 : 0,
                     },
                   ]}
                   onPress={() => {
@@ -324,11 +359,11 @@ export default function ShoppingScreen() {
                     setAssignPickerItemId(null);
                   }}
                 >
-                  <RoommateAvatar name={r.name} color={r.color} size={40} />
+                  <RoommateAvatar name={r.name} color={r.color} size={42} />
                   <Text
                     style={[
                       styles.assignAvatarName,
-                      { color: selected ? r.color : colors.foreground, fontFamily: selected ? "Inter_600SemiBold" : "Inter_400Regular" },
+                      { color: selected ? r.color : colors.foreground, fontFamily: selected ? "Inter_700Bold" : "Inter_400Regular" },
                     ]}
                     numberOfLines={1}
                   >
@@ -371,7 +406,7 @@ export default function ShoppingScreen() {
             { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 },
           ]}
         >
-          <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          <View style={[styles.handle, { backgroundColor: colors.muted }]} />
           <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
             Add Item
             {targetListId ? (
@@ -418,7 +453,7 @@ export default function ShoppingScreen() {
             { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 },
           ]}
         >
-          <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          <View style={[styles.handle, { backgroundColor: colors.muted }]} />
           <Text style={[styles.sheetTitle, { color: colors.foreground }]}>New List</Text>
           <Text style={[styles.label, { color: colors.mutedForeground }]}>List name</Text>
           <TextInput
@@ -451,127 +486,174 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 8,
+    paddingBottom: 16,
   },
-  title: { fontFamily: "Inter_700Bold", fontSize: 28 },
+  headerSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginBottom: 2 },
+  title: { fontFamily: "Inter_700Bold", fontSize: 28, letterSpacing: -0.5 },
   addHeaderBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   summaryRow: { flexDirection: "row" },
   summaryChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    flex: 1,
   },
-  summaryText: { fontFamily: "Inter_500Medium", fontSize: 12 },
-  listContent: { paddingHorizontal: 16, paddingTop: 4, gap: 10 },
+  summaryIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  summaryText: { fontFamily: "Inter_400Regular", fontSize: 13, flex: 1 },
+  listContent: { paddingHorizontal: 16, paddingTop: 2, gap: 12 },
   listSection: {
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 20,
     overflow: "hidden",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 3,
   },
   listHeader: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+    justifyContent: "space-between",
   },
-  listName: { flex: 1, fontFamily: "Inter_600SemiBold", fontSize: 15 },
-  listCount: { fontFamily: "Inter_400Regular", fontSize: 12 },
-  listAddBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+  listHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  listIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
-  listItems: { paddingBottom: 4 },
+  listName: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  listCount: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 1 },
+  listHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  listAddBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  listProgressTrack: {
+    height: 3,
+    marginHorizontal: 16,
+    marginBottom: 2,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  listProgressFill: { height: 3, borderRadius: 2 },
+  listItems: { paddingBottom: 6 },
   listEmpty: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
     textAlign: "center",
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 16,
   },
   shopItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 10,
+    gap: 12,
   },
   shopCheck: {
-    width: 20,
-    height: 20,
-    borderRadius: 6,
-    borderWidth: 1.5,
+    width: 21,
+    height: 21,
+    borderRadius: 7,
+    borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
   },
-  shopName: { fontFamily: "Inter_500Medium", fontSize: 14 },
-  shopMeta: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 1 },
+  shopName: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  shopMeta: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
   assignBtn: { alignItems: "center", justifyContent: "center" },
   assignedPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 20,
     borderWidth: 1,
   },
   pillDot: { width: 7, height: 7, borderRadius: 4 },
-  pillText: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  pillText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
   assignGhost: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
     borderStyle: "dashed",
     alignItems: "center",
     justifyContent: "center",
   },
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(26,17,64,0.45)",
   },
   sheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 22,
     gap: 10,
   },
   handle: {
-    width: 36,
+    width: 40,
     height: 4,
     borderRadius: 2,
     alignSelf: "center",
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 20, marginBottom: 4 },
+  sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 22, marginBottom: 4, letterSpacing: -0.4 },
   sheetSubtitle: { fontFamily: "Inter_400Regular", fontSize: 16 },
-  label: { fontFamily: "Inter_500Medium", fontSize: 13, marginBottom: 4 },
+  label: { fontFamily: "Inter_600SemiBold", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6 },
   input: {
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
     fontSize: 15,
     fontFamily: "Inter_400Regular",
   },
   addBtn: {
-    borderRadius: 14,
-    padding: 15,
+    borderRadius: 16,
+    padding: 16,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -579,8 +661,8 @@ const styles = StyleSheet.create({
   assignPickerItemName: {
     fontFamily: "Inter_400Regular",
     fontSize: 14,
-    marginTop: -6,
-    marginBottom: 4,
+    marginTop: -4,
+    marginBottom: 8,
   },
   assignAvatarGrid: {
     flexDirection: "row",
@@ -591,13 +673,13 @@ const styles = StyleSheet.create({
   assignAvatarCell: {
     width: "30%",
     alignItems: "center",
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
     gap: 6,
     position: "relative",
   },
   assignAvatarName: {
-    fontSize: 13,
+    fontSize: 12,
     textAlign: "center",
   },
   assignSelectedCheck: {
@@ -615,8 +697,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 13,
+    borderRadius: 14,
     borderWidth: 1,
     marginTop: 4,
   },

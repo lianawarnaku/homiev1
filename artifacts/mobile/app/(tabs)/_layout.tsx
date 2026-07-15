@@ -18,22 +18,30 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: colors.card,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.border,
+          borderTopWidth: 0,
           elevation: 0,
-          shadowOpacity: 0,
+          shadowColor: "#1A1140",
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.06,
+          shadowRadius: 16,
           paddingBottom: isWeb ? 8 : insets.bottom,
-          height: isWeb ? 60 : 56 + insets.bottom,
+          height: isWeb ? 62 : 58 + insets.bottom,
+          paddingTop: 6,
         },
         tabBarLabelStyle: {
           fontSize: 10,
-          marginTop: -2,
+          fontFamily: "Inter_600SemiBold",
+          marginTop: 2,
         },
         tabBarBackground: () => (
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: colors.card },
+              {
+                backgroundColor: colors.card,
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+              },
             ]}
           />
         ),

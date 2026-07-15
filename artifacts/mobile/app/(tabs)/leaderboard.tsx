@@ -1,7 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
-  FlatList,
   Platform,
   ScrollView,
   StyleSheet,
@@ -17,18 +16,8 @@ import { useColors } from "@/hooks/useColors";
 
 type Period = "weekly" | "alltime";
 
-const MEDALS = ["#FFD700", "#C0C0C0", "#CD7F32"] as const;
-const MEDAL_LABELS = ["1st", "2nd", "3rd"] as const;
-
-const HOME_ICONS: (keyof typeof Feather.glyphMap)[] = [
-  "home",       // 1st
-  "coffee",     // 2nd
-  "tool",       // 3rd
-  "wind",       // 4th
-  "droplet",    // 5th
-  "sun",        // 6th
-  "package",    // 7th+
-];
+const MEDALS = ["#F59E0B", "#94A3B8", "#D97706"] as const;
+const MEDAL_EMOJIS = ["🥇", "🥈", "🥉"] as const;
 
 export default function LeaderboardScreen() {
   const colors = useColors();
@@ -52,11 +41,6 @@ export default function LeaderboardScreen() {
   const completedByUser = (id: string) =>
     chores.filter((c) => c.completed && c.assignedTo === id).length;
 
-  const extraCompletedByUser = (id: string) =>
-    chores.filter(
-      (c) => c.completed && c.assignedTo !== id && (c as { completedByExtra?: string }).completedByExtra === id
-    ).length;
-
   const totalCompleted = chores.filter((c) => c.completed).length;
 
   return (
@@ -65,19 +49,28 @@ export default function LeaderboardScreen() {
       contentContainerStyle={{ paddingBottom: 90 + botPad }}
       showsVerticalScrollIndicator={false}
     >
-      <View style={[styles.header, { paddingTop: topPad + 16 }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          Leaderboard
-        </Text>
-        <View style={styles.periodToggle}>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: topPad + 20 }]}>
+        <View>
+          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+            This household
+          </Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>
+            Leaderboard
+          </Text>
+        </View>
+        <View style={[styles.periodToggle, { backgroundColor: colors.muted }]}>
           {(["weekly", "alltime"] as Period[]).map((p) => (
             <TouchableOpacity
               key={p}
               style={[
                 styles.periodBtn,
                 {
-                  backgroundColor:
-                    period === p ? colors.primary : "transparent",
+                  backgroundColor: period === p ? colors.primary : "transparent",
+                  shadowColor: period === p ? colors.primary : "transparent",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: period === p ? 0.3 : 0,
+                  shadowRadius: 6,
                 },
               ]}
               onPress={() => setPeriod(p)}
@@ -87,8 +80,7 @@ export default function LeaderboardScreen() {
                   styles.periodText,
                   {
                     color: period === p ? "#fff" : colors.mutedForeground,
-                    fontFamily:
-                      period === p ? "Inter_700Bold" : "Inter_400Regular",
+                    fontFamily: period === p ? "Inter_700Bold" : "Inter_500Medium",
                   },
                 ]}
               >
@@ -99,10 +91,14 @@ export default function LeaderboardScreen() {
         </View>
       </View>
 
+      {/* Stats strip */}
       <View
         style={[
           styles.statRow,
-          { backgroundColor: colors.card, borderColor: colors.border },
+          {
+            backgroundColor: colors.card,
+            shadowColor: "#1A1140",
+          },
         ]}
       >
         <View style={styles.statItem}>
@@ -133,244 +129,167 @@ export default function LeaderboardScreen() {
         </View>
       </View>
 
-      {top3.length > 0 ? (
+      {/* Podium */}
+      {top3.length > 0 && (
         <View style={styles.podiumSection}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
             Top Performers
           </Text>
-          <View style={styles.podium}>
-            {top3.length > 1 ? (
-              <View style={[styles.podiumSlot, styles.podiumSecond]}>
-                <View
-                  style={[
-                    styles.crownWrapper,
-                    { backgroundColor: MEDALS[1] + "22" },
-                  ]}
-                >
-                  <Text style={styles.utensilIcon}>🧹</Text>
-                </View>
-                <RoommateAvatar
-                  name={top3[1].name}
-                  color={top3[1].color}
-                  size={52}
-                />
-                <View
-                  style={[
-                    styles.medalBadge,
-                    { backgroundColor: MEDALS[1] + "22", borderColor: MEDALS[1] },
-                  ]}
-                >
-                  <Text style={[styles.medalLabel, { color: MEDALS[1] }]}>
-                    {MEDAL_LABELS[1]}
+          <View style={[styles.podiumCard, { backgroundColor: colors.card, shadowColor: "#1A1140" }]}>
+            <View style={styles.podium}>
+              {/* 2nd place */}
+              {top3.length > 1 && (
+                <View style={[styles.podiumSlot, { marginTop: 24 }]}>
+                  <Text style={styles.medalEmoji}>{MEDAL_EMOJIS[1]}</Text>
+                  <RoommateAvatar
+                    name={top3[1].name}
+                    color={top3[1].color}
+                    size={52}
+                  />
+                  <Text style={[styles.podiumName, { color: colors.foreground }]} numberOfLines={1}>
+                    {top3[1].name}
                   </Text>
+                  <Text style={[styles.podiumPoints, { color: colors.mutedForeground }]}>
+                    {period === "weekly" ? top3[1].weeklyPoints : top3[1].points} pts
+                  </Text>
+                  <View
+                    style={[
+                      styles.podiumBar,
+                      { backgroundColor: MEDALS[1] + "30", height: 60 },
+                    ]}
+                  >
+                    <View style={[styles.podiumBarAccent, { backgroundColor: MEDALS[1], height: 3 }]} />
+                  </View>
                 </View>
-                <Text
-                  style={[styles.podiumName, { color: colors.foreground }]}
-                  numberOfLines={1}
-                >
-                  {top3[1].name}
+              )}
+
+              {/* 1st place */}
+              <View style={styles.podiumSlot}>
+                <Text style={[styles.medalEmoji, { fontSize: 28 }]}>{MEDAL_EMOJIS[0]}</Text>
+                <View style={[styles.firstRing, { borderColor: MEDALS[0] + "55" }]}>
+                  <RoommateAvatar
+                    name={top3[0].name}
+                    color={top3[0].color}
+                    size={64}
+                  />
+                </View>
+                <Text style={[styles.podiumName, { color: colors.foreground, fontFamily: "Inter_700Bold" }]} numberOfLines={1}>
+                  {top3[0].name}{top3[0].id === currentUserId ? " (You)" : ""}
                 </Text>
-                <Text style={[styles.podiumPoints, { color: colors.mutedForeground }]}>
-                  {period === "weekly" ? top3[1].weeklyPoints : top3[1].points} pts
+                <Text style={[styles.podiumPoints, { color: MEDALS[0], fontFamily: "Inter_600SemiBold" }]}>
+                  {period === "weekly" ? top3[0].weeklyPoints : top3[0].points} pts
                 </Text>
                 <View
                   style={[
                     styles.podiumBar,
-                    {
-                      backgroundColor: MEDALS[1],
-                      height: 60,
-                    },
+                    { backgroundColor: MEDALS[0] + "25", height: 80 },
                   ]}
-                />
+                >
+                  <View style={[styles.podiumBarAccent, { backgroundColor: MEDALS[0], height: 3 }]} />
+                </View>
               </View>
-            ) : null}
 
-            <View style={[styles.podiumSlot, styles.podiumFirst]}>
-              <View
-                style={[
-                  styles.crownWrapper,
-                  { backgroundColor: MEDALS[0] + "22" },
-                ]}
-              >
-                <Text style={styles.utensilIcon}>🍴</Text>
-              </View>
-              <RoommateAvatar
-                name={top3[0].name}
-                color={top3[0].color}
-                size={62}
-              />
-              <View
-                style={[
-                  styles.medalBadge,
-                  { backgroundColor: MEDALS[0] + "22", borderColor: MEDALS[0] },
-                ]}
-              >
-                <Text style={[styles.medalLabel, { color: MEDALS[0] }]}>
-                  {MEDAL_LABELS[0]}
-                </Text>
-              </View>
-              <Text
-                style={[styles.podiumName, { color: colors.foreground }]}
-                numberOfLines={1}
-              >
-                {top3[0].name}{" "}
-                {top3[0].id === currentUserId ? "(You)" : ""}
-              </Text>
-              <Text
-                style={[styles.podiumPoints, { color: colors.mutedForeground }]}
-              >
-                {period === "weekly" ? top3[0].weeklyPoints : top3[0].points} pts
-              </Text>
-              <View
-                style={[
-                  styles.podiumBar,
-                  { backgroundColor: MEDALS[0], height: 80 },
-                ]}
-              />
+              {/* 3rd place */}
+              {top3.length > 2 && (
+                <View style={[styles.podiumSlot, { marginTop: 36 }]}>
+                  <Text style={styles.medalEmoji}>{MEDAL_EMOJIS[2]}</Text>
+                  <RoommateAvatar
+                    name={top3[2].name}
+                    color={top3[2].color}
+                    size={44}
+                  />
+                  <Text style={[styles.podiumName, { color: colors.foreground }]} numberOfLines={1}>
+                    {top3[2].name}
+                  </Text>
+                  <Text style={[styles.podiumPoints, { color: colors.mutedForeground }]}>
+                    {period === "weekly" ? top3[2].weeklyPoints : top3[2].points} pts
+                  </Text>
+                  <View
+                    style={[
+                      styles.podiumBar,
+                      { backgroundColor: MEDALS[2] + "25", height: 44 },
+                    ]}
+                  >
+                    <View style={[styles.podiumBarAccent, { backgroundColor: MEDALS[2], height: 3 }]} />
+                  </View>
+                </View>
+              )}
             </View>
-
-            {top3.length > 2 ? (
-              <View style={[styles.podiumSlot, styles.podiumThird]}>
-                <View
-                  style={[
-                    styles.crownWrapper,
-                    { backgroundColor: MEDALS[2] + "22" },
-                  ]}
-                >
-                  <Text style={styles.utensilIcon}>☕</Text>
-                </View>
-                <RoommateAvatar
-                  name={top3[2].name}
-                  color={top3[2].color}
-                  size={44}
-                />
-                <View
-                  style={[
-                    styles.medalBadge,
-                    { backgroundColor: MEDALS[2] + "22", borderColor: MEDALS[2] },
-                  ]}
-                >
-                  <Text style={[styles.medalLabel, { color: MEDALS[2] }]}>
-                    {MEDAL_LABELS[2]}
-                  </Text>
-                </View>
-                <Text
-                  style={[styles.podiumName, { color: colors.foreground }]}
-                  numberOfLines={1}
-                >
-                  {top3[2].name}
-                </Text>
-                <Text
-                  style={[
-                    styles.podiumPoints,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
-                  {period === "weekly" ? top3[2].weeklyPoints : top3[2].points} pts
-                </Text>
-                <View
-                  style={[
-                    styles.podiumBar,
-                    { backgroundColor: MEDALS[2], height: 44 },
-                  ]}
-                />
-              </View>
-            ) : null}
           </View>
         </View>
-      ) : null}
+      )}
 
+      {/* Full rankings */}
       <Text style={[styles.sectionTitle, { color: colors.foreground, paddingHorizontal: 20 }]}>
         Full Rankings
       </Text>
 
-      {sorted.map((r, idx) => {
-        const isMe = r.id === currentUserId;
-        const completed = completedByUser(r.id);
-        const pts = period === "weekly" ? r.weeklyPoints : r.points;
-        const maxPts = period === "weekly"
-          ? sorted[0].weeklyPoints
-          : sorted[0].points;
-        const pct = maxPts > 0 ? pts / maxPts : 0;
+      <View style={{ paddingHorizontal: 16, gap: 10 }}>
+        {sorted.map((r, idx) => {
+          const isMe = r.id === currentUserId;
+          const completed = completedByUser(r.id);
+          const pts = period === "weekly" ? r.weeklyPoints : r.points;
+          const maxPts = period === "weekly"
+            ? sorted[0].weeklyPoints
+            : sorted[0].points;
+          const pct = maxPts > 0 ? pts / maxPts : 0;
 
-        return (
-          <View
-            key={r.id}
-            style={[
-              styles.rankRow,
-              {
-                backgroundColor: isMe
-                  ? colors.primary + "0d"
-                  : colors.card,
-                borderColor: isMe ? colors.primary + "44" : colors.border,
-              },
-            ]}
-          >
-            <View style={styles.rankIconCol}>
-              <Text style={[styles.rank, { color: colors.mutedForeground }]}>
-                {idx + 1}
-              </Text>
-              <Feather
-                name={HOME_ICONS[Math.min(idx, HOME_ICONS.length - 1)]}
-                size={11}
-                color={colors.mutedForeground}
-              />
-            </View>
-            <RoommateAvatar name={r.name} color={r.color} size={40} />
-            <View style={styles.rankInfo}>
-              <View style={styles.rankNameRow}>
-                <Text style={[styles.rankName, { color: colors.foreground }]}>
-                  {r.name} {isMe ? "(You)" : ""}
-                </Text>
-                {completed >= 5 ? (
-                  <View
-                    style={[
-                      styles.fairyBadge,
-                      { backgroundColor: colors.accent + "18" },
-                    ]}
-                  >
-                    <Feather name="star" size={10} color={colors.accent} />
-                    <Text
-                      style={[styles.fairyText, { color: colors.accent }]}
-                    >
-                      Fairy
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-              <View style={styles.rankMeta}>
-                <Text style={[styles.rankCompleted, { color: colors.mutedForeground }]}>
-                  {completed} chores
-                </Text>
-                <View style={[styles.miniBar, { backgroundColor: colors.muted }]}>
-                  <View
-                    style={[
-                      styles.miniBarFill,
-                      {
-                        backgroundColor: r.color,
-                        width: `${pct * 100}%` as `${number}%`,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-            </View>
+          return (
             <View
+              key={r.id}
               style={[
-                styles.rankPoints,
-                { backgroundColor: r.color + "18" },
+                styles.rankRow,
+                {
+                  backgroundColor: isMe ? colors.primary + "0d" : colors.card,
+                  borderWidth: isMe ? 1.5 : 0,
+                  borderColor: isMe ? colors.primary + "44" : "transparent",
+                  shadowColor: "#1A1140",
+                },
               ]}
             >
-              <Text style={[styles.rankPtsNum, { color: r.color }]}>
-                {pts}
-              </Text>
-              <Text style={[styles.rankPtsLabel, { color: r.color }]}>
-                pts
-              </Text>
+              <View style={[styles.rankNumBadge, { backgroundColor: idx < 3 ? MEDALS[idx] + "20" : colors.muted }]}>
+                <Text style={[styles.rank, { color: idx < 3 ? MEDALS[idx] : colors.mutedForeground }]}>
+                  {idx + 1}
+                </Text>
+              </View>
+              <RoommateAvatar name={r.name} color={r.color} size={42} />
+              <View style={styles.rankInfo}>
+                <View style={styles.rankNameRow}>
+                  <Text style={[styles.rankName, { color: colors.foreground }]}>
+                    {r.name} {isMe ? "(You)" : ""}
+                  </Text>
+                  {completed >= 5 && (
+                    <View style={[styles.starBadge, { backgroundColor: colors.warning + "20" }]}>
+                      <Feather name="star" size={10} color={colors.warning} />
+                      <Text style={[styles.starText, { color: colors.warning }]}>Star</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.rankMeta}>
+                  <Text style={[styles.rankCompleted, { color: colors.mutedForeground }]}>
+                    {completed} done
+                  </Text>
+                  <View style={[styles.miniBar, { backgroundColor: colors.muted, flex: 1 }]}>
+                    <View
+                      style={[
+                        styles.miniBarFill,
+                        {
+                          backgroundColor: r.color,
+                          width: `${Math.max(pct * 100, 4)}%` as `${number}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
+              </View>
+              <View style={[styles.rankPoints, { backgroundColor: r.color + "18" }]}>
+                <Text style={[styles.rankPtsNum, { color: r.color }]}>{pts}</Text>
+                <Text style={[styles.rankPtsLabel, { color: r.color + "BB" }]}>pts</Text>
+              </View>
             </View>
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
     </ScrollView>
   );
 }
@@ -379,120 +298,130 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 18,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
     gap: 12,
   },
-  title: { fontFamily: "Inter_700Bold", fontSize: 28 },
+  headerSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginBottom: 2 },
+  title: { fontFamily: "Inter_700Bold", fontSize: 28, letterSpacing: -0.5 },
   periodToggle: {
     flexDirection: "row",
-    alignSelf: "flex-start",
     borderRadius: 24,
-    backgroundColor: "#F0F0F5",
     padding: 3,
     gap: 2,
   },
   periodBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 20,
   },
-  periodText: { fontSize: 13 },
+  periodText: { fontSize: 12 },
   statRow: {
     flexDirection: "row",
     marginHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 20,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 24,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 3,
   },
   statItem: { flex: 1, alignItems: "center" },
-  statNum: { fontFamily: "Inter_700Bold", fontSize: 24 },
+  statNum: { fontFamily: "Inter_700Bold", fontSize: 26, letterSpacing: -0.5 },
   statLabel: { fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 2 },
   statDivider: { width: 1, marginHorizontal: 8 },
-  podiumSection: { marginBottom: 20 },
+  podiumSection: { marginBottom: 24, paddingHorizontal: 16 },
   sectionTitle: {
     fontFamily: "Inter_700Bold",
-    fontSize: 17,
-    marginBottom: 12,
-    paddingHorizontal: 20,
+    fontSize: 18,
+    marginBottom: 14,
+    letterSpacing: -0.3,
+  },
+  podiumCard: {
+    borderRadius: 22,
+    paddingVertical: 20,
+    paddingHorizontal: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 16,
+    elevation: 3,
   },
   podium: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "center",
-    paddingHorizontal: 16,
-    gap: 12,
-    marginBottom: 8,
+    gap: 8,
   },
   podiumSlot: { alignItems: "center", gap: 6, flex: 1 },
-  podiumFirst: {},
-  podiumSecond: {},
-  podiumThird: {},
-  crownWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
+  medalEmoji: { fontSize: 22 },
+  firstRing: {
+    padding: 3,
+    borderRadius: 40,
+    borderWidth: 2,
   },
-  utensilIcon: { fontSize: 18 },
-  rankIconCol: {
-    width: 24,
-    alignItems: "center",
-    gap: 2,
-  },
-  medalBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  medalLabel: { fontFamily: "Inter_700Bold", fontSize: 11 },
   podiumName: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 12,
     textAlign: "center",
   },
   podiumPoints: { fontFamily: "Inter_400Regular", fontSize: 11, textAlign: "center" },
-  podiumBar: { width: "100%", borderTopLeftRadius: 6, borderTopRightRadius: 6 },
+  podiumBar: {
+    width: "100%",
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    justifyContent: "flex-start",
+    overflow: "hidden",
+  },
+  podiumBarAccent: { width: "100%" },
   rankRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 12,
+    borderRadius: 18,
+    padding: 14,
     gap: 12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  rankNumBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
   rank: {
     fontFamily: "Inter_700Bold",
-    fontSize: 16,
-    width: 24,
+    fontSize: 15,
     textAlign: "center",
   },
-  rankInfo: { flex: 1, gap: 4 },
+  rankInfo: { flex: 1, gap: 5 },
   rankNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   rankName: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
-  fairyBadge: {
+  starBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 8,
   },
-  fairyText: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
+  starText: { fontFamily: "Inter_700Bold", fontSize: 10 },
   rankMeta: { flexDirection: "row", alignItems: "center", gap: 8 },
   rankCompleted: { fontFamily: "Inter_400Regular", fontSize: 12 },
-  miniBar: { flex: 1, height: 4, borderRadius: 2, overflow: "hidden" },
-  miniBarFill: { height: 4, borderRadius: 2 },
+  miniBar: { height: 5, borderRadius: 3, overflow: "hidden" },
+  miniBarFill: { height: 5, borderRadius: 3 },
   rankPoints: {
     alignItems: "center",
-    padding: 8,
-    borderRadius: 10,
-    minWidth: 52,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    minWidth: 54,
   },
   rankPtsNum: { fontFamily: "Inter_700Bold", fontSize: 18 },
-  rankPtsLabel: { fontFamily: "Inter_400Regular", fontSize: 10 },
+  rankPtsLabel: { fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 1 },
 });

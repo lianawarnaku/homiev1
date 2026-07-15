@@ -116,7 +116,15 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
         styles.choreRow,
         {
           backgroundColor: colors.card,
-          borderColor: overdue ? colors.warning + "44" : colors.border,
+          shadowColor: overdue ? colors.warning : "#1A1140",
+          borderLeftWidth: 3,
+          borderLeftColor: chore.completed
+            ? colors.success
+            : overdue
+            ? colors.warning
+            : isToday(chore.dueDate)
+            ? colors.primary
+            : "transparent",
         },
       ]}
     >
@@ -125,7 +133,7 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
           styles.checkBox,
           {
             borderColor: chore.completed ? colors.success : overdue ? colors.warning : colors.border,
-            backgroundColor: chore.completed ? colors.success + "22" : "transparent",
+            backgroundColor: chore.completed ? colors.success : "transparent",
           },
         ]}
         onPress={() => {
@@ -137,7 +145,7 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
         disabled={chore.completed}
       >
         {chore.completed ? (
-          <Feather name="check" size={14} color={colors.success} />
+          <Feather name="check" size={12} color="#fff" />
         ) : null}
       </TouchableOpacity>
 
@@ -167,13 +175,12 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
         </View>
       </View>
 
-      <View style={[styles.pointsBadge, { backgroundColor: colors.primary + "18" }]}>
+      <View style={[styles.pointsBadge, { backgroundColor: colors.primary + "15" }]}>
         <Text style={[styles.pointsText, { color: colors.primary }]}>
           +{chore.points}
         </Text>
       </View>
 
-      {/* Add to Google Calendar */}
       <TouchableOpacity
         onPress={handleCalendar}
         disabled={calState === "loading" || calState === "done"}
@@ -181,16 +188,7 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
         style={[
           styles.calBtn,
           {
-            backgroundColor:
-              calState === "done"
-                ? colors.success + "18"
-                : calState === "loading"
-                ? colors.muted
-                : colors.primary + "14",
-            borderColor:
-              calState === "done"
-                ? colors.success + "55"
-                : colors.primary + "30",
+            backgroundColor: calState === "done" ? colors.success + "15" : colors.secondary,
           },
         ]}
       >
@@ -259,15 +257,16 @@ export default function MyChoresScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
       <View
         style={[
           styles.header,
-          { paddingTop: topPad + 16, backgroundColor: colors.background },
+          { paddingTop: topPad + 20, backgroundColor: colors.background },
         ]}
       >
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={[styles.greeting, { color: colors.mutedForeground }]}>
-            Welcome home,
+            Welcome back
           </Text>
           <Text style={[styles.username, { color: colors.foreground }]}>
             {currentUser?.name ?? "You"} 🏠
@@ -276,58 +275,73 @@ export default function MyChoresScreen() {
         <View
           style={[
             styles.totalPoints,
-            { backgroundColor: colors.primary + "18" },
+            { backgroundColor: colors.primary },
           ]}
         >
-          <Feather name="star" size={14} color={colors.primary} />
-          <Text style={[styles.totalPointsText, { color: colors.primary }]}>
-            {currentUser?.points ?? 0} pts
+          <Feather name="star" size={13} color="#fff" />
+          <Text style={styles.totalPointsText}>
+            {currentUser?.points ?? 0}
           </Text>
         </View>
       </View>
 
+      {/* Progress card */}
       <View
         style={[
           styles.progressCard,
-          { backgroundColor: colors.card, borderColor: colors.border, marginHorizontal: 16 },
+          {
+            backgroundColor: colors.card,
+            shadowColor: "#1A1140",
+            marginHorizontal: 16,
+          },
         ]}
       >
         <View style={styles.progressHeader}>
-          <Text style={[styles.progressLabel, { color: colors.foreground }]}>
-            My Progress
-          </Text>
-          <Text style={[styles.progressCount, { color: colors.mutedForeground }]}>
-            {completedCount}/{totalCount} done
-          </Text>
+          <View>
+            <Text style={[styles.progressLabel, { color: colors.foreground }]}>
+              My Progress
+            </Text>
+            <Text style={[styles.progressSub, { color: colors.mutedForeground }]}>
+              {completedCount} of {totalCount} chores done
+            </Text>
+          </View>
+          <View style={[styles.pctBadge, { backgroundColor: healthPct >= 1 ? colors.success + "20" : colors.primary + "15" }]}>
+            <Text style={[styles.pctText, { color: healthPct >= 1 ? colors.success : colors.primary }]}>
+              {Math.round(healthPct * 100)}%
+            </Text>
+          </View>
         </View>
         <View style={[styles.progressTrack, { backgroundColor: colors.muted }]}>
           <View
             style={[
               styles.progressFill,
               {
-                backgroundColor: colors.success,
-                width: `${healthPct * 100}%` as `${number}%`,
+                backgroundColor: healthPct >= 1 ? colors.success : colors.primary,
+                width: `${Math.max(healthPct * 100, 2)}%` as `${number}%`,
               },
             ]}
           />
         </View>
       </View>
 
+      {/* To Buy card */}
       {myToBuyItems.length > 0 && (
         <View
           style={[
             styles.toBuyCard,
-            { backgroundColor: colors.card, borderColor: colors.border, marginHorizontal: 16, marginBottom: 12 },
+            { backgroundColor: colors.card, shadowColor: "#1A1140", marginHorizontal: 16, marginBottom: 12 },
           ]}
         >
           <View style={styles.toBuyHeader}>
-            <View style={[styles.toBuyIconWrap, { backgroundColor: colors.primary + "18" }]}>
-              <Feather name="shopping-bag" size={14} color={colors.primary} />
+            <View style={[styles.toBuyIconWrap, { backgroundColor: colors.accent + "18" }]}>
+              <Feather name="shopping-bag" size={14} color={colors.accent} />
             </View>
             <Text style={[styles.toBuyTitle, { color: colors.foreground }]}>To Buy</Text>
-            <Text style={[styles.toBuyCount, { color: colors.mutedForeground }]}>
-              {myToBuyItems.length} item{myToBuyItems.length !== 1 ? "s" : ""}
-            </Text>
+            <View style={[styles.toBuyCountBadge, { backgroundColor: colors.accent + "15" }]}>
+              <Text style={[styles.toBuyCount, { color: colors.accent }]}>
+                {myToBuyItems.length}
+              </Text>
+            </View>
           </View>
           {myToBuyItems.map(({ sectionKey, item }) => (
             <TouchableOpacity
@@ -351,6 +365,7 @@ export default function MyChoresScreen() {
         </View>
       )}
 
+      {/* Filter pills */}
       <View style={styles.filterRow}>
         {(["all", "today", "done"] as Filter[]).map((f) => (
           <TouchableOpacity
@@ -358,8 +373,12 @@ export default function MyChoresScreen() {
             style={[
               styles.filterBtn,
               {
-                backgroundColor:
-                  filter === f ? colors.primary : colors.secondary,
+                backgroundColor: filter === f ? colors.primary : colors.card,
+                shadowColor: filter === f ? colors.primary : "transparent",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: filter === f ? 0.25 : 0,
+                shadowRadius: 6,
+                elevation: filter === f ? 3 : 0,
               },
             ]}
             onPress={() => setFilter(f)}
@@ -369,6 +388,7 @@ export default function MyChoresScreen() {
                 styles.filterText,
                 {
                   color: filter === f ? "#fff" : colors.mutedForeground,
+                  fontFamily: filter === f ? "Inter_700Bold" : "Inter_500Medium",
                 },
               ]}
             >
@@ -441,7 +461,7 @@ export default function MyChoresScreen() {
           ]}
         >
           <View
-            style={[styles.modalHandle, { backgroundColor: colors.border }]}
+            style={[styles.modalHandle, { backgroundColor: colors.muted }]}
           />
           <Text style={[styles.modalTitle, { color: colors.foreground }]}>
             Add Chore
@@ -454,7 +474,7 @@ export default function MyChoresScreen() {
             style={[
               styles.input,
               {
-                backgroundColor: colors.secondary,
+                backgroundColor: colors.muted,
                 color: colors.foreground,
                 borderColor: colors.border,
               },
@@ -480,13 +500,9 @@ export default function MyChoresScreen() {
                   styles.catChip,
                   {
                     backgroundColor:
-                      newCategory === cat.key
-                        ? colors.primary
-                        : colors.secondary,
+                      newCategory === cat.key ? colors.primary : colors.muted,
                     borderColor:
-                      newCategory === cat.key
-                        ? colors.primary
-                        : colors.border,
+                      newCategory === cat.key ? colors.primary : "transparent",
                   },
                 ]}
                 onPress={() => setNewCategory(cat.key)}
@@ -522,9 +538,9 @@ export default function MyChoresScreen() {
                   styles.pointsChip,
                   {
                     backgroundColor:
-                      newPoints === p ? colors.primary : colors.secondary,
+                      newPoints === p ? colors.primary : colors.muted,
                     borderColor:
-                      newPoints === p ? colors.primary : colors.border,
+                      newPoints === p ? colors.primary : "transparent",
                   },
                 ]}
                 onPress={() => setNewPoints(p)}
@@ -590,197 +606,86 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 18,
   },
-  greeting: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  username: { fontSize: 26, fontFamily: "Inter_700Bold", marginTop: 2 },
+  greeting: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 2 },
+  username: { fontSize: 28, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   totalPoints: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 24,
   },
-  totalPointsText: { fontFamily: "Inter_700Bold", fontSize: 14 },
+  totalPointsText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 14,
+    color: "#fff",
+  },
   progressCard: {
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
+    borderRadius: 20,
+    padding: 16,
     marginBottom: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 3,
   },
   progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  progressLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
-  progressCount: { fontFamily: "Inter_400Regular", fontSize: 13 },
-  progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  progressFill: { height: 6, borderRadius: 3 },
-  filterRow: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    gap: 8,
-    marginBottom: 12,
-  },
-  filterBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 20,
-  },
-  filterText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
-  listContent: { paddingHorizontal: 16, gap: 8 },
-  choreRow: {
-    flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 10,
+    marginBottom: 14,
   },
-  checkBox: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  categoryIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  choreInfo: { flex: 1 },
-  choreTitle: { fontFamily: "Inter_500Medium", fontSize: 15 },
-  choreMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
-  dueDateText: { fontFamily: "Inter_400Regular", fontSize: 12 },
-  pointsBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  pointsText: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  fab: {
-    position: "absolute",
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)" },
-  modalSheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingTop: 12,
-    gap: 4,
-  },
-  modalHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 20,
-    marginBottom: 12,
-  },
-  fieldLabel: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 13,
-    marginTop: 8,
-    marginBottom: 6,
-  },
-  input: {
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
-    fontFamily: "Inter_400Regular",
-  },
-  categoryScroll: { marginBottom: 4 },
-  catChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
+  progressLabel: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  progressSub: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  pctBadge: {
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 5,
     borderRadius: 20,
-    borderWidth: 1,
-    marginRight: 8,
   },
-  catChipText: { fontFamily: "Inter_500Medium", fontSize: 12 },
-  pointsRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: 8 },
-  pointsChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  addBtn: {
-    marginTop: 12,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  addBtnText: {
-    color: "#fff",
-    fontFamily: "Inter_700Bold",
-    fontSize: 16,
-  },
-  calBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 6,
-  },
-  toBuyCard: {
-    borderRadius: 14,
-    borderWidth: 1,
+  pctText: { fontFamily: "Inter_700Bold", fontSize: 14 },
+  progressTrack: {
+    height: 8,
+    borderRadius: 4,
     overflow: "hidden",
+  },
+  progressFill: { height: 8, borderRadius: 4 },
+  toBuyCard: {
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 3,
   },
   toBuyHeader: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     gap: 8,
   },
   toBuyIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
   },
-  toBuyTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, flex: 1 },
-  toBuyCount: { fontFamily: "Inter_400Regular", fontSize: 12 },
+  toBuyTitle: { fontFamily: "Inter_700Bold", fontSize: 15, flex: 1 },
+  toBuyCountBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  toBuyCount: { fontFamily: "Inter_700Bold", fontSize: 12 },
   toBuyRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: 10,
   },
@@ -792,4 +697,145 @@ const styles = StyleSheet.create({
   },
   toBuyItem: { fontFamily: "Inter_500Medium", fontSize: 14, flex: 1 },
   toBuySection: { fontFamily: "Inter_400Regular", fontSize: 11 },
+  filterRow: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    gap: 8,
+    marginBottom: 14,
+  },
+  filterBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 22,
+  },
+  filterText: { fontSize: 13 },
+  listContent: { paddingHorizontal: 16, gap: 10 },
+  choreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 13,
+    paddingRight: 14,
+    paddingLeft: 11,
+    borderRadius: 16,
+    gap: 10,
+    shadowColor: "#1A1140",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  checkBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  categoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  choreInfo: { flex: 1 },
+  choreTitle: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
+  choreMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
+  dueDateText: { fontFamily: "Inter_400Regular", fontSize: 12 },
+  pointsBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  pointsText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  fab: {
+    position: "absolute",
+    right: 20,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  calBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
+  },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(26,17,64,0.45)" },
+  modalSheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingTop: 10,
+    gap: 4,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 18,
+  },
+  modalTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 22,
+    marginBottom: 14,
+    letterSpacing: -0.4,
+  },
+  fieldLabel: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  input: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    fontSize: 15,
+    fontFamily: "Inter_400Regular",
+  },
+  categoryScroll: { marginBottom: 4 },
+  catChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 22,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  catChipText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  pointsRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: 8 },
+  pointsChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 22,
+    borderWidth: 1,
+  },
+  addBtn: {
+    marginTop: 14,
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: "center",
+  },
+  addBtnText: {
+    color: "#fff",
+    fontFamily: "Inter_700Bold",
+    fontSize: 16,
+  },
 });

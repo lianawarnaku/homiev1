@@ -2,7 +2,6 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
 import {
-  Alert,
   FlatList,
   Modal,
   Platform,
@@ -94,21 +93,19 @@ export default function BorrowScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
       <View
         style={[
           styles.header,
-          {
-            paddingTop: topPad + 16,
-            backgroundColor: colors.background,
-          },
+          { paddingTop: topPad + 20, backgroundColor: colors.background },
         ]}
       >
-        <View>
-          <Text style={[styles.title, { color: colors.foreground }]}>
-            Borrowing Buddy
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+            Keep track of
           </Text>
-          <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-            Never forget what you borrowed
+          <Text style={[styles.title, { color: colors.foreground }]}>
+            Borrowing
           </Text>
         </View>
         <TouchableOpacity
@@ -119,22 +116,22 @@ export default function BorrowScreen() {
         </TouchableOpacity>
       </View>
 
-      {overdue.length > 0 ? (
+      {/* Overdue alert banner */}
+      {overdue.length > 0 && (
         <View
           style={[
             styles.overdueAlert,
-            {
-              backgroundColor: colors.warning + "12",
-              borderColor: colors.warning + "44",
-            },
+            { backgroundColor: colors.warning + "15", borderColor: colors.warning + "40" },
           ]}
         >
-          <Feather name="alert-circle" size={16} color={colors.warning} />
+          <View style={[styles.overdueIconWrap, { backgroundColor: colors.warning + "22" }]}>
+            <Feather name="alert-circle" size={16} color={colors.warning} />
+          </View>
           <Text style={[styles.overdueText, { color: colors.warning }]}>
             {overdue.length} item{overdue.length > 1 ? "s" : ""} overdue — time to return!
           </Text>
         </View>
-      ) : null}
+      )}
 
       <FlatList
         data={[...activeBorrows, ...returnedBorrows]}
@@ -153,12 +150,7 @@ export default function BorrowScreen() {
         }
         ListHeaderComponent={
           activeBorrows.length > 0 ? (
-            <Text
-              style={[
-                styles.sectionHeader,
-                { color: colors.mutedForeground },
-              ]}
-            >
+            <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>
               Active ({activeBorrows.length})
             </Text>
           ) : null
@@ -166,26 +158,24 @@ export default function BorrowScreen() {
         renderItem={({ item: borrow, index }) => {
           const showReturnedHeader =
             returnedBorrows.length > 0 &&
-            index === activeBorrows.length &&
-            returnedBorrows.length > 0;
+            index === activeBorrows.length;
           const owner = roommates.find((r) => r.id === borrow.borrowedFrom);
-          const isOverdueItem =
-            !borrow.returned && new Date(borrow.dueDate) < new Date();
+          const isOverdueItem = !borrow.returned && new Date(borrow.dueDate) < new Date();
           const dueText = borrow.returned
             ? `Returned ${new Date(borrow.returnedAt ?? "").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
             : formatDue(borrow.dueDate);
+
+          const accentColor = borrow.returned
+            ? colors.mutedForeground
+            : isOverdueItem
+            ? colors.warning
+            : colors.primary;
 
           return (
             <>
               {showReturnedHeader ? (
                 <Text
-                  style={[
-                    styles.sectionHeader,
-                    {
-                      color: colors.mutedForeground,
-                      marginTop: 16,
-                    },
-                  ]}
+                  style={[styles.sectionHeader, { color: colors.mutedForeground, marginTop: 16 }]}
                 >
                   Returned ({returnedBorrows.length})
                 </Text>
@@ -195,53 +185,35 @@ export default function BorrowScreen() {
                   styles.borrowCard,
                   {
                     backgroundColor: colors.card,
-                    borderColor: isOverdueItem
-                      ? colors.warning + "55"
-                      : borrow.returned
-                      ? colors.border
-                      : colors.border,
-                    opacity: borrow.returned ? 0.65 : 1,
+                    shadowColor: isOverdueItem ? colors.warning : "#1A1140",
+                    opacity: borrow.returned ? 0.7 : 1,
+                    borderLeftWidth: 3,
+                    borderLeftColor: accentColor,
                   },
                 ]}
               >
-                <View style={styles.cardLeft}>
-                  <View
-                    style={[
-                      styles.itemIcon,
-                      {
-                        backgroundColor: borrow.returned
-                          ? colors.muted
-                          : isOverdueItem
-                          ? colors.warning + "18"
-                          : colors.primary + "18",
-                      },
-                    ]}
-                  >
-                    <Feather
-                      name={borrow.returned ? "check" : "repeat"}
-                      size={18}
-                      color={
-                        borrow.returned
-                          ? colors.mutedForeground
-                          : isOverdueItem
-                          ? colors.warning
-                          : colors.primary
-                      }
-                    />
-                  </View>
+                {/* Icon */}
+                <View
+                  style={[
+                    styles.itemIcon,
+                    { backgroundColor: accentColor + "15" },
+                  ]}
+                >
+                  <Feather
+                    name={borrow.returned ? "check-circle" : isOverdueItem ? "alert-circle" : "repeat"}
+                    size={20}
+                    color={accentColor}
+                  />
                 </View>
 
+                {/* Content */}
                 <View style={styles.cardContent}>
                   <Text
                     style={[
                       styles.borrowItemName,
                       {
-                        color: borrow.returned
-                          ? colors.mutedForeground
-                          : colors.foreground,
-                        textDecorationLine: borrow.returned
-                          ? "line-through"
-                          : "none",
+                        color: borrow.returned ? colors.mutedForeground : colors.foreground,
+                        textDecorationLine: borrow.returned ? "line-through" : "none",
                       },
                     ]}
                     numberOfLines={1}
@@ -250,26 +222,14 @@ export default function BorrowScreen() {
                   </Text>
                   {owner ? (
                     <View style={styles.ownerRow}>
-                      <RoommateAvatar
-                        name={owner.name}
-                        color={owner.color}
-                        size={18}
-                      />
-                      <Text
-                        style={[
-                          styles.ownerText,
-                          { color: colors.mutedForeground },
-                        ]}
-                      >
+                      <RoommateAvatar name={owner.name} color={owner.color} size={18} />
+                      <Text style={[styles.ownerText, { color: colors.mutedForeground }]}>
                         From {owner.name}
                       </Text>
                     </View>
                   ) : null}
                   {borrow.notes ? (
-                    <Text
-                      style={[styles.notesText, { color: colors.mutedForeground }]}
-                      numberOfLines={1}
-                    >
+                    <Text style={[styles.notesText, { color: colors.mutedForeground }]} numberOfLines={1}>
                       {borrow.notes}
                     </Text>
                   ) : null}
@@ -277,14 +237,8 @@ export default function BorrowScreen() {
                     style={[
                       styles.dueText,
                       {
-                        color: borrow.returned
-                          ? colors.success
-                          : isOverdueItem
-                          ? colors.warning
-                          : colors.mutedForeground,
-                        fontFamily: isOverdueItem
-                          ? "Inter_600SemiBold"
-                          : "Inter_400Regular",
+                        color: borrow.returned ? colors.success : isOverdueItem ? colors.warning : colors.mutedForeground,
+                        fontFamily: isOverdueItem ? "Inter_700Bold" : "Inter_400Regular",
                       },
                     ]}
                   >
@@ -292,19 +246,18 @@ export default function BorrowScreen() {
                   </Text>
                 </View>
 
+                {/* Actions */}
                 <View style={styles.cardActions}>
                   {!borrow.returned ? (
                     <TouchableOpacity
                       style={[
                         styles.returnBtn,
-                        { backgroundColor: colors.success + "18", borderColor: colors.success + "44" },
+                        { backgroundColor: colors.success + "15", borderColor: colors.success + "40" },
                       ]}
                       onPress={() => handleReturn(borrow.id)}
                     >
-                      <Feather name="check" size={14} color={colors.success} />
-                      <Text
-                        style={[styles.returnBtnText, { color: colors.success }]}
-                      >
+                      <Feather name="check" size={13} color={colors.success} />
+                      <Text style={[styles.returnBtnText, { color: colors.success }]}>
                         Return
                       </Text>
                     </TouchableOpacity>
@@ -324,18 +277,16 @@ export default function BorrowScreen() {
         }}
       />
 
+      {/* Add Item Modal */}
       <Modal visible={showModal} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowModal(false)} />
         <View
           style={[
             styles.sheet,
-            {
-              backgroundColor: colors.card,
-              paddingBottom: insets.bottom + 24,
-            },
+            { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 },
           ]}
         >
-          <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          <View style={[styles.handle, { backgroundColor: colors.muted }]} />
           <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
             Log Borrowed Item
           </Text>
@@ -346,11 +297,7 @@ export default function BorrowScreen() {
           <TextInput
             style={[
               styles.input,
-              {
-                backgroundColor: colors.secondary,
-                color: colors.foreground,
-                borderColor: colors.border,
-              },
+              { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border },
             ]}
             placeholder="e.g. Phone charger"
             placeholderTextColor={colors.mutedForeground}
@@ -374,20 +321,18 @@ export default function BorrowScreen() {
                   style={[
                     styles.roommateChip,
                     {
-                      backgroundColor:
-                        borrowedFrom === r.id ? r.color + "22" : colors.secondary,
-                      borderColor:
-                        borrowedFrom === r.id ? r.color : colors.border,
+                      backgroundColor: borrowedFrom === r.id ? r.color + "20" : colors.muted,
+                      borderColor: borrowedFrom === r.id ? r.color : "transparent",
+                      borderWidth: borrowedFrom === r.id ? 2 : 0,
                     },
                   ]}
                   onPress={() => setBorrowedFrom(r.id)}
                 >
-                  <RoommateAvatar name={r.name} color={r.color} size={22} />
+                  <RoommateAvatar name={r.name} color={r.color} size={24} />
                   <Text
                     style={{
-                      color:
-                        borrowedFrom === r.id ? r.color : colors.mutedForeground,
-                      fontFamily: "Inter_600SemiBold",
+                      color: borrowedFrom === r.id ? r.color : colors.mutedForeground,
+                      fontFamily: borrowedFrom === r.id ? "Inter_700Bold" : "Inter_500Medium",
                       fontSize: 13,
                     }}
                   >
@@ -407,10 +352,7 @@ export default function BorrowScreen() {
                 style={[
                   styles.dueChip,
                   {
-                    backgroundColor:
-                      dueDays === d ? colors.primary : colors.secondary,
-                    borderColor:
-                      dueDays === d ? colors.primary : colors.border,
+                    backgroundColor: dueDays === d ? colors.primary : colors.muted,
                   },
                 ]}
                 onPress={() => setDueDays(d)}
@@ -418,8 +360,8 @@ export default function BorrowScreen() {
                 <Text
                   style={{
                     color: dueDays === d ? "#fff" : colors.mutedForeground,
-                    fontFamily: "Inter_600SemiBold",
-                    fontSize: 12,
+                    fontFamily: "Inter_700Bold",
+                    fontSize: 13,
                   }}
                 >
                   {d}d
@@ -434,11 +376,7 @@ export default function BorrowScreen() {
           <TextInput
             style={[
               styles.input,
-              {
-                backgroundColor: colors.secondary,
-                color: colors.foreground,
-                borderColor: colors.border,
-              },
+              { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border },
             ]}
             placeholder="Any details..."
             placeholderTextColor={colors.mutedForeground}
@@ -449,15 +387,12 @@ export default function BorrowScreen() {
           <TouchableOpacity
             style={[
               styles.saveBtn,
-              {
-                backgroundColor:
-                  item.trim() && borrowedFrom ? colors.primary : colors.muted,
-              },
+              { backgroundColor: item.trim() && borrowedFrom ? colors.primary : colors.muted },
             ]}
             disabled={!item.trim() || !borrowedFrom}
             onPress={handleAdd}
           >
-            <Text style={styles.saveBtnText}>Save</Text>
+            <Text style={styles.saveBtnText}>Log Item</Text>
           </TouchableOpacity>
         </View>
       </Modal>
@@ -469,112 +404,130 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 18,
   },
-  title: { fontFamily: "Inter_700Bold", fontSize: 26 },
-  subtitle: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
+  headerSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginBottom: 2 },
+  title: { fontFamily: "Inter_700Bold", fontSize: 28, letterSpacing: -0.5 },
   addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   overdueAlert: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
     marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 12,
+    marginBottom: 14,
+    borderRadius: 14,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
+  },
+  overdueIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
   overdueText: { fontFamily: "Inter_600SemiBold", fontSize: 13, flex: 1 },
-  list: { paddingHorizontal: 16, gap: 10 },
+  list: { paddingHorizontal: 16, gap: 12 },
   sectionHeader: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 12,
+    fontFamily: "Inter_700Bold",
+    fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 4,
+    letterSpacing: 1.2,
+    marginBottom: 6,
   },
   borrowCard: {
     flexDirection: "row",
     alignItems: "flex-start",
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
+    paddingVertical: 16,
+    paddingRight: 14,
+    paddingLeft: 11,
+    borderRadius: 18,
     gap: 12,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  cardLeft: {},
   itemIcon: {
-    width: 44,
-    height: 44,
+    width: 46,
+    height: 46,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  cardContent: { flex: 1, gap: 3 },
-  borrowItemName: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
-  ownerRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  cardContent: { flex: 1, gap: 4 },
+  borrowItemName: { fontFamily: "Inter_700Bold", fontSize: 16 },
+  ownerRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   ownerText: { fontFamily: "Inter_400Regular", fontSize: 12 },
   notesText: { fontFamily: "Inter_400Regular", fontSize: 12, fontStyle: "italic" },
   dueText: { fontSize: 12, marginTop: 2 },
-  cardActions: { alignItems: "flex-end", gap: 8 },
+  cardActions: { alignItems: "flex-end", gap: 10, paddingTop: 2 },
   returnBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  returnBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)" },
+  returnBtnText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  overlay: { flex: 1, backgroundColor: "rgba(26,17,64,0.45)" },
   sheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingTop: 12,
-    gap: 4,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 22,
+    gap: 10,
   },
   handle: {
-    width: 36,
+    width: 40,
     height: 4,
     borderRadius: 2,
     alignSelf: "center",
-    marginBottom: 16,
+    marginBottom: 8,
   },
-  sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 20, marginBottom: 12 },
-  label: { fontFamily: "Inter_500Medium", fontSize: 13, marginTop: 8, marginBottom: 6 },
+  sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 22, marginBottom: 4, letterSpacing: -0.4 },
+  label: { fontFamily: "Inter_600SemiBold", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 4 },
   input: {
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
     fontSize: 15,
     fontFamily: "Inter_400Regular",
   },
   roommateChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
+    paddingVertical: 9,
+    borderRadius: 22,
   },
   dueChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 22,
   },
-  saveBtn: { marginTop: 12, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
+  saveBtn: {
+    marginTop: 8,
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: "center",
+  },
   saveBtnText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 16 },
 });

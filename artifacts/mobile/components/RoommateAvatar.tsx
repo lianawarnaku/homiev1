@@ -19,7 +19,7 @@ export function RoommateAvatar({
     .toUpperCase()
     .slice(0, 2);
 
-  const fontSize = size * 0.38;
+  const fontSize = size * 0.36;
 
   return (
     <View
@@ -29,8 +29,8 @@ export function RoommateAvatar({
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: color + "22",
-          borderColor: color + "55",
+          backgroundColor: color + "28",
+          borderColor: color + "66",
         },
       ]}
     >
@@ -43,10 +43,10 @@ const styles = StyleSheet.create({
   avatar: {
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
+    borderWidth: 2,
   },
   initials: {
     fontFamily: "Inter_700Bold",
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
 });
