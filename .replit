@@ -75,3 +75,11 @@ externalPort = 3003
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+EXPO_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxbm9nYWZ0ZWJ1cWZ3d2VsYmR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyMTE2MjEsImV4cCI6MjA5ODc4NzYyMX0.OSkhl21uFPXdVVp18lxR1VVOgtMh6Vb5kPGI9hDJBKk"
+EXPO_PUBLIC_SUPABASE_URL = "https://eqnogaftebuqfwwelbdx.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxbm9nYWZ0ZWJ1cWZ3d2VsYmR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyMTE2MjEsImV4cCI6MjA5ODc4NzYyMX0.OSkhl21uFPXdVVp18lxR1VVOgtMh6Vb5kPGI9hDJBKk"
+SUPABASE_URL = "https://eqnogaftebuqfwwelbdx.supabase.co"
