@@ -1,3 +1,4 @@
 - [Shell-quote firewall workaround](shell-quote-stub.md) — shell-quote blocked by Replit package firewall; local stub at lib/shell-quote-stub overrides it.
 - [OpenAI lazy init pattern](openai-lazy-init.md) — all AI clients in lib/integrations-openai-ai-server must use lazy init; OPENAI_API_KEY secret replaces Replit AI proxy env vars.
 - [Workflow PORT requirement](workflow-ports.md) — artifact workflows must hardcode PORT in the command; $PORT env is not injected at workflow start.
+- [Supabase + auth architecture](supabase-auth.md) — Supabase credentials, auth screens, and routing structure for the Homie app.
