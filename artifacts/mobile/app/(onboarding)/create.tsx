@@ -76,20 +76,17 @@ export default function CreateHousehold() {
     }
     setSaving(true);
     try {
-      // Get the live session — getUser() validates via network, getSession() gives us the token.
-      const { data: { user: currentUser }, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !currentUser) {
+      // refreshSession() forces a network round-trip to get a guaranteed-fresh
+      // access_token. Unlike getSession() (reads stale storage) or getUser()
+      // (validates but doesn't return the token), this gives us the token we
+      // actually need for the direct fetch calls below.
+      const { data: { session }, error: refreshErr } = await supabase.auth.refreshSession();
+      if (refreshErr || !session?.access_token) {
         Alert.alert("Session expired", "Please sign in again.");
         router.replace("/(auth)/login");
         return;
       }
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        Alert.alert("Session expired", "Please sign in again.");
-        router.replace("/(auth)/login");
-        return;
-      }
-      const uid = currentUser.id;
+      const uid = session.user.id;
 
       // 1. Create the household via raw fetch — the Supabase JS client on React
       //    Native intermittently fails to attach the Authorization header to
