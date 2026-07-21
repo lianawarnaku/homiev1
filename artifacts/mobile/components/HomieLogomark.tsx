@@ -18,7 +18,7 @@ export function HomieLogomark({ size = 80, color = "#8D5524" }: Props) {
   // Rounded triangle path
   // For each corner: move r=5 along both adjacent edges, then Q through the corner point.
   const roof =
-    "M 47.4,12.3 L 29.6,41.7 Q 27,46 32,46 L 68,46 Q 73,46 70.4,41.7 L 52.6,12.3 Q 50,8 47.4,12.3 Z";
+    "M 46.3,21.4 L 23.7,42.6 Q 20,46 25,46 L 75,46 Q 80,46 76.3,42.6 L 53.7,21.4 Q 50,18 46.3,21.4 Z";
 
   return (
     <Svg width={size} height={size * 1.08} viewBox="0 0 100 108">
