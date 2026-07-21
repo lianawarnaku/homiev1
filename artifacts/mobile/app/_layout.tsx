@@ -20,9 +20,7 @@ import { setBaseUrl } from "@workspace/api-client-react";
 
 setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
 
-SplashScreen.preventAutoHideAsync().catch(() => {
-  // ignore if splash screen is not available (web)
-});
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const queryClient = new QueryClient();
 
@@ -35,17 +33,11 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    // Hide splash as soon as fonts are ready OR after a short timeout (web fallback)
-    if (fontsLoaded) {
-      SplashScreen.hideAsync().catch(() => {});
-    }
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
   }, [fontsLoaded]);
 
   useEffect(() => {
-    // Web fallback: always hide splash after 500ms
-    const t = setTimeout(() => {
-      SplashScreen.hideAsync().catch(() => {});
-    }, 500);
+    const t = setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 500);
     return () => clearTimeout(t);
   }, []);
 

@@ -1,7 +1,7 @@
 import * as WebBrowser from "expo-web-browser";
 import { makeRedirectUri } from "expo-auth-session";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -16,6 +16,7 @@ import {
 } from "react-native";
 
 import { HomieLogomark } from "@/components/HomieLogomark";
+import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -47,7 +48,6 @@ export default function LoginScreen() {
 
   // ── Email / password ──────────────────────────────────────────────────────
   async function handleEmailSignIn() {
-    console.log("[login] handleEmailSignIn called", { email, password: !!password });
     if (!email || !password) {
       setError("Please enter your email and password.");
       return;
@@ -55,18 +55,31 @@ export default function LoginScreen() {
     setError("");
     setLoading(true);
     try {
-      console.log("[login] calling supabase.auth.signInWithPassword");
       const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      console.log("[login] result", { user: data?.user?.id, error: authError?.message });
+
       if (authError) {
         setError(friendlyError(authError.message));
-      } else {
-        console.log("[login] success — navigating to /");
-        router.replace("/");
+        return;
       }
+
+      if (!data.session) {
+        setError(
+          "Sign in completed but no session was created. Your email may not be confirmed yet — " +
+          "check your inbox for a confirmation link, or try registering again."
+        );
+        return;
+      }
+
+      // Query the household directly — don't rely on context timing
+      const { data: membership } = await supabase
+        .from("household_members")
+        .select("id")
+        .eq("user_id", data.session.user.id)
+        .maybeSingle();
+
+      router.replace(membership ? "/(tabs)" : "/(onboarding)");
     } catch (e: any) {
-      console.log("[login] exception", e.message);
-      setError(e.message);
+      setError(e.message ?? "An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
