@@ -47,20 +47,28 @@ export default function LoginScreen() {
 
   // ── Email / password ──────────────────────────────────────────────────────
   async function handleEmailSignIn() {
+    console.log("[login] handleEmailSignIn called", { email, password: !!password });
     if (!email || !password) {
       setError("Please enter your email and password.");
       return;
     }
     setError("");
     setLoading(true);
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-
-    if (authError) {
-      setError(friendlyError(authError.message));
-    } else {
-      // Explicitly navigate to root so index.tsx can decide the destination
-      router.replace("/");
+    try {
+      console.log("[login] calling supabase.auth.signInWithPassword");
+      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      console.log("[login] result", { user: data?.user?.id, error: authError?.message });
+      if (authError) {
+        setError(friendlyError(authError.message));
+      } else {
+        console.log("[login] success — navigating to /");
+        router.replace("/");
+      }
+    } catch (e: any) {
+      console.log("[login] exception", e.message);
+      setError(e.message);
+    } finally {
+      setLoading(false);
     }
   }
 
