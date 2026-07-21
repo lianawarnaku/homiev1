@@ -1,9 +1,8 @@
 -- ============================================================
--- Homie — Phase 4: Entity tables
--- Paste into Supabase > SQL Editor > New query and run
+-- Homie — Phase 4: Entity tables (idempotent — safe to re-run)
 -- ============================================================
 
--- Add points tracking to household_members
+-- Add points tracking to household_members (ignored if already there)
 ALTER TABLE household_members
   ADD COLUMN IF NOT EXISTS points        INT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS weekly_points INT NOT NULL DEFAULT 0;
@@ -25,20 +24,20 @@ CREATE TABLE IF NOT EXISTS chores (
 
 -- ── Expenses ──────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS expenses (
-  id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  household_id     UUID         NOT NULL REFERENCES households(id) ON DELETE CASCADE,
-  title            TEXT         NOT NULL,
+  id               UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id     UUID          NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  title            TEXT          NOT NULL,
   amount           NUMERIC(10,2) NOT NULL,
-  paid_by          UUID         NOT NULL REFERENCES household_members(id) ON DELETE CASCADE,
-  shared_with      UUID[]       NOT NULL DEFAULT '{}',
-  splits           JSONB        NOT NULL DEFAULT '{}',
-  date             TEXT         NOT NULL,
-  category         TEXT         NOT NULL DEFAULT 'other',
-  settled          BOOLEAN      NOT NULL DEFAULT false,
+  paid_by          UUID          NOT NULL REFERENCES household_members(id) ON DELETE CASCADE,
+  shared_with      UUID[]        NOT NULL DEFAULT '{}',
+  splits           JSONB         NOT NULL DEFAULT '{}',
+  date             TEXT          NOT NULL,
+  category         TEXT          NOT NULL DEFAULT 'other',
+  settled          BOOLEAN       NOT NULL DEFAULT false,
   recurring        TEXT,
   recurring_custom TEXT,
-  paid_back        JSONB        NOT NULL DEFAULT '{}',
-  created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+  paid_back        JSONB         NOT NULL DEFAULT '{}',
+  created_at       TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 -- ── Shopping lists ────────────────────────────────────────────
@@ -89,33 +88,35 @@ CREATE TABLE IF NOT EXISTS nudges (
 
 -- ── Row Level Security ─────────────────────────────────────────
 
-ALTER TABLE chores          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE expenses        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE shopping_lists  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE shopping_items  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE borrow_items    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE nudges          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chores         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expenses       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shopping_lists ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shopping_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE borrow_items   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE nudges         ENABLE ROW LEVEL SECURITY;
 
--- chores
+-- Drop first so re-runs don't fail
+DROP POLICY IF EXISTS "household members can manage chores"          ON chores;
+DROP POLICY IF EXISTS "household members can manage expenses"        ON expenses;
+DROP POLICY IF EXISTS "household members can manage shopping lists"  ON shopping_lists;
+DROP POLICY IF EXISTS "household members can manage shopping items"  ON shopping_items;
+DROP POLICY IF EXISTS "household members can manage borrow items"    ON borrow_items;
+DROP POLICY IF EXISTS "household members can manage nudges"          ON nudges;
+
 CREATE POLICY "household members can manage chores"
-  ON chores FOR ALL USING (is_household_member(household_id));
+  ON chores         FOR ALL USING (is_household_member(household_id));
 
--- expenses
 CREATE POLICY "household members can manage expenses"
-  ON expenses FOR ALL USING (is_household_member(household_id));
+  ON expenses       FOR ALL USING (is_household_member(household_id));
 
--- shopping_lists
 CREATE POLICY "household members can manage shopping lists"
   ON shopping_lists FOR ALL USING (is_household_member(household_id));
 
--- shopping_items
 CREATE POLICY "household members can manage shopping items"
   ON shopping_items FOR ALL USING (is_household_member(household_id));
 
--- borrow_items
 CREATE POLICY "household members can manage borrow items"
-  ON borrow_items FOR ALL USING (is_household_member(household_id));
+  ON borrow_items   FOR ALL USING (is_household_member(household_id));
 
--- nudges
 CREATE POLICY "household members can manage nudges"
-  ON nudges FOR ALL USING (is_household_member(household_id));
+  ON nudges         FOR ALL USING (is_household_member(household_id));
