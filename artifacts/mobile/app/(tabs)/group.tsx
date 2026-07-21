@@ -8,6 +8,7 @@ import {
   FlatList,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -19,6 +20,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { HomePlant } from "@/components/HomePlant";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext } from "@/context/AppContext";
+import { useHousehold } from "@/context/HouseholdContext";
 import { useColors } from "@/hooks/useColors";
 import { useConfirm } from "@/hooks/useConfirm";
 
@@ -109,8 +111,23 @@ export default function GroupChoresScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, homeLocation, setHomeLocation } = useAppContext();
+  const { household, myMembership } = useHousehold();
 
   const { confirm, info } = useConfirm();
+
+  const isOwner = myMembership?.role === "owner";
+
+  async function handleShareInvite() {
+    if (!household?.invite_code) return;
+    try {
+      await Share.share({
+        message: `Join my household on Homie! Use invite code: ${household.invite_code}`,
+        title: "Homie Invite Code",
+      });
+    } catch {
+      Alert.alert("Invite Code", household.invite_code);
+    }
+  }
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
   const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
   const [weekOffset, setWeekOffset] = useState(0);
@@ -372,6 +389,34 @@ export default function GroupChoresScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 90 + botPad }}
       >
+        {/* ── Invite Code Card (owner only) ─────────────── */}
+        {isOwner && household?.invite_code && (
+          <View style={[styles.inviteCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.inviteTop}>
+              <View style={[styles.inviteIconWrap, { backgroundColor: "#8D552418" }]}>
+                <Feather name="user-plus" size={14} color="#8D5524" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.inviteLabel, { color: colors.mutedForeground }]}>Invite roommates</Text>
+                <Text style={[styles.inviteSub, { color: colors.mutedForeground }]}>Share this code — they enter it on the Join screen</Text>
+              </View>
+            </View>
+            <View style={styles.inviteCodeRow}>
+              <Text style={[styles.inviteCode, { color: colors.foreground, letterSpacing: 8 }]}>
+                {household.invite_code}
+              </Text>
+              <TouchableOpacity
+                style={[styles.inviteShareBtn, { backgroundColor: "#8D5524" }]}
+                onPress={handleShareInvite}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="share-2" size={14} color="#FFF" />
+                <Text style={styles.inviteShareText}>Share</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* ── Plant Health Card ──────────────────────────── */}
         <View
           style={[
@@ -1615,4 +1660,39 @@ const styles = StyleSheet.create({
   },
   availLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   availLegendLabel: { fontFamily: "Inter_400Regular", fontSize: 11 },
+
+  // ── Invite code card ──
+  inviteCard: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 4,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 16,
+    gap: 14,
+  },
+  inviteTop: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  inviteIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inviteLabel: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  inviteSub: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2, lineHeight: 16 },
+  inviteCodeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  inviteCode: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 26,
+  },
+  inviteShareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  inviteShareText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#FFF" },
 });

@@ -233,14 +233,14 @@ export default function LoginScreen() {
           )}
         </Pressable>
 
-        {/* Sign up link */}
+        {/* Registration is invite-only — not advertised publicly */}
         <Pressable
           style={styles.signupRow}
           onPress={() => router.push("/(auth)/register")}
         >
           <Text style={styles.signupText}>
-            Don't have an account?{" "}
-            <Text style={styles.signupLink}>Create one</Text>
+            Joining a household?{" "}
+            <Text style={styles.signupLink}>Register here</Text>
           </Text>
         </Pressable>
       </ScrollView>
