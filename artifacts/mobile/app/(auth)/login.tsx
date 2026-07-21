@@ -58,9 +58,15 @@ export default function LoginScreen() {
     setDebugStatus("Contacting Supabase…");
     setLoading(true);
     try {
-      console.log("[login] calling signInWithPassword for", email);
       const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      console.log("[login] result — error:", authError, "session:", data?.session ? "EXISTS" : "NULL");
+
+      // Temporary diagnostic alert — shows the raw result regardless of UI state
+      const msg = authError
+        ? `ERROR: ${authError.message}`
+        : data.session
+        ? `OK — user: ${data.session.user.email}`
+        : "No session and no error (email unconfirmed?)";
+      alert(`Sign-in result:\n${msg}`);
 
       if (authError) {
         setDebugStatus("");
@@ -78,7 +84,6 @@ export default function LoginScreen() {
       }
 
       setDebugStatus("Signed in — checking household…");
-      console.log("[login] checking household for user", data.session.user.id);
 
       // Query the household directly — don't rely on context timing
       const { data: membership, error: memberErr } = await supabase
@@ -86,8 +91,6 @@ export default function LoginScreen() {
         .select("id")
         .eq("user_id", data.session.user.id)
         .maybeSingle();
-
-      console.log("[login] membership:", membership, "error:", memberErr);
 
       if (memberErr) {
         setDebugStatus("");
@@ -97,7 +100,6 @@ export default function LoginScreen() {
 
       const dest = membership ? "/(tabs)" : "/(onboarding)";
       setDebugStatus(membership ? "Household found — opening app…" : "No household — going to setup…");
-      console.log("[login] navigating to", dest);
       router.replace(dest);
     } catch (e: any) {
       console.error("[login] caught exception:", e);
