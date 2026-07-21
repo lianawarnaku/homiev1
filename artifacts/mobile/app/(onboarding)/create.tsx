@@ -76,41 +76,48 @@ export default function CreateHousehold() {
     }
     setSaving(true);
     try {
-      // Step 1: validate the JWT via a live network call.
+      // Get the live session — getUser() validates via network, getSession() gives us the token.
       const { data: { user: currentUser }, error: userErr } = await supabase.auth.getUser();
       if (userErr || !currentUser) {
         Alert.alert("Session expired", "Please sign in again.");
         router.replace("/(auth)/login");
         return;
       }
-
-      // Step 2: read the session tokens from storage.
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         Alert.alert("Session expired", "Please sign in again.");
         router.replace("/(auth)/login");
         return;
       }
-
-      // Step 3: force-sync the session into the client's in-memory state so
-      // the very next PostgREST request carries a fresh Authorization header.
-      await supabase.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-      });
-
       const uid = currentUser.id;
 
-      // 1. Create the household
-      const { data: h, error: hErr } = await supabase
-        .from("households")
-        .insert({ name: householdName.trim(), housing_type: housingType, created_by: uid })
-        .select()
-        .single();
-      if (hErr || !h) {
-        // Surface the full Supabase error so we can diagnose RLS vs other issues
-        throw new Error(hErr ? `${hErr.code}: ${hErr.message}` : "Failed to create household");
+      // 1. Create the household via raw fetch — the Supabase JS client on React
+      //    Native intermittently fails to attach the Authorization header to
+      //    PostgREST requests, causing a 42501 RLS rejection even with a valid
+      //    JWT. Using fetch directly with the token explicitly set is bulletproof.
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+      const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const insertRes = await fetch(`${supabaseUrl}/rest/v1/households`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${session.access_token}`,
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify({
+          name: householdName.trim(),
+          housing_type: housingType,
+          created_by: uid,
+        }),
+      });
+      if (!insertRes.ok) {
+        const body = await insertRes.json().catch(() => ({}));
+        throw new Error(body.message ?? `HTTP ${insertRes.status}: Failed to create household`);
       }
+      const rows = await insertRes.json();
+      const h = Array.isArray(rows) ? rows[0] : rows;
+      if (!h?.id) throw new Error("Failed to create household — no data returned");
 
       // 2. Add the creator as owner
       const { error: mErr } = await supabase.from("household_members").insert({
