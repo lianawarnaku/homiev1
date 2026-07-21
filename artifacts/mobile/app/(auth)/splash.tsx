@@ -15,7 +15,7 @@ const H = 104; // 96 × 1.08
 const VIEWBOX = "0 0 100 108";
 const COLOR = "#8D5524";
 const ROOF =
-  "M 46.8,21.9 L 30.2,42.1 Q 27,46 32,46 L 68,46 Q 73,46 69.8,42.1 L 53.2,21.9 Q 50,18 46.8,21.9 Z";
+  "M 47.4,12.3 L 29.6,41.7 Q 27,46 32,46 L 68,46 Q 73,46 70.4,41.7 L 52.6,12.3 Q 50,8 47.4,12.3 Z";
 
 // Where each block starts before converging (px offset from its natural position)
 const SPREADS: { x: number; y: number }[] = [
