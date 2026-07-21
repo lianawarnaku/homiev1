@@ -2,63 +2,195 @@ import { router } from "expo-router";
 import React, { useEffect, useRef } from "react";
 import {
   Animated,
+  Easing,
   StatusBar,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
+import Svg, { Path, Rect } from "react-native-svg";
 
-import { HomieLogomark } from "@/components/HomieLogomark";
+// Logo canvas dimensions (matches HomieLogomark viewBox scale at size=96)
+const W = 96;
+const H = 104; // 96 × 1.08
+const VIEWBOX = "0 0 100 108";
+const COLOR = "#8D5524";
+const ROOF =
+  "M 46.8,21.9 L 30.2,42.1 Q 27,46 32,46 L 68,46 Q 73,46 69.8,42.1 L 53.2,21.9 Q 50,18 46.8,21.9 Z";
+
+// Where each block starts before converging (px offset from its natural position)
+const SPREADS: { x: number; y: number }[] = [
+  { x: 0,   y: -50 }, // roof   — drops from above
+  { x: -50, y: -20 }, // top-left  — slides from left
+  { x: 50,  y: -20 }, // top-right — slides from right
+  { x: -50, y: 30  }, // bottom-left  — slides from left
+  { x: 50,  y: 30  }, // bottom-right — slides from right
+];
 
 export default function SplashScreen() {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.75)).current;
-  const textFade = useRef(new Animated.Value(0)).current;
+  const blockAnims = useRef(
+    SPREADS.map(({ x, y }) => ({
+      x: new Animated.Value(x),
+      y: new Animated.Value(y),
+      opacity: new Animated.Value(0),
+    }))
+  ).current;
+
+  const pulse = useRef(new Animated.Value(1)).current;
+  const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    // Logo flies in
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 700,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 6,
-        tension: 80,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      // Text fades in after logo lands
-      Animated.timing(textFade, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        // Navigate to login after a short pause
-        const t = setTimeout(() => router.replace("/(auth)/login"), 1200);
-        return () => clearTimeout(t);
-      });
+    // All blocks fade + spring into position simultaneously
+    const converge = Animated.parallel(
+      blockAnims.flatMap(({ x, y, opacity }) => [
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.spring(x, {
+          toValue: 0,
+          friction: 7,
+          tension: 90,
+          useNativeDriver: true,
+        }),
+        Animated.spring(y, {
+          toValue: 0,
+          friction: 7,
+          tension: 90,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    // Gentle breathe loop
+    pulseLoop.current = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1.10,
+          duration: 650,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 650,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    converge.start(() => {
+      pulseLoop.current?.start();
     });
-  }, [fadeAnim, scaleAnim, textFade]);
+
+    // Navigate after blocks land + 2 pulse cycles
+    const timer = setTimeout(() => {
+      pulseLoop.current?.stop();
+      router.replace("/(auth)/login");
+    }, 2800);
+
+    return () => {
+      clearTimeout(timer);
+      pulseLoop.current?.stop();
+    };
+  }, []);
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FDFAF6" />
 
-      <Animated.View
-        style={[
-          styles.logoWrapper,
-          { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
-        ]}
-      >
-        <HomieLogomark size={96} color="#8D5524" />
-      </Animated.View>
+      {/* Each block is absolutely stacked; only their transforms differ */}
+      <Animated.View style={[styles.logo, { transform: [{ scale: pulse }] }]}>
+        {/* Roof */}
+        <Animated.View
+          style={[
+            styles.block,
+            {
+              opacity: blockAnims[0].opacity,
+              transform: [
+                { translateX: blockAnims[0].x },
+                { translateY: blockAnims[0].y },
+              ],
+            },
+          ]}
+        >
+          <Svg width={W} height={H} viewBox={VIEWBOX}>
+            <Path d={ROOF} fill={COLOR} />
+          </Svg>
+        </Animated.View>
 
-      <Animated.View style={{ opacity: textFade }}>
-        <Text style={styles.wordmark}>Homie</Text>
-        <Text style={styles.tagline}>Home, together.</Text>
+        {/* Top-left square */}
+        <Animated.View
+          style={[
+            styles.block,
+            {
+              opacity: blockAnims[1].opacity,
+              transform: [
+                { translateX: blockAnims[1].x },
+                { translateY: blockAnims[1].y },
+              ],
+            },
+          ]}
+        >
+          <Svg width={W} height={H} viewBox={VIEWBOX}>
+            <Rect x={27} y={48} width={22} height={22} rx={4} ry={4} fill={COLOR} />
+          </Svg>
+        </Animated.View>
+
+        {/* Top-right square */}
+        <Animated.View
+          style={[
+            styles.block,
+            {
+              opacity: blockAnims[2].opacity,
+              transform: [
+                { translateX: blockAnims[2].x },
+                { translateY: blockAnims[2].y },
+              ],
+            },
+          ]}
+        >
+          <Svg width={W} height={H} viewBox={VIEWBOX}>
+            <Rect x={51} y={48} width={22} height={22} rx={4} ry={4} fill={COLOR} />
+          </Svg>
+        </Animated.View>
+
+        {/* Bottom-left square */}
+        <Animated.View
+          style={[
+            styles.block,
+            {
+              opacity: blockAnims[3].opacity,
+              transform: [
+                { translateX: blockAnims[3].x },
+                { translateY: blockAnims[3].y },
+              ],
+            },
+          ]}
+        >
+          <Svg width={W} height={H} viewBox={VIEWBOX}>
+            <Rect x={27} y={72} width={22} height={22} rx={4} ry={4} fill={COLOR} />
+          </Svg>
+        </Animated.View>
+
+        {/* Bottom-right square */}
+        <Animated.View
+          style={[
+            styles.block,
+            {
+              opacity: blockAnims[4].opacity,
+              transform: [
+                { translateX: blockAnims[4].x },
+                { translateY: blockAnims[4].y },
+              ],
+            },
+          ]}
+        >
+          <Svg width={W} height={H} viewBox={VIEWBOX}>
+            <Rect x={51} y={72} width={22} height={22} rx={4} ry={4} fill={COLOR} />
+          </Svg>
+        </Animated.View>
       </Animated.View>
     </View>
   );
@@ -70,24 +202,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#FDFAF6",
     alignItems: "center",
     justifyContent: "center",
-    gap: 20,
   },
-  logoWrapper: {
-    marginBottom: 8,
+  logo: {
+    width: W,
+    height: H,
   },
-  wordmark: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 38,
-    color: "#1A120B",
-    textAlign: "center",
-    letterSpacing: -1,
-  },
-  tagline: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 15,
-    color: "#8D5524",
-    textAlign: "center",
-    marginTop: 4,
-    letterSpacing: 0.2,
+  block: {
+    ...StyleSheet.absoluteFillObject,
   },
 });
