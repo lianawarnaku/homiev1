@@ -1,8 +1,13 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "AiELilPViopwSYnb1coVY"
 uri = "file://artifacts/mobile/assets/images/icon.png"
 type = "image"
 title = "homie app icon house plant chimney"
+
+[[outputs]]
+id = "cOMXPhjNUnup50k7-rSFS"
+uri = "file://artifacts/mobile/assets/images/icon.png"
+type = "image"
+title = "New Homie App Icon"

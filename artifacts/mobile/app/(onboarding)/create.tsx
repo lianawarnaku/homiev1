@@ -42,15 +42,12 @@ export default function CreateHousehold() {
 
   // ── Navigation helpers ──────────────────────────────────────────────────
   function goNext() {
-    // Skip bathroom step for traditional dorms
-    const nextStep = step === 2 && housingType === "traditional" ? step + 2 : step + 1;
-    animateTo(nextStep);
+    animateTo(step + 1);
   }
 
   function goBack() {
     if (step === 0) { router.back(); return; }
-    const prevStep = step === 3 && housingType === "traditional" ? step - 2 : step - 1;
-    animateTo(prevStep);
+    animateTo(step - 1);
   }
 
   function animateTo(next: number) {
