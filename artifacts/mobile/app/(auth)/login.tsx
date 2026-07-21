@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -21,41 +20,62 @@ import { supabase } from "@/lib/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
 
+// Map Supabase raw error messages → readable copy
+function friendlyError(msg: string): string {
+  const m = msg.toLowerCase();
+  if (m.includes("invalid login credentials") || m.includes("invalid credentials"))
+    return "Incorrect email or password. Please try again.";
+  if (m.includes("email not confirmed"))
+    return "Please confirm your email address before signing in.";
+  if (m.includes("user not found") || m.includes("no user found"))
+    return "No account found with that email address.";
+  if (m.includes("too many requests") || m.includes("rate limit"))
+    return "Too many attempts. Please wait a moment and try again.";
+  return msg;
+}
+
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  function clearError() {
+    if (error) setError("");
+  }
 
   // ── Email / password ──────────────────────────────────────────────────────
   async function handleEmailSignIn() {
     if (!email || !password) {
-      Alert.alert("Missing fields", "Please enter your email and password.");
+      setError("Please enter your email and password.");
       return;
     }
+    setError("");
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
 
-    if (error) {
-      Alert.alert("Sign in failed", error.message);
+    if (authError) {
+      setError(friendlyError(authError.message));
     }
     // Auth state change will redirect via app/index.tsx
   }
 
   // ── Google OAuth ──────────────────────────────────────────────────────────
   async function handleGoogleSignIn() {
+    setError("");
     setGoogleLoading(true);
     try {
       const redirectTo = makeRedirectUri();
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo, skipBrowserRedirect: true },
       });
 
-      if (error || !data.url) {
-        Alert.alert("Google sign-in failed", error?.message ?? "Unknown error");
+      if (oauthError || !data.url) {
+        setError(friendlyError(oauthError?.message ?? "Google sign-in failed."));
         return;
       }
 
@@ -65,7 +85,7 @@ export default function LoginScreen() {
         await supabase.auth.exchangeCodeForSession(result.url);
       }
     } catch (e: any) {
-      Alert.alert("Google sign-in failed", e.message);
+      setError(friendlyError(e.message));
     } finally {
       setGoogleLoading(false);
     }
@@ -102,7 +122,7 @@ export default function LoginScreen() {
               keyboardType="email-address"
               returnKeyType="next"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(v) => { setEmail(v); clearError(); }}
             />
           </View>
 
@@ -117,13 +137,19 @@ export default function LoginScreen() {
               returnKeyType="done"
               onSubmitEditing={handleEmailSignIn}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(v) => { setPassword(v); clearError(); }}
             />
           </View>
 
           <Pressable style={styles.forgotRow}>
             <Text style={styles.forgotText}>Forgot password?</Text>
           </Pressable>
+
+          {!!error && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
 
           <Pressable
             style={[styles.primaryBtn, loading && styles.btnDisabled]}
@@ -297,6 +323,20 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 13,
     color: "#B0A090",
+  },
+  errorBox: {
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  errorText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: "#B91C1C",
+    lineHeight: 18,
   },
   googleBtn: {
     height: 52,
