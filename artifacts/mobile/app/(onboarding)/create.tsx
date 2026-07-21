@@ -329,13 +329,15 @@ const styles = StyleSheet.create({
   backText: { fontFamily: "Inter_500Medium", fontSize: 14, color: "#8D5524" },
   stepCount: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#B0A090" },
   progressTrack: {
-    height: 3,
+    height: 4,
     backgroundColor: "#E2D5C8",
     marginHorizontal: 24,
     borderRadius: 2,
+    overflow: "hidden",
+    alignSelf: "stretch",
   },
   progressFill: {
-    height: 3,
+    height: 4,
     backgroundColor: "#8D5524",
     borderRadius: 2,
   },
