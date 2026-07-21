@@ -273,6 +273,71 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [household?.id, loadAll]);
 
+  // ── Realtime subscriptions ──────────────────────────────────────────────────
+  // One channel per household; each table listener applies minimal state patches
+  // so any device's action propagates to all others instantly.
+
+  useEffect(() => {
+    if (!household?.id) return;
+    const hid = household.id;
+
+    const channel = supabase
+      .channel(`household-rt:${hid}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "chores", filter: `household_id=eq.${hid}` },
+        ({ eventType, new: n, old: o }: any) => {
+          if (eventType === "INSERT")
+            setChores((p) => p.some((c) => c.id === n.id) ? p : [...p, toChore(n)]);
+          else if (eventType === "UPDATE")
+            setChores((p) => p.map((c) => c.id === n.id ? toChore(n) : c));
+          else if (eventType === "DELETE")
+            setChores((p) => p.filter((c) => c.id !== o.id));
+        })
+      .on("postgres_changes", { event: "*", schema: "public", table: "expenses", filter: `household_id=eq.${hid}` },
+        ({ eventType, new: n, old: o }: any) => {
+          if (eventType === "INSERT")
+            setExpenses((p) => p.some((e) => e.id === n.id) ? p : [...p, toExpense(n)]);
+          else if (eventType === "UPDATE")
+            setExpenses((p) => p.map((e) => e.id === n.id ? toExpense(n) : e));
+          else if (eventType === "DELETE")
+            setExpenses((p) => p.filter((e) => e.id !== o.id));
+        })
+      .on("postgres_changes", { event: "*", schema: "public", table: "shopping_lists", filter: `household_id=eq.${hid}` },
+        ({ eventType, new: n, old: o }: any) => {
+          if (eventType === "INSERT")
+            setShoppingLists((p) => p.some((l) => l.id === n.id) ? p : [...p, toShoppingList(n)]);
+          else if (eventType === "UPDATE")
+            setShoppingLists((p) => p.map((l) => l.id === n.id ? toShoppingList(n) : l));
+          else if (eventType === "DELETE")
+            setShoppingLists((p) => p.filter((l) => l.id !== o.id));
+        })
+      .on("postgres_changes", { event: "*", schema: "public", table: "shopping_items", filter: `household_id=eq.${hid}` },
+        ({ eventType, new: n, old: o }: any) => {
+          if (eventType === "INSERT")
+            setShoppingItems((p) => p.some((i) => i.id === n.id) ? p : [...p, toShoppingItem(n)]);
+          else if (eventType === "UPDATE")
+            setShoppingItems((p) => p.map((i) => i.id === n.id ? toShoppingItem(n) : i));
+          else if (eventType === "DELETE")
+            setShoppingItems((p) => p.filter((i) => i.id !== o.id));
+        })
+      .on("postgres_changes", { event: "*", schema: "public", table: "borrow_items", filter: `household_id=eq.${hid}` },
+        ({ eventType, new: n, old: o }: any) => {
+          if (eventType === "INSERT")
+            setBorrowItems((p) => p.some((b) => b.id === n.id) ? p : [...p, toBorrowItem(n)]);
+          else if (eventType === "UPDATE")
+            setBorrowItems((p) => p.map((b) => b.id === n.id ? toBorrowItem(n) : b));
+          else if (eventType === "DELETE")
+            setBorrowItems((p) => p.filter((b) => b.id !== o.id));
+        })
+      // Points updates from other devices (complete/pick-up chore)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "household_members", filter: `household_id=eq.${hid}` },
+        ({ new: n }: any) => {
+          setRoommates((p) => p.map((r, i) => r.id === n.id ? toRoommate(n, i) : r));
+        })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [household?.id]);
+
   // ── Chore actions ──────────────────────────────────────────────────────────
 
   const addChore = useCallback(async (chore: Omit<Chore, "id">) => {
