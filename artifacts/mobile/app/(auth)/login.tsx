@@ -41,9 +41,11 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [debugStatus, setDebugStatus] = useState("");
 
   function clearError() {
     if (error) setError("");
+    if (debugStatus) setDebugStatus("");
   }
 
   // ── Email / password ──────────────────────────────────────────────────────
@@ -53,33 +55,54 @@ export default function LoginScreen() {
       return;
     }
     setError("");
+    setDebugStatus("Contacting Supabase…");
     setLoading(true);
     try {
+      console.log("[login] calling signInWithPassword for", email);
       const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      console.log("[login] result — error:", authError, "session:", data?.session ? "EXISTS" : "NULL");
 
       if (authError) {
-        setError(friendlyError(authError.message));
+        setDebugStatus("");
+        setError(friendlyError(authError.message) + ` [${authError.message}]`);
         return;
       }
 
       if (!data.session) {
+        setDebugStatus("");
         setError(
-          "Sign in completed but no session was created. Your email may not be confirmed yet — " +
-          "check your inbox for a confirmation link, or try registering again."
+          "Sign in completed but no session was returned. " +
+          "Your email may not be confirmed — delete your account in the Supabase dashboard and register again in the app."
         );
         return;
       }
 
+      setDebugStatus("Signed in — checking household…");
+      console.log("[login] checking household for user", data.session.user.id);
+
       // Query the household directly — don't rely on context timing
-      const { data: membership } = await supabase
+      const { data: membership, error: memberErr } = await supabase
         .from("household_members")
         .select("id")
         .eq("user_id", data.session.user.id)
         .maybeSingle();
 
-      router.replace(membership ? "/(tabs)" : "/(onboarding)");
+      console.log("[login] membership:", membership, "error:", memberErr);
+
+      if (memberErr) {
+        setDebugStatus("");
+        setError(`Household check failed: ${memberErr.message}`);
+        return;
+      }
+
+      const dest = membership ? "/(tabs)" : "/(onboarding)";
+      setDebugStatus(membership ? "Household found — opening app…" : "No household — going to setup…");
+      console.log("[login] navigating to", dest);
+      router.replace(dest);
     } catch (e: any) {
-      setError(e.message ?? "An unexpected error occurred.");
+      console.error("[login] caught exception:", e);
+      setDebugStatus("");
+      setError(`Unexpected error: ${e.message ?? String(e)}`);
     } finally {
       setLoading(false);
     }
@@ -167,6 +190,12 @@ export default function LoginScreen() {
           <Pressable style={styles.forgotRow}>
             <Text style={styles.forgotText}>Forgot password?</Text>
           </Pressable>
+
+          {!!debugStatus && (
+            <View style={styles.debugBox}>
+              <Text style={styles.debugText}>{debugStatus}</Text>
+            </View>
+          )}
 
           {!!error && (
             <View style={styles.errorBox}>
@@ -299,6 +328,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#1A120B",
     backgroundColor: "#FFF",
+  },
+  debugBox: {
+    backgroundColor: "#EEF4FF",
+    borderRadius: 10,
+    padding: 12,
+  },
+  debugText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: "#3B5998",
+    textAlign: "center",
   },
   forgotRow: {
     alignSelf: "flex-end",

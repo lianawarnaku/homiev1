@@ -39,7 +39,7 @@ export default function RegisterScreen() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -50,10 +50,18 @@ export default function RegisterScreen() {
 
     if (error) {
       Alert.alert("Sign up failed", error.message);
+      return;
+    }
+
+    if (data.session) {
+      // Email confirmation is disabled — user is immediately active.
+      // Go straight to onboarding (new user has no household yet).
+      router.replace("/(onboarding)");
     } else {
+      // Email confirmation is required — ask them to check their inbox.
       Alert.alert(
         "Check your email",
-        "We sent a confirmation link to " + email + ". Click it to activate your account.",
+        "We sent a confirmation link to " + email + ". Click it, then sign in.",
         [{ text: "OK", onPress: () => router.back() }]
       );
     }
