@@ -58,8 +58,10 @@ export default function LoginScreen() {
 
     if (authError) {
       setError(friendlyError(authError.message));
+    } else {
+      // Explicitly navigate to root so index.tsx can decide the destination
+      router.replace("/");
     }
-    // Auth state change will redirect via app/index.tsx
   }
 
   // ── Google OAuth ──────────────────────────────────────────────────────────
