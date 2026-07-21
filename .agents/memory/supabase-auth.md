@@ -1,6 +1,6 @@
 ---
 name: Supabase + auth architecture
-description: Supabase project details, auth flow, and screen routing for the Homie app.
+description: Supabase project details, auth flow, routing structure, and data layer for the Homie app.
 ---
 
 ## Supabase project
@@ -10,17 +10,31 @@ description: Supabase project details, auth flow, and screen routing for the Hom
 - Secrets: GOOGLE_OAUTH_CLIENT_SECRET (Replit secret; must also be entered in Supabase dashboard > Auth > Providers > Google)
 
 ## Auth routing structure
-- `artifacts/mobile/app/index.tsx` — route guard: loading spinner → redirect to `/(auth)/splash` (no session) or `/(tabs)` (has session)
+- `artifacts/mobile/app/index.tsx` — 3-way gate: no session → (auth)/splash, session + no household → (onboarding), session + household → (tabs)
 - `artifacts/mobile/app/(auth)/` — splash, login, register screens
+- `artifacts/mobile/app/(onboarding)/` — index (create/join choice), create (4-step wizard), join (invite code)
 - `artifacts/mobile/context/AuthContext.tsx` — wraps Supabase session; `useAuth()` hook
+- `artifacts/mobile/context/HouseholdContext.tsx` — fetches household + membership; `useHousehold()` hook
+- `artifacts/mobile/context/AppContext.tsx` — all entity data (chores, expenses, etc.); `useAppContext()` hook
 - `artifacts/mobile/lib/supabase.ts` — Supabase client using AsyncStorage for session persistence
 
 ## Auth methods implemented
 - Email/password: fully working
 - Google OAuth: UI built; needs Supabase dashboard configured (client ID + secret) + redirect URL added in Google Cloud Console
-- Apple: deferred (user has no Apple Developer account yet)
+- Apple: deferred
 
-## Design tokens for auth screens
+## Database schema (all tables live in Supabase)
+Phase 3: households, household_members, household_amenities, + is_household_member() + find_household_by_code() RPC
+Phase 4: chores, expenses, shopping_lists, shopping_items, borrow_items, nudges + points/weekly_points on household_members
+
+## Data layer (AppContext)
+- All 6 entities backed by Supabase (no AsyncStorage for entity data)
+- Optimistic updates: local state updated immediately, Supabase call follows async
+- essentialsAssignees: still in AsyncStorage (device-local preference, key: homebase_essentials_v1)
+- nudges, suppressedAlerts, roommateStatuses, homeLocation: in-memory only (Phase 5 will sync)
+- useAppContext() is the exported hook (alias for useApp); tab screens import this name
+
+## Design tokens for auth/onboarding screens
 - Background: #FDFAF6 (warm off-white)
 - Brown primary: #8D5524
 - Dark text: #1A120B
@@ -29,13 +43,11 @@ description: Supabase project details, auth flow, and screen routing for the Hom
 
 ## Logo
 - Component: `artifacts/mobile/components/HomieLogomark.tsx`
-- 4 brown square tiles + 1 brown triangle tile (roof), all meeting at center
-- Uses react-native-svg (Polygon + Rect)
+- 4 brown rounded square tiles + 1 brown rounded triangle tile (roof)
+- Uses react-native-svg (Path + Rect with rx/ry=4)
 - Default color: #8D5524, default size: 80
 
-## Next phases
-- Phase 3: Household onboarding (create/join household, invite code + email invite)
-- Phase 4: Data persistence (replace AsyncStorage with Supabase for all entities)
-- Phase 5: Real-time sync (Supabase Realtime subscriptions)
+## Next phase
+- Phase 5: Supabase Realtime subscriptions for live cross-device sync (chores, expenses, shopping, borrow)
 
-**Why:** User wants all data in Supabase (not Replit DB) for independence from Replit infrastructure.
+**Why Supabase over Replit DB:** User wants independence from Replit infrastructure for portability.
