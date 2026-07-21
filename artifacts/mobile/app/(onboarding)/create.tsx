@@ -119,23 +119,44 @@ export default function CreateHousehold() {
       const h = Array.isArray(rows) ? rows[0] : rows;
       if (!h?.id) throw new Error("Failed to create household — no data returned");
 
-      // 2. Add the creator as owner
-      const { error: mErr } = await supabase.from("household_members").insert({
-        household_id: h.id,
-        user_id: uid,
-        display_name: displayName.trim(),
-        role: "owner",
+      // 2. Add the creator as owner (direct fetch — same JWT issue as above)
+      const memberRes = await fetch(`${supabaseUrl}/rest/v1/household_members`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${session.access_token}`,
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          household_id: h.id,
+          user_id: uid,
+          display_name: displayName.trim(),
+          role: "owner",
+        }),
       });
-      if (mErr) throw mErr;
+      if (!memberRes.ok) {
+        const body = await memberRes.json().catch(() => ({}));
+        throw new Error(body.message ?? `HTTP ${memberRes.status}: Failed to add member`);
+      }
 
-      // 3. Insert selected amenities
+      // 3. Insert selected amenities (direct fetch)
       const amenities = [
         ...[...kitchenSel].map((k) => ({ household_id: h.id, category: "kitchen", name: k })),
         ...[...bathroomItemSel].map((k) => ({ household_id: h.id, category: "bathroom_item", name: k })),
         ...[...bathroomChoreSel].map((k) => ({ household_id: h.id, category: "bathroom_chore", name: k })),
       ];
       if (amenities.length > 0) {
-        await supabase.from("household_amenities").insert(amenities);
+        await fetch(`${supabaseUrl}/rest/v1/household_amenities`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${session.access_token}`,
+            Prefer: "return=minimal",
+          },
+          body: JSON.stringify(amenities),
+        });
       }
 
       await refresh();
