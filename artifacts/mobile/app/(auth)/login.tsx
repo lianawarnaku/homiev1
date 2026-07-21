@@ -60,14 +60,6 @@ export default function LoginScreen() {
     try {
       const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
-      // Temporary diagnostic alert — shows the raw result regardless of UI state
-      const msg = authError
-        ? `ERROR: ${authError.message}`
-        : data.session
-        ? `OK — user: ${data.session.user.email}`
-        : "No session and no error (email unconfirmed?)";
-      alert(`Sign-in result:\n${msg}`);
-
       if (authError) {
         setDebugStatus("");
         setError(friendlyError(authError.message) + ` [${authError.message}]`);
