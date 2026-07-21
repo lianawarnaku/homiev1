@@ -76,10 +76,20 @@ export default function CreateHousehold() {
     }
     setSaving(true);
     try {
+      // Always fetch the live session so the JWT is guaranteed to be attached.
+      // Relying on the auth context user can race on web (context hydrates async).
+      const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr || !session) {
+        Alert.alert("Session expired", "Please sign in again.");
+        router.replace("/(auth)/login");
+        return;
+      }
+      const uid = session.user.id;
+
       // 1. Create the household
       const { data: h, error: hErr } = await supabase
         .from("households")
-        .insert({ name: householdName.trim(), housing_type: housingType, created_by: user!.id })
+        .insert({ name: householdName.trim(), housing_type: housingType, created_by: uid })
         .select()
         .single();
       if (hErr || !h) throw hErr ?? new Error("Failed to create household");
@@ -87,7 +97,7 @@ export default function CreateHousehold() {
       // 2. Add the creator as owner
       const { error: mErr } = await supabase.from("household_members").insert({
         household_id: h.id,
-        user_id: user!.id,
+        user_id: uid,
         display_name: displayName.trim(),
         role: "owner",
       });
