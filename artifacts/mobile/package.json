@@ -56,6 +56,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@react-navigation/bottom-tabs": "^7.15.11",
     "@supabase/supabase-js": "^2.110.5",
     "expo-auth-session": "^7.0.11",
     "expo-crypto": "~15.0.9"
