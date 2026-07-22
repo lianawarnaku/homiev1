@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.5",
-    "expo-auth-session": "^7.0.11"
+    "expo-auth-session": "^7.0.11",
+    "expo-crypto": "~15.0.9"
   }
 }

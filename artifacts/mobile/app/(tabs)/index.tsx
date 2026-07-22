@@ -18,6 +18,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
 import { type ChoreCategory, useAppContext } from "@/context/AppContext";
+import { useGoogleCalendar } from "@/context/GoogleCalendarContext";
+import { authHeaders } from "@/lib/api";
 import { useColors } from "@/hooks/useColors";
 import { useConfirm } from "@/hooks/useConfirm";
 
@@ -214,6 +216,7 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
 export default function MyChoresScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { ensureToken } = useGoogleCalendar();
   const { currentUserId, chores, roommates, completeChore, deleteChore, addChore, essentialsAssignees, setEssentialAssignee } =
     useAppContext();
 
@@ -426,9 +429,11 @@ export default function MyChoresScreen() {
             onAddToCalendar={async () => {
               const domain = process.env.EXPO_PUBLIC_DOMAIN;
               const baseUrl = domain ? `https://${domain}` : "";
+              const googleToken = await ensureToken();
+              if (!googleToken) throw new Error("Connect Google Calendar first");
               const res = await fetch(`${baseUrl}/api/calendar/add-chore`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: await authHeaders({ "X-Google-Access-Token": googleToken }),
                 body: JSON.stringify({
                   title: item.title,
                   dueDate: item.dueDate,

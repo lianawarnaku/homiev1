@@ -21,6 +21,8 @@ import { HomePlant } from "@/components/HomePlant";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext } from "@/context/AppContext";
 import { useHousehold } from "@/context/HouseholdContext";
+import { useGoogleCalendar } from "@/context/GoogleCalendarContext";
+import { authHeaders } from "@/lib/api";
 import { useColors } from "@/hooks/useColors";
 import { useConfirm } from "@/hooks/useConfirm";
 
@@ -227,14 +229,22 @@ export default function GroupChoresScreen() {
 
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
   const baseUrl = domain ? `https://${domain}` : "";
+  const { ensureToken } = useGoogleCalendar();
 
   const fetchAvailability = async (offset: number) => {
     setAvailabilityLoading(true);
     setAvailabilityError(null);
     try {
+      const googleToken = await ensureToken();
+      if (!googleToken) {
+        setAvailabilityError("Connect Google Calendar to see availability");
+        return;
+      }
       const days = getWeekDays(offset);
       const weekStart = toDateKey(days[0]);
-      const res = await fetch(`${baseUrl}/api/calendar/availability?weekStart=${weekStart}`);
+      const res = await fetch(`${baseUrl}/api/calendar/availability?weekStart=${weekStart}`, {
+        headers: await authHeaders({ "X-Google-Access-Token": googleToken }),
+      });
       if (!res.ok) throw new Error("Failed to fetch");
       const data = (await res.json()) as { busyDays: string[]; connected: boolean };
       setMyBusyDays(new Set(data.busyDays));

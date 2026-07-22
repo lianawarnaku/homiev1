@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAppContext, type ChoreCategory, type Roommate } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { authHeaders } from "@/lib/api";
 
 type PlanType = "chore-chart" | "home-checklist" | null;
 type HousingType = "traditional" | "suite" | "apartment" | null;
@@ -801,7 +802,7 @@ export default function PlanningScreen() {
     try {
       const res = await fetch(`${baseUrl}/api/planning/suggest`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authHeaders(),
         body: JSON.stringify({
           type: selectedType,
           preferences: buildContext() || undefined,

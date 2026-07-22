@@ -15,6 +15,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppProvider } from "@/context/AppContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { GoogleCalendarProvider } from "@/context/GoogleCalendarContext";
 import { HouseholdProvider } from "@/context/HouseholdContext";
 import { setBaseUrl } from "@workspace/api-client-react";
 
@@ -49,6 +50,7 @@ export default function RootLayout() {
             <AuthProvider>
               <HouseholdProvider>
                 <AppProvider>
+                  <GoogleCalendarProvider>
                   <Stack screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="index" />
                     <Stack.Screen name="(auth)" />
@@ -56,6 +58,7 @@ export default function RootLayout() {
                     <Stack.Screen name="(tabs)" />
                     <Stack.Screen name="+not-found" />
                   </Stack>
+                  </GoogleCalendarProvider>
                 </AppProvider>
               </HouseholdProvider>
             </AuthProvider>
