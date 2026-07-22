@@ -48,8 +48,12 @@ catalog:
   '@tailwindcss/vite': ^4.1.14
   '@tanstack/react-query': ^5.90.21
   '@types/node': ^25.3.3
-  '@types/react': ^19.2.0
-  '@types/react-dom': ^19.2.0
+  # Keep @types/react aligned with the pinned react@19.1.0 below. Running these
+  # at ^19.2 pulled a second @types/react copy into the tree (19.2.x alongside
+  # mobile's 19.1.x), which broke mockup-sandbox's typecheck with duplicate,
+  # unrelated React ref types.
+  '@types/react': ~19.1.10
+  '@types/react-dom': ~19.1.7
   '@vitejs/plugin-react': ^5.0.4
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
