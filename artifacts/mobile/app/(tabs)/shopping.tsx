@@ -77,7 +77,7 @@ export default function ShoppingScreen() {
 
   const handleAddList = () => {
     if (!newListName.trim()) return;
-    addShoppingList(newListName.trim());
+    addShoppingList({ name: newListName.trim() });
     setNewListName("");
     setShowNewListModal(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

@@ -110,13 +110,13 @@ export type AppContextType = {
   addShoppingItem: (item: Omit<ShoppingItem, "id">) => Promise<void>;
   toggleShoppingItem: (id: string) => Promise<void>;
   deleteShoppingItem: (id: string) => Promise<void>;
-  assignShoppingItem: (id: string, roommateId: string | undefined) => Promise<void>;
+  assignShoppingItem: (id: string, roommateId: string | null | undefined) => Promise<void>;
   // Borrowing
   addBorrowItem: (item: Omit<BorrowItem, "id">) => Promise<void>;
   returnBorrowItem: (id: string) => Promise<void>;
   deleteBorrowItem: (id: string) => Promise<void>;
   // Misc
-  setEssentialAssignee: (section: string, item: string, roommateId: string) => void;
+  setEssentialAssignee: (section: string, item: string, roommateId: string | null) => void;
   sendNudge: (toRoommateId: string, choreId: string) => void;
   removeNudge: (toRoommateId: string, choreId: string) => void;
   suppressAlert: (alertId: string) => void;
@@ -534,8 +534,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.from("shopping_items").delete().eq("id", id);
   }, []);
 
-  const assignShoppingItem = useCallback(async (id: string, roommateId: string | undefined) => {
-    setShoppingItems((prev) => prev.map((i) => i.id === id ? { ...i, assignedTo: roommateId } : i));
+  const assignShoppingItem = useCallback(async (id: string, roommateId: string | null | undefined) => {
+    const normalized = roommateId ?? undefined; // treat null (unassign) as undefined in state
+    setShoppingItems((prev) => prev.map((i) => i.id === id ? { ...i, assignedTo: normalized } : i));
     await supabase.from("shopping_items").update({ assigned_to: roommateId ?? null }).eq("id", id);
   }, []);
 
@@ -571,9 +572,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // ── Misc ───────────────────────────────────────────────────────────────────
 
-  const setEssentialAssignee = useCallback((section: string, item: string, roommateId: string) => {
+  const setEssentialAssignee = useCallback((section: string, item: string, roommateId: string | null) => {
     setEssentialsAssigneesState((prev) => {
-      const next = { ...prev, [section]: { ...(prev[section] ?? {}), [item]: roommateId } };
+      const sectionMap = { ...(prev[section] ?? {}) };
+      if (roommateId === null) {
+        delete sectionMap[item]; // null = unassign
+      } else {
+        sectionMap[item] = roommateId;
+      }
+      const next = { ...prev, [section]: sectionMap };
       AsyncStorage.setItem(ESSENTIALS_KEY, JSON.stringify(next)).catch(() => {});
       return next;
     });

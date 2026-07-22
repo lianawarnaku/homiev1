@@ -282,7 +282,7 @@ export default function GroupChoresScreen() {
         "Pick up this chore? 🙌",
         `Complete "${choreName}" for them and earn ${chorePoints + 25} pts (${chorePoints} + 25 bonus)!`,
         () => {
-          pickUpChore(choreId, currentUserId);
+          pickUpChore(choreId);
           setPickedUpChores((prev) => new Set([...prev, choreId]));
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           info(
