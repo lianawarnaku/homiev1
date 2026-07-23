@@ -1,16 +1,18 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, View } from "react-native";
 
 interface RoommateAvatarProps {
   name: string;
   color: string;
   size?: number;
+  imageUri?: string;
 }
 
 export function RoommateAvatar({
   name,
   color,
   size = 36,
+  imageUri,
 }: RoommateAvatarProps) {
   const initials = name
     .split(" ")
@@ -19,7 +21,22 @@ export function RoommateAvatar({
     .toUpperCase()
     .slice(0, 2);
 
-  const fontSize = size * 0.36;
+  const fontSize = size * 0.38;
+
+  if (imageUri) {
+    return (
+      <Image
+        source={{ uri: imageUri }}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderWidth: 1.5,
+          borderColor: color + "55",
+        }}
+      />
+    );
+  }
 
   return (
     <View
@@ -29,8 +46,8 @@ export function RoommateAvatar({
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: color + "28",
-          borderColor: color + "66",
+          backgroundColor: color + "22",
+          borderColor: color + "55",
         },
       ]}
     >
@@ -43,10 +60,10 @@ const styles = StyleSheet.create({
   avatar: {
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 2,
+    borderWidth: 1.5,
   },
   initials: {
     fontFamily: "Inter_700Bold",
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
   },
 });

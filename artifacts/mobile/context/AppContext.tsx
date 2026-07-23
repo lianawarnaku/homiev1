@@ -4,26 +4,41 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useState,
 } from "react";
-import { supabase } from "../lib/supabase";
-import { useHousehold } from "./HouseholdContext";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+import { useSupabaseSession } from "@/hooks/useSupabaseSession";
+import { supabase } from "@/lib/supabase";
+import type { ColorScheme } from "@/constants/colors";
 
 export type RoommateStatus = "home" | "away" | "asleep" | "unknown";
-export type HomeLocation = { latitude: number; longitude: number; radius: number };
-export type ChoreCategory = "cleaning" | "kitchen" | "bathroom" | "laundry" | "outdoor" | "other";
 
-export type Roommate = {
+export interface HomeLocation {
+  latitude: number;
+  longitude: number;
+  radius: number; // meters
+}
+
+export type ChoreCategory =
+  | "cleaning"
+  | "kitchen"
+  | "bathroom"
+  | "laundry"
+  | "outdoor"
+  | "other";
+
+export interface Roommate {
   id: string;
   name: string;
   color: string;
   points: number;
   weeklyPoints: number;
-};
+  avatarUri?: string;
+}
 
-export type Chore = {
+export interface Chore {
   id: string;
   title: string;
   assignedTo: string;
@@ -33,39 +48,75 @@ export type Chore = {
   points: number;
   category: ChoreCategory;
   recurring?: "daily" | "weekly" | "monthly";
-};
+}
 
-export type ExpenseCategory = "groceries" | "utilities" | "rent" | "entertainment" | "other";
+export type ExpenseCategory =
+  | "groceries"
+  | "utilities"
+  | "rent"
+  | "entertainment"
+  | "other";
+
 export type RecurringInterval = "daily" | "monthly" | "custom";
 
-export type Expense = {
+export interface Expense {
   id: string;
   title: string;
   amount: number;
   paidBy: string;
   sharedWith: string[];
-  splits: Record<string, number>;
+  splits: Record<string, number>; // person id → amount they owe payer
   date: string;
   category: ExpenseCategory;
   settled: boolean;
   recurring?: RecurringInterval;
   recurringCustom?: string;
-  paidBack?: Record<string, boolean>;
-};
+  paidBack?: Record<string, boolean>; // person id → true if they've paid back
+}
 
-export type ShoppingList = { id: string; name: string };
+export interface ShoppingList {
+  id: string;
+  name: string;
+  assignedTo?: string;
+  pinned?: boolean;
+  // NOTE: no `order` field — the array position in `shoppingLists` IS the
+  // display order. Mutators below preserve the invariant "pinned lists first,
+  // then unpinned lists" so consumers can render `shoppingLists` directly.
+}
 
-export type ShoppingItem = {
+export interface ShoppingItem {
   id: string;
   listId: string;
   name: string;
   quantity: string;
   addedBy: string;
   completed: boolean;
-  assignedTo?: string;
-};
+  // Optional per-item owners + price used when converting the list into an IOU.
+  // If set, the roommates in `assignedTo` split `price` evenly for this item.
+  // Legacy: earlier versions stored `assignedTo` as a plain string; readers
+  // should coerce via `normalizeAssignees()` in shopping.tsx.
+  assignedTo?: string[] | string;
+  price?: number;
+}
 
-export type BorrowItem = {
+// Pre-filled expense builder state — Shopping tab pushes one of these when the
+// user turns a list into an IOU; the Expenses tab consumes it on next mount to
+// pop the IOU builder pre-populated, then clears it.
+export interface PendingIouDraft {
+  title: string;
+  category: ExpenseCategory;
+  paidBy: string;
+  totalAmount: string;
+  participants: string[];
+  splits: Record<string, string>;
+  // Locked per-person amounts baked in from itemized shopping-list assignments.
+  // Everyone in `participants` also gets `groupTotal / participants.length`
+  // added on top; the IOU builder recomputes splits from these two inputs.
+  itemizedSplits?: Record<string, number>;
+  groupTotal?: string;
+}
+
+export interface BorrowItem {
   id: string;
   item: string;
   borrowedFrom: string;
@@ -74,12 +125,348 @@ export type BorrowItem = {
   returned: boolean;
   returnedAt?: string;
   notes?: string;
-};
+}
 
-export type Nudge = { id: string; toRoommateId: string; choreId: string; sentAt: string };
+export interface Nudge {
+  id: string;
+  toRoommateId: string;
+  choreId: string;
+  sentAt: string;
+}
 
-export type AppContextType = {
+export type ChoreAssignment = Record<string, string>;
+
+export interface ChoreSlot {
+  key: string;
+  label: string;
+  category?: ChoreCategory;
+}
+
+export interface ChoreChartData {
+  slots?: ChoreSlot[];
+  weeks: { week: number; assignments: ChoreAssignment }[];
+  fairness_note?: string;
+}
+
+export type HousingType = "traditional" | "suite" | "apartment";
+
+export interface HomeProfile {
+  housingType: HousingType;
+  items: string[];
+  additionalChores: string[];
+}
+
+interface AppContextType {
+  preferencesLoaded: boolean;
+  preferencesOnboardingPending: boolean;
+  finishPreferencesOnboarding: () => Promise<void>;
+  householdComplete: boolean;
+  setHouseholdComplete: (complete: boolean) => void;
+  colorScheme: ColorScheme;
+  setColorScheme: (scheme: ColorScheme) => void;
+  pointsEnabled: boolean;
+  setPointsEnabled: (enabled: boolean) => void;
+  plantEnabled: boolean;
+  setPlantEnabled: (enabled: boolean) => void;
+  householdId: string | null;
+  householdName: string | null;
+  inviteCode: string | null;
+  householdLoading: boolean;
+  createHousehold: (householdName: string, displayName: string, color: string, inviteCode: string) => Promise<void>;
+  joinHousehold: (inviteCode: string, displayName: string, color: string) => Promise<void>;
+  deleteHousehold: () => Promise<void>;
   currentUserId: string;
+  setCurrentUser: (id: string) => void;
+  roommates: Roommate[];
+  chores: Chore[];
+  expenses: Expense[];
+  shoppingLists: ShoppingList[];
+  shoppingItems: ShoppingItem[];
+  borrowItems: BorrowItem[];
+  nudges: Nudge[];
+  addChore: (chore: Omit<Chore, "id">) => void;
+  completeChore: (id: string) => void;
+  pickUpChore: (choreId: string, completedById: string) => void;
+  deleteChore: (id: string) => void;
+  addExpense: (expense: Omit<Expense, "id">) => void;
+  updateExpense: (id: string, updates: Partial<Omit<Expense, "id">>) => void;
+  settleExpense: (id: string) => void;
+  deleteExpense: (id: string) => void;
+  markPersonPaid: (expenseId: string, personId: string) => void;
+  addShoppingList: (name: string) => void;
+  reorderShoppingLists: (newIds: string[]) => void;
+  pinShoppingList: (id: string, pinned: boolean) => void;
+  deleteShoppingList: (id: string) => void;
+  addShoppingItem: (item: Omit<ShoppingItem, "id">) => void;
+  toggleShoppingItem: (id: string) => void;
+  deleteShoppingItem: (id: string) => void;
+  reorderShoppingItems: (listId: string, newIds: string[]) => void;
+  assignShoppingList: (id: string, roommateId: string | null) => void;
+  assignShoppingItem: (id: string, roommateIds: string[]) => void;
+  updateShoppingItemPrice: (id: string, price: number | null) => void;
+  pendingIouDraft: PendingIouDraft | null;
+  setPendingIouDraft: (draft: PendingIouDraft | null) => void;
+  addBorrowItem: (item: Omit<BorrowItem, "id">) => void;
+  updateBorrowItem: (id: string, updates: Partial<Omit<BorrowItem, "id">>) => void;
+  returnBorrowItem: (id: string) => void;
+  deleteBorrowItem: (id: string) => void;
+  sendNudge: (toRoommateId: string, choreId: string) => void;
+  removeNudge: (toRoommateId: string, choreId: string) => void;
+  getRoommateById: (id: string) => Roommate | undefined;
+  updateRoommate: (id: string, patch: Partial<Pick<Roommate, "name" | "color" | "avatarUri">>) => void;
+  getChoresByRoommate: (id: string) => Chore[];
+  getBalances: () => Record<string, number>;
+  essentialsAssignees: Record<string, Record<string, string>>;
+  setEssentialAssignee: (sectionKey: string, item: string, roommateId: string | null) => void;
+  suppressedAlerts: Record<string, boolean>;
+  suppressAlert: (id: string) => void;
+  roommateStatuses: Record<string, RoommateStatus>;
+  setRoommateStatus: (id: string, status: RoommateStatus) => void;
+  sleepStartedAt: Record<string, number>;
+  homeLocation: HomeLocation | null;
+  setHomeLocation: (loc: HomeLocation | null) => void;
+  choreChart: ChoreChartData | null;
+  choreChartStartedAt: string | null;
+  setChoreChart: (data: ChoreChartData | null, startedAt: string | null) => void;
+  homeProfile: HomeProfile | null;
+  setHomeProfile: (profile: HomeProfile | null) => void;
+}
+
+const ASLEEP_AUTO_REVERT_MS = 9 * 60 * 60 * 1000;
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+const CURRENT_USER_ID = "current";
+
+function makeId(): string {
+  return Date.now().toString() + Math.random().toString(36).substring(2, 9);
+}
+
+function daysFromNow(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(23, 59, 0, 0);
+  return d.toISOString();
+}
+
+const INITIAL_ROOMMATES: Roommate[] = [
+  {
+    id: "current",
+    name: "Liana",
+    color: "#4F7FF7",
+    points: 450,
+    weeklyPoints: 85,
+  },
+  {
+    id: "2",
+    name: "Roha",
+    color: "#22C55E",
+    points: 320,
+    weeklyPoints: 60,
+  },
+  { id: "3", name: "Safa", color: "#F97316", points: 280, weeklyPoints: 45 },
+  { id: "4", name: "Akshaya", color: "#8B5CF6", points: 190, weeklyPoints: 30 },
+  { id: "5", name: "Sumaiya", color: "#EC4899", points: 240, weeklyPoints: 50 },
+  { id: "6", name: "Esha", color: "#14B8A6", points: 310, weeklyPoints: 70 },
+];
+
+const INITIAL_CHORES: Chore[] = [
+  {
+    id: "c1",
+    title: "Clean bathroom",
+    assignedTo: "current",
+    dueDate: daysFromNow(0),
+    completed: false,
+    points: 25,
+    category: "bathroom",
+  },
+  {
+    id: "c2",
+    title: "Vacuum living room",
+    assignedTo: "current",
+    dueDate: daysFromNow(1),
+    completed: false,
+    points: 20,
+    category: "cleaning",
+  },
+  {
+    id: "c3",
+    title: "Take out trash",
+    assignedTo: "current",
+    dueDate: daysFromNow(-1),
+    completed: false,
+    points: 10,
+    category: "other",
+  },
+  {
+    id: "c4",
+    title: "Wash dishes",
+    assignedTo: "current",
+    dueDate: daysFromNow(3),
+    completed: true,
+    points: 15,
+    category: "kitchen",
+    completedAt: new Date().toISOString(),
+  },
+  {
+    id: "c5",
+    title: "Do laundry",
+    assignedTo: "2",
+    dueDate: daysFromNow(0),
+    completed: false,
+    points: 20,
+    category: "laundry",
+  },
+  {
+    id: "c6",
+    title: "Clean kitchen counters",
+    assignedTo: "2",
+    dueDate: daysFromNow(1),
+    completed: true,
+    points: 25,
+    category: "kitchen",
+    completedAt: new Date().toISOString(),
+  },
+  {
+    id: "c7",
+    title: "Mop floors",
+    assignedTo: "3",
+    dueDate: daysFromNow(-1),
+    completed: false,
+    points: 20,
+    category: "cleaning",
+  },
+  {
+    id: "c8",
+    title: "Clean shower",
+    assignedTo: "4",
+    dueDate: daysFromNow(4),
+    completed: false,
+    points: 25,
+    category: "bathroom",
+  },
+  {
+    id: "c9",
+    title: "Take out recycling",
+    assignedTo: "4",
+    dueDate: daysFromNow(0),
+    completed: true,
+    points: 10,
+    category: "other",
+    completedAt: new Date().toISOString(),
+  },
+  {
+    id: "c10",
+    title: "Wipe down appliances",
+    assignedTo: "5",
+    dueDate: daysFromNow(2),
+    completed: false,
+    points: 15,
+    category: "kitchen",
+  },
+  {
+    id: "c11",
+    title: "Sweep entryway",
+    assignedTo: "5",
+    dueDate: daysFromNow(-1),
+    completed: true,
+    points: 10,
+    category: "cleaning",
+    completedAt: new Date().toISOString(),
+  },
+  {
+    id: "c12",
+    title: "Replace trash bags",
+    assignedTo: "6",
+    dueDate: daysFromNow(1),
+    completed: false,
+    points: 10,
+    category: "other",
+  },
+  {
+    id: "c13",
+    title: "Clean fridge",
+    assignedTo: "6",
+    dueDate: daysFromNow(3),
+    completed: false,
+    points: 20,
+    category: "kitchen",
+  },
+];
+
+const INITIAL_EXPENSES: Expense[] = [
+  {
+    id: "e1",
+    title: "Monthly groceries",
+    amount: 300,
+    paidBy: "current",
+    sharedWith: ["2", "3", "4", "5", "6"],
+    splits: { "2": 50, "3": 50, "4": 50, "5": 50, "6": 50 },
+    date: daysFromNow(-3),
+    category: "groceries",
+    settled: false,
+  },
+  {
+    id: "e2",
+    title: "Internet bill",
+    amount: 90,
+    paidBy: "2",
+    sharedWith: ["current", "3", "4", "5", "6"],
+    splits: { current: 15, "3": 15, "4": 15, "5": 15, "6": 15 },
+    date: daysFromNow(-10),
+    category: "utilities",
+    settled: false,
+  },
+  {
+    id: "e3",
+    title: "Cleaning supplies",
+    amount: 60,
+    paidBy: "3",
+    sharedWith: ["current", "2", "4", "5", "6"],
+    splits: { current: 10, "2": 10, "4": 10, "5": 10, "6": 10 },
+    date: daysFromNow(-7),
+    category: "other",
+    settled: false,
+  },
+];
+
+const INITIAL_SHOPPING_LISTS: ShoppingList[] = [
+  { id: "list1", name: "Groceries" },
+  { id: "list2", name: "Household" },
+];
+
+const INITIAL_SHOPPING: ShoppingItem[] = [
+  { id: "s1", listId: "list1", name: "Coffee beans", quantity: "1 bag", addedBy: "current", completed: false },
+  { id: "s2", listId: "list1", name: "Milk", quantity: "2L", addedBy: "2", completed: true },
+  { id: "s3", listId: "list1", name: "Greek yogurt", quantity: "2", addedBy: "5", completed: false },
+  { id: "s4", listId: "list2", name: "Dish soap", quantity: "2 bottles", addedBy: "current", completed: false },
+  { id: "s5", listId: "list2", name: "Paper towels", quantity: "1 pack", addedBy: "2", completed: false },
+  { id: "s6", listId: "list2", name: "Trash bags", quantity: "1 box", addedBy: "3", completed: false },
+];
+
+const INITIAL_BORROWS: BorrowItem[] = [
+  {
+    id: "b1",
+    item: "Phone charger",
+    borrowedFrom: "2",
+    borrowedAt: daysFromNow(-5),
+    dueDate: daysFromNow(-1),
+    returned: false,
+    notes: "USB-C",
+  },
+  {
+    id: "b2",
+    item: "Umbrella",
+    borrowedFrom: "3",
+    borrowedAt: daysFromNow(-2),
+    dueDate: daysFromNow(3),
+    returned: false,
+  },
+];
+
+const STORAGE_KEY = "homebase_data_v7";
+const PREFERENCES_KEY = "homie_user_preferences_v1";
+interface SharedHouseholdState {
   roommates: Roommate[];
   chores: Chore[];
   expenses: Expense[];
@@ -88,536 +475,799 @@ export type AppContextType = {
   borrowItems: BorrowItem[];
   nudges: Nudge[];
   essentialsAssignees: Record<string, Record<string, string>>;
-  suppressedAlerts: Record<string, boolean>;
   roommateStatuses: Record<string, RoommateStatus>;
+  sleepStartedAt: Record<string, number>;
   homeLocation: HomeLocation | null;
-  loaded: boolean;
-  // Chores
-  addChore: (chore: Omit<Chore, "id">) => Promise<void>;
-  completeChore: (id: string) => Promise<void>;
-  pickUpChore: (id: string) => Promise<void>;
-  deleteChore: (id: string) => Promise<void>;
-  // Expenses
-  addExpense: (expense: Omit<Expense, "id">) => Promise<void>;
-  updateExpense: (id: string, updates: Partial<Expense>) => Promise<void>;
-  settleExpense: (id: string) => Promise<void>;
-  deleteExpense: (id: string) => Promise<void>;
-  markPersonPaid: (expenseId: string, roommateId: string) => Promise<void>;
-  getBalances: () => Record<string, number>;
-  // Shopping
-  addShoppingList: (list: { name: string }) => Promise<void>;
-  deleteShoppingList: (id: string) => Promise<void>;
-  addShoppingItem: (item: Omit<ShoppingItem, "id">) => Promise<void>;
-  toggleShoppingItem: (id: string) => Promise<void>;
-  deleteShoppingItem: (id: string) => Promise<void>;
-  assignShoppingItem: (id: string, roommateId: string | null | undefined) => Promise<void>;
-  // Borrowing
-  addBorrowItem: (item: Omit<BorrowItem, "id">) => Promise<void>;
-  returnBorrowItem: (id: string) => Promise<void>;
-  deleteBorrowItem: (id: string) => Promise<void>;
-  // Misc
-  setEssentialAssignee: (section: string, item: string, roommateId: string | null) => void;
-  sendNudge: (toRoommateId: string, choreId: string) => void;
-  removeNudge: (toRoommateId: string, choreId: string) => void;
-  suppressAlert: (alertId: string) => void;
-  setRoommateStatus: (roommateId: string, status: RoommateStatus) => void;
-  setHomeLocation: (location: HomeLocation) => void;
-  getRoommateById: (id: string) => Roommate | undefined;
-  getChoresByRoommate: (roommateId: string) => Chore[];
-};
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const PICKUP_BONUS = 25;
-const ESSENTIALS_KEY = "homebase_essentials_v1";
-
-const ROOMMATE_COLORS = [
-  "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4",
-  "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F",
-];
-
-// ── DB row → app type mappers ─────────────────────────────────────────────────
-
-function toRoommate(m: any, index = 0): Roommate {
-  return {
-    id: m.id,
-    name: m.display_name,
-    color: m.avatar_color ?? ROOMMATE_COLORS[index % ROOMMATE_COLORS.length],
-    points: m.points ?? 0,
-    weeklyPoints: m.weekly_points ?? 0,
-  };
+  choreChart: ChoreChartData | null;
+  choreChartStartedAt: string | null;
+  homeProfile: HomeProfile | null;
 }
-
-function toChore(c: any): Chore {
-  return {
-    id: c.id,
-    title: c.title,
-    assignedTo: c.assigned_to ?? "",
-    dueDate: c.due_date,
-    completed: c.completed,
-    completedAt: c.completed_at ?? undefined,
-    points: c.points,
-    category: c.category as ChoreCategory,
-    recurring: c.recurring ?? undefined,
-  };
-}
-
-function toExpense(e: any): Expense {
-  return {
-    id: e.id,
-    title: e.title,
-    amount: Number(e.amount),
-    paidBy: e.paid_by,
-    sharedWith: e.shared_with ?? [],
-    splits: e.splits ?? {},
-    date: e.date,
-    category: e.category as ExpenseCategory,
-    settled: e.settled,
-    recurring: e.recurring ?? undefined,
-    recurringCustom: e.recurring_custom ?? undefined,
-    paidBack: e.paid_back ?? {},
-  };
-}
-
-function toShoppingList(l: any): ShoppingList {
-  return { id: l.id, name: l.name };
-}
-
-function toShoppingItem(i: any): ShoppingItem {
-  return {
-    id: i.id,
-    listId: i.list_id,
-    name: i.name,
-    quantity: i.quantity,
-    addedBy: i.added_by ?? "",
-    completed: i.completed,
-    assignedTo: i.assigned_to ?? undefined,
-  };
-}
-
-function toBorrowItem(b: any): BorrowItem {
-  return {
-    id: b.id,
-    item: b.item,
-    borrowedFrom: b.borrowed_from ?? "",
-    borrowedAt: b.borrowed_at,
-    dueDate: b.due_date,
-    returned: b.returned,
-    returnedAt: b.returned_at ?? undefined,
-    notes: b.notes ?? undefined,
-  };
-}
-
-function generateId(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
-
-// ── Context ───────────────────────────────────────────────────────────────────
-
-const AppContext = createContext<AppContextType>({} as AppContextType);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const { household, myMembership } = useHousehold();
-  const currentUserId = myMembership?.id ?? "";
-
-  const [roommates, setRoommates] = useState<Roommate[]>([]);
-  const [chores, setChores] = useState<Chore[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [shoppingLists, setShoppingLists] = useState<ShoppingList[]>([]);
-  const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
-  const [borrowItems, setBorrowItems] = useState<BorrowItem[]>([]);
+  const { session } = useSupabaseSession();
+  const [householdId, setHouseholdId] = useState<string | null>(null);
+  const [householdName, setHouseholdName] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [householdLoading, setHouseholdLoading] = useState(true);
+  const [membershipVersion, setMembershipVersion] = useState(0);
+  const [roommates, setRoommates] = useState<Roommate[]>(INITIAL_ROOMMATES);
+  const [chores, setChores] = useState<Chore[]>(INITIAL_CHORES);
+  const [expenses, setExpenses] = useState<Expense[]>(INITIAL_EXPENSES);
+  const [shoppingLists, setShoppingLists] = useState<ShoppingList[]>(INITIAL_SHOPPING_LISTS);
+  const [shoppingItems, setShoppingItems] =
+    useState<ShoppingItem[]>(INITIAL_SHOPPING);
+  const [borrowItems, setBorrowItems] = useState<BorrowItem[]>(INITIAL_BORROWS);
   const [nudges, setNudges] = useState<Nudge[]>([]);
-  const [essentialsAssignees, setEssentialsAssigneesState] = useState<Record<string, Record<string, string>>>({});
+  const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
   const [suppressedAlerts, setSuppressedAlerts] = useState<Record<string, boolean>>({});
   const [roommateStatuses, setRoommateStatusesState] = useState<Record<string, RoommateStatus>>({});
+  const [sleepStartedAt, setSleepStartedAtState] = useState<Record<string, number>>({});
   const [homeLocation, setHomeLocationState] = useState<HomeLocation | null>(null);
+  const [choreChart, setChoreChartState] = useState<ChoreChartData | null>(null);
+  const [choreChartStartedAt, setChoreChartStartedAtState] = useState<string | null>(null);
+  const [homeProfile, setHomeProfileState] = useState<HomeProfile | null>(null);
+  const [currentUserId, setCurrentUserIdState] = useState<string>(CURRENT_USER_ID);
+  const [pendingIouDraft, setPendingIouDraftState] = useState<PendingIouDraft | null>(null);
+  const [colorScheme, setColorScheme] = useState<ColorScheme>("blue");
+  const [pointsEnabled, setPointsEnabled] = useState(true);
+  const [plantEnabled, setPlantEnabled] = useState(true);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [preferencesOnboardingPending, setPreferencesOnboardingPending] = useState(false);
+  const [householdComplete, setHouseholdComplete] = useState(false);
   const [loaded, setLoaded] = useState(false);
-
-  // Load essentials assignees from local storage (device-local preference)
-  useEffect(() => {
-    AsyncStorage.getItem(ESSENTIALS_KEY)
-      .then((raw) => raw && setEssentialsAssigneesState(JSON.parse(raw)))
-      .catch(() => {});
-  }, []);
-
-  // Load all Supabase data when household becomes available
-  const loadAll = useCallback(async (householdId: string) => {
-    setLoaded(false);
-    const [members, choresRes, expensesRes, listsRes, itemsRes, borrowsRes] =
-      await Promise.all([
-        supabase.from("household_members").select("*").eq("household_id", householdId).order("joined_at"),
-        supabase.from("chores").select("*").eq("household_id", householdId).order("created_at"),
-        supabase.from("expenses").select("*").eq("household_id", householdId).order("created_at"),
-        supabase.from("shopping_lists").select("*").eq("household_id", householdId).order("created_at"),
-        supabase.from("shopping_items").select("*").eq("household_id", householdId).order("created_at"),
-        supabase.from("borrow_items").select("*").eq("household_id", householdId).order("created_at"),
-      ]);
-
-    setRoommates((members.data ?? []).map((m, i) => toRoommate(m, i)));
-    setChores((choresRes.data ?? []).map(toChore));
-    setExpenses((expensesRes.data ?? []).map(toExpense));
-    setShoppingLists((listsRes.data ?? []).map(toShoppingList));
-    setShoppingItems((itemsRes.data ?? []).map(toShoppingItem));
-    setBorrowItems((borrowsRes.data ?? []).map(toBorrowItem));
-    setLoaded(true);
-  }, []);
+  const [cloudReady, setCloudReady] = useState(false);
+  const applyingRemoteRef = useRef(false);
 
   useEffect(() => {
-    if (household?.id) {
-      loadAll(household.id);
-    } else {
-      setLoaded(false);
-    }
-  }, [household?.id, loadAll]);
-
-  // ── Realtime subscriptions ──────────────────────────────────────────────────
-  // One channel per household; each table listener applies minimal state patches
-  // so any device's action propagates to all others instantly.
-
-  useEffect(() => {
-    if (!household?.id) return;
-    const hid = household.id;
-
-    const channel = supabase
-      .channel(`household-rt:${hid}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "chores", filter: `household_id=eq.${hid}` },
-        ({ eventType, new: n, old: o }: any) => {
-          if (eventType === "INSERT")
-            setChores((p) => p.some((c) => c.id === n.id) ? p : [...p, toChore(n)]);
-          else if (eventType === "UPDATE")
-            setChores((p) => p.map((c) => c.id === n.id ? toChore(n) : c));
-          else if (eventType === "DELETE")
-            setChores((p) => p.filter((c) => c.id !== o.id));
-        })
-      .on("postgres_changes", { event: "*", schema: "public", table: "expenses", filter: `household_id=eq.${hid}` },
-        ({ eventType, new: n, old: o }: any) => {
-          if (eventType === "INSERT")
-            setExpenses((p) => p.some((e) => e.id === n.id) ? p : [...p, toExpense(n)]);
-          else if (eventType === "UPDATE")
-            setExpenses((p) => p.map((e) => e.id === n.id ? toExpense(n) : e));
-          else if (eventType === "DELETE")
-            setExpenses((p) => p.filter((e) => e.id !== o.id));
-        })
-      .on("postgres_changes", { event: "*", schema: "public", table: "shopping_lists", filter: `household_id=eq.${hid}` },
-        ({ eventType, new: n, old: o }: any) => {
-          if (eventType === "INSERT")
-            setShoppingLists((p) => p.some((l) => l.id === n.id) ? p : [...p, toShoppingList(n)]);
-          else if (eventType === "UPDATE")
-            setShoppingLists((p) => p.map((l) => l.id === n.id ? toShoppingList(n) : l));
-          else if (eventType === "DELETE")
-            setShoppingLists((p) => p.filter((l) => l.id !== o.id));
-        })
-      .on("postgres_changes", { event: "*", schema: "public", table: "shopping_items", filter: `household_id=eq.${hid}` },
-        ({ eventType, new: n, old: o }: any) => {
-          if (eventType === "INSERT")
-            setShoppingItems((p) => p.some((i) => i.id === n.id) ? p : [...p, toShoppingItem(n)]);
-          else if (eventType === "UPDATE")
-            setShoppingItems((p) => p.map((i) => i.id === n.id ? toShoppingItem(n) : i));
-          else if (eventType === "DELETE")
-            setShoppingItems((p) => p.filter((i) => i.id !== o.id));
-        })
-      .on("postgres_changes", { event: "*", schema: "public", table: "borrow_items", filter: `household_id=eq.${hid}` },
-        ({ eventType, new: n, old: o }: any) => {
-          if (eventType === "INSERT")
-            setBorrowItems((p) => p.some((b) => b.id === n.id) ? p : [...p, toBorrowItem(n)]);
-          else if (eventType === "UPDATE")
-            setBorrowItems((p) => p.map((b) => b.id === n.id ? toBorrowItem(n) : b));
-          else if (eventType === "DELETE")
-            setBorrowItems((p) => p.filter((b) => b.id !== o.id));
-        })
-      // Points updates from other devices (complete/pick-up chore)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "household_members", filter: `household_id=eq.${hid}` },
-        ({ new: n }: any) => {
-          setRoommates((p) => p.map((r, i) => r.id === n.id ? toRoommate(n, i) : r));
-        })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [household?.id]);
-
-  // ── Chore actions ──────────────────────────────────────────────────────────
-
-  const addChore = useCallback(async (chore: Omit<Chore, "id">) => {
-    if (!household) return;
-    const id = generateId();
-    const optimistic: Chore = { ...chore, id };
-    setChores((prev) => [...prev, optimistic]);
-    await supabase.from("chores").insert({
-      id,
-      household_id: household.id,
-      title: chore.title,
-      assigned_to: chore.assignedTo || null,
-      due_date: chore.dueDate,
-      completed: false,
-      points: chore.points,
-      category: chore.category,
-      recurring: chore.recurring ?? null,
-    });
-  }, [household]);
-
-  const completeChore = useCallback(async (choreId: string) => {
-    const chore = chores.find((c) => c.id === choreId);
-    if (!chore || chore.completed) return;
-    const now = new Date().toISOString();
-    // Optimistic
-    setChores((prev) => prev.map((c) => c.id === choreId ? { ...c, completed: true, completedAt: now } : c));
-    setRoommates((prev) => prev.map((r) =>
-      r.id === chore.assignedTo
-        ? { ...r, points: r.points + chore.points, weeklyPoints: r.weeklyPoints + chore.points }
-        : r
-    ));
-    // Persist
-    await supabase.from("chores").update({ completed: true, completed_at: now }).eq("id", choreId);
-    const member = roommates.find((r) => r.id === chore.assignedTo);
-    if (member) {
-      await supabase.from("household_members").update({
-        points: member.points + chore.points,
-        weekly_points: member.weeklyPoints + chore.points,
-      }).eq("id", chore.assignedTo);
-    }
-  }, [chores, roommates]);
-
-  const pickUpChore = useCallback(async (choreId: string) => {
-    const chore = chores.find((c) => c.id === choreId);
-    if (!chore || chore.completed) return;
-    const earned = chore.points + PICKUP_BONUS;
-    const now = new Date().toISOString();
-    setChores((prev) => prev.map((c) => c.id === choreId ? { ...c, completed: true, completedAt: now, assignedTo: currentUserId } : c));
-    setRoommates((prev) => prev.map((r) =>
-      r.id === currentUserId
-        ? { ...r, points: r.points + earned, weeklyPoints: r.weeklyPoints + earned }
-        : r
-    ));
-    await supabase.from("chores").update({ completed: true, completed_at: now, assigned_to: currentUserId }).eq("id", choreId);
-    const me = roommates.find((r) => r.id === currentUserId);
-    if (me) {
-      await supabase.from("household_members").update({
-        points: me.points + earned,
-        weekly_points: me.weeklyPoints + earned,
-      }).eq("id", currentUserId);
-    }
-  }, [chores, roommates, currentUserId]);
-
-  const deleteChore = useCallback(async (choreId: string) => {
-    setChores((prev) => prev.filter((c) => c.id !== choreId));
-    await supabase.from("chores").delete().eq("id", choreId);
-  }, []);
-
-  // ── Expense actions ────────────────────────────────────────────────────────
-
-  const addExpense = useCallback(async (expense: Omit<Expense, "id">) => {
-    if (!household) return;
-    const id = generateId();
-    setExpenses((prev) => [...prev, { ...expense, id }]);
-    await supabase.from("expenses").insert({
-      id,
-      household_id: household.id,
-      title: expense.title,
-      amount: expense.amount,
-      paid_by: expense.paidBy,
-      shared_with: expense.sharedWith,
-      splits: expense.splits,
-      date: expense.date,
-      category: expense.category,
-      settled: false,
-      recurring: expense.recurring ?? null,
-      recurring_custom: expense.recurringCustom ?? null,
-      paid_back: expense.paidBack ?? {},
-    });
-  }, [household]);
-
-  const updateExpense = useCallback(async (id: string, updates: Partial<Expense>) => {
-    setExpenses((prev) => prev.map((e) => e.id === id ? { ...e, ...updates } : e));
-    const dbUpdates: any = {};
-    if (updates.title !== undefined) dbUpdates.title = updates.title;
-    if (updates.amount !== undefined) dbUpdates.amount = updates.amount;
-    if (updates.paidBy !== undefined) dbUpdates.paid_by = updates.paidBy;
-    if (updates.sharedWith !== undefined) dbUpdates.shared_with = updates.sharedWith;
-    if (updates.splits !== undefined) dbUpdates.splits = updates.splits;
-    if (updates.date !== undefined) dbUpdates.date = updates.date;
-    if (updates.category !== undefined) dbUpdates.category = updates.category;
-    if (updates.settled !== undefined) dbUpdates.settled = updates.settled;
-    if (updates.recurring !== undefined) dbUpdates.recurring = updates.recurring;
-    if (updates.recurringCustom !== undefined) dbUpdates.recurring_custom = updates.recurringCustom;
-    if (updates.paidBack !== undefined) dbUpdates.paid_back = updates.paidBack;
-    if (Object.keys(dbUpdates).length > 0) {
-      await supabase.from("expenses").update(dbUpdates).eq("id", id);
-    }
-  }, []);
-
-  const settleExpense = useCallback(async (id: string) => {
-    setExpenses((prev) => prev.map((e) => e.id === id ? { ...e, settled: true } : e));
-    await supabase.from("expenses").update({ settled: true }).eq("id", id);
-  }, []);
-
-  const deleteExpense = useCallback(async (id: string) => {
-    setExpenses((prev) => prev.filter((e) => e.id !== id));
-    await supabase.from("expenses").delete().eq("id", id);
-  }, []);
-
-  const markPersonPaid = useCallback(async (expenseId: string, roommateId: string) => {
-    setExpenses((prev) => prev.map((e) => {
-      if (e.id !== expenseId) return e;
-      const paidBack = { ...(e.paidBack ?? {}), [roommateId]: true };
-      const allPaid = e.sharedWith.filter((id) => id !== e.paidBy).every((id) => paidBack[id]);
-      return { ...e, paidBack, settled: allPaid ? true : e.settled };
-    }));
-    const expense = expenses.find((e) => e.id === expenseId);
-    if (!expense) return;
-    const paidBack = { ...(expense.paidBack ?? {}), [roommateId]: true };
-    const allPaid = expense.sharedWith.filter((id) => id !== expense.paidBy).every((id) => paidBack[id]);
-    await supabase.from("expenses").update({ paid_back: paidBack, settled: allPaid }).eq("id", expenseId);
-  }, [expenses]);
-
-  const getBalances = useCallback((): Record<string, number> => {
-    const balances: Record<string, number> = {};
-    roommates.forEach((r) => { balances[r.id] = 0; });
-    expenses.filter((e) => !e.settled).forEach((e) => {
-      const participants = e.sharedWith.length > 0 ? e.sharedWith : roommates.map((r) => r.id);
-      participants.forEach((id) => {
-        if (id === e.paidBy) return;
-        if (e.paidBack?.[id]) return;
-        const share = e.splits[id] ?? e.amount / participants.length;
-        balances[e.paidBy] = (balances[e.paidBy] ?? 0) + share;
-        balances[id] = (balances[id] ?? 0) - share;
-      });
-    });
-    return balances;
-  }, [expenses, roommates]);
-
-  // ── Shopping actions ───────────────────────────────────────────────────────
-
-  const addShoppingList = useCallback(async ({ name }: { name: string }) => {
-    if (!household) return;
-    const id = generateId();
-    setShoppingLists((prev) => [...prev, { id, name }]);
-    await supabase.from("shopping_lists").insert({ id, household_id: household.id, name });
-  }, [household]);
-
-  const deleteShoppingList = useCallback(async (id: string) => {
-    setShoppingLists((prev) => prev.filter((l) => l.id !== id));
-    setShoppingItems((prev) => prev.filter((i) => i.listId !== id));
-    await supabase.from("shopping_lists").delete().eq("id", id); // cascades to items
-  }, []);
-
-  const addShoppingItem = useCallback(async (item: Omit<ShoppingItem, "id">) => {
-    if (!household) return;
-    const id = generateId();
-    setShoppingItems((prev) => [...prev, { ...item, id }]);
-    await supabase.from("shopping_items").insert({
-      id,
-      household_id: household.id,
-      list_id: item.listId,
-      name: item.name,
-      quantity: item.quantity,
-      added_by: item.addedBy || null,
-      completed: false,
-      assigned_to: item.assignedTo ?? null,
-    });
-  }, [household]);
-
-  const toggleShoppingItem = useCallback(async (id: string) => {
-    let next = false;
-    setShoppingItems((prev) => prev.map((i) => {
-      if (i.id !== id) return i;
-      next = !i.completed;
-      return { ...i, completed: next };
-    }));
-    await supabase.from("shopping_items").update({ completed: next }).eq("id", id);
-  }, []);
-
-  const deleteShoppingItem = useCallback(async (id: string) => {
-    setShoppingItems((prev) => prev.filter((i) => i.id !== id));
-    await supabase.from("shopping_items").delete().eq("id", id);
-  }, []);
-
-  const assignShoppingItem = useCallback(async (id: string, roommateId: string | null | undefined) => {
-    const normalized = roommateId ?? undefined; // treat null (unassign) as undefined in state
-    setShoppingItems((prev) => prev.map((i) => i.id === id ? { ...i, assignedTo: normalized } : i));
-    await supabase.from("shopping_items").update({ assigned_to: roommateId ?? null }).eq("id", id);
-  }, []);
-
-  // ── Borrow actions ─────────────────────────────────────────────────────────
-
-  const addBorrowItem = useCallback(async (item: Omit<BorrowItem, "id">) => {
-    if (!household) return;
-    const id = generateId();
-    setBorrowItems((prev) => [...prev, { ...item, id }]);
-    await supabase.from("borrow_items").insert({
-      id,
-      household_id: household.id,
-      item: item.item,
-      borrowed_from: item.borrowedFrom || null,
-      borrowed_at: item.borrowedAt,
-      due_date: item.dueDate,
-      returned: false,
-      notes: item.notes ?? null,
-      created_by: currentUserId || null,
-    });
-  }, [household, currentUserId]);
-
-  const returnBorrowItem = useCallback(async (id: string) => {
-    const now = new Date().toISOString();
-    setBorrowItems((prev) => prev.map((b) => b.id === id ? { ...b, returned: true, returnedAt: now } : b));
-    await supabase.from("borrow_items").update({ returned: true, returned_at: now }).eq("id", id);
-  }, []);
-
-  const deleteBorrowItem = useCallback(async (id: string) => {
-    setBorrowItems((prev) => prev.filter((b) => b.id !== id));
-    await supabase.from("borrow_items").delete().eq("id", id);
-  }, []);
-
-  // ── Misc ───────────────────────────────────────────────────────────────────
-
-  const setEssentialAssignee = useCallback((section: string, item: string, roommateId: string | null) => {
-    setEssentialsAssigneesState((prev) => {
-      const sectionMap = { ...(prev[section] ?? {}) };
-      if (roommateId === null) {
-        delete sectionMap[item]; // null = unassign
-      } else {
-        sectionMap[item] = roommateId;
+    AsyncStorage.getItem(PREFERENCES_KEY).then((raw) => {
+      if (raw) {
+        try {
+          const preferences = JSON.parse(raw) as Partial<{
+            colorScheme: ColorScheme;
+            pointsEnabled: boolean;
+            plantEnabled: boolean;
+            onboardingPending: boolean;
+            householdComplete: boolean;
+          }>;
+          if (preferences.colorScheme && ["blue", "brown", "pinkWhite", "blueWhite"].includes(preferences.colorScheme)) {
+            setColorScheme(preferences.colorScheme);
+          }
+          if (typeof preferences.pointsEnabled === "boolean") setPointsEnabled(preferences.pointsEnabled);
+          if (typeof preferences.plantEnabled === "boolean") setPlantEnabled(preferences.plantEnabled);
+          if (typeof preferences.onboardingPending === "boolean") {
+            setPreferencesOnboardingPending(preferences.onboardingPending);
+          }
+          if (typeof preferences.householdComplete === "boolean") {
+            setHouseholdComplete(preferences.householdComplete);
+          }
+        } catch {}
       }
-      const next = { ...prev, [section]: sectionMap };
-      AsyncStorage.setItem(ESSENTIALS_KEY, JSON.stringify(next)).catch(() => {});
-      return next;
+      setPreferencesLoaded(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+    AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify({
+      colorScheme,
+      pointsEnabled,
+      plantEnabled,
+      onboardingPending: preferencesOnboardingPending,
+      householdComplete,
+    }));
+  }, [colorScheme, pointsEnabled, plantEnabled, preferencesLoaded, preferencesOnboardingPending, householdComplete]);
+
+  const finishPreferencesOnboarding = useCallback(async () => {
+    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({ onboardingPending: false }));
+    setPreferencesOnboardingPending(false);
+  }, []);
+
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId) {
+      setHouseholdId(null);
+      setHouseholdName(null);
+      setInviteCode(null);
+      setHouseholdLoading(false);
+      return;
+    }
+    let active = true;
+    setHouseholdLoading(true);
+    (async () => {
+      const { data: membership, error } = await supabase
+        .from("household_members")
+        .select("household_id, display_name, color")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!active) return;
+      if (error || !membership) {
+        setHouseholdId(null);
+        setHouseholdName(null);
+        setInviteCode(null);
+        setHouseholdLoading(false);
+        return;
+      }
+      const { data: household } = await supabase
+        .from("households")
+        .select("name, invite_code")
+        .eq("id", membership.household_id)
+        .single();
+      if (!active) return;
+      setCurrentUserIdState(userId);
+      setHouseholdId(membership.household_id);
+      setHouseholdName(household?.name ?? "My household");
+      setInviteCode(household?.invite_code ?? null);
+      setHouseholdLoading(false);
+    })();
+    return () => { active = false; };
+  }, [session?.user.id, membershipVersion]);
+
+  const createHousehold = useCallback(async (name: string, displayName: string, color: string, code: string) => {
+    const { error } = await supabase.rpc("create_household", {
+      household_name: name.trim(), member_name: displayName.trim(), member_color: color,
+      requested_invite_code: code,
+    });
+    if (error) throw error;
+    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({
+      onboardingPending: true,
+      householdComplete: false,
+    }));
+    setPreferencesOnboardingPending(true);
+    setHouseholdComplete(false);
+    const userId = session?.user.id;
+    if (userId) {
+      setRoommates([{ id: userId, name: displayName.trim(), color, points: 0, weeklyPoints: 0 }]);
+      setChores([]); setExpenses([]); setShoppingLists([]); setShoppingItems([]);
+      setBorrowItems([]); setNudges([]); setCurrentUserIdState(userId);
+    }
+    setMembershipVersion((value) => value + 1);
+  }, [session?.user.id]);
+
+  const joinHousehold = useCallback(async (code: string, displayName: string, color: string) => {
+    const { error } = await supabase.rpc("join_household", {
+      code: code.trim(), member_name: displayName.trim(), member_color: color,
+    });
+    if (error) throw error;
+    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({
+      onboardingPending: true,
+      householdComplete: false,
+    }));
+    setPreferencesOnboardingPending(true);
+    setHouseholdComplete(false);
+    if (session?.user.id) setCurrentUserIdState(session.user.id);
+    setMembershipVersion((value) => value + 1);
+  }, [session?.user.id]);
+
+  const deleteHousehold = useCallback(async () => {
+    if (!householdId) throw new Error("No household is selected.");
+    const { error } = await supabase.rpc("delete_household", {
+      target_household_id: householdId,
+    });
+    if (error) throw error;
+    setHouseholdId(null);
+    setHouseholdName(null);
+    setInviteCode(null);
+    setCloudReady(false);
+    setRoommates([]);
+    setChores([]);
+    setExpenses([]);
+    setShoppingLists([]);
+    setShoppingItems([]);
+    setBorrowItems([]);
+    setNudges([]);
+    setEssentialsAssignees({});
+    setRoommateStatusesState({});
+    setSleepStartedAtState({});
+    setHomeLocationState(null);
+    setChoreChartState(null);
+    setChoreChartStartedAtState(null);
+    setMembershipVersion((value) => value + 1);
+  }, [householdId]);
+
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+      if (raw) {
+        try {
+          const data = JSON.parse(raw);
+          if (data.roommates) setRoommates(data.roommates);
+          if (data.chores) setChores(data.chores);
+          if (data.expenses) setExpenses(data.expenses);
+          if (data.shoppingLists) setShoppingLists(data.shoppingLists);
+          if (data.shoppingItems) setShoppingItems(data.shoppingItems);
+          if (data.borrowItems) setBorrowItems(data.borrowItems);
+          if (data.nudges) setNudges(data.nudges);
+          if (data.essentialsAssignees) setEssentialsAssignees(data.essentialsAssignees);
+          if (data.suppressedAlerts) setSuppressedAlerts(data.suppressedAlerts);
+          if (data.roommateStatuses) setRoommateStatusesState(data.roommateStatuses);
+          if (data.sleepStartedAt) setSleepStartedAtState(data.sleepStartedAt);
+          if (data.homeLocation) setHomeLocationState(data.homeLocation);
+          if (data.choreChart) setChoreChartState(data.choreChart);
+          if (data.choreChartStartedAt) setChoreChartStartedAtState(data.choreChartStartedAt);
+          if (data.homeProfile) setHomeProfileState(data.homeProfile);
+          if (data.currentUserId && typeof data.currentUserId === "string") {
+            setCurrentUserIdState(data.currentUserId);
+          }
+        } catch {}
+      }
+      setLoaded(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId })
+    );
+  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId]);
+
+  const sharedState = useMemo<SharedHouseholdState>(() => ({
+    roommates,
+    chores,
+    expenses,
+    shoppingLists,
+    shoppingItems,
+    borrowItems,
+    nudges,
+    essentialsAssignees,
+    roommateStatuses,
+    sleepStartedAt,
+    homeLocation,
+    choreChart,
+    choreChartStartedAt,
+    homeProfile,
+  }), [roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile]);
+
+  const latestSharedStateRef = useRef(sharedState);
+  latestSharedStateRef.current = sharedState;
+
+  const applySharedState = useCallback((next: Partial<SharedHouseholdState>) => {
+    // currentUserId, suppressedAlerts, and pendingIouDraft remain private to
+    // this device. Shared tab collections all come from the cloud snapshot.
+    if (Array.isArray(next.roommates)) setRoommates(next.roommates);
+    if (Array.isArray(next.chores)) setChores(next.chores);
+    if (Array.isArray(next.expenses)) setExpenses(next.expenses);
+    if (Array.isArray(next.shoppingLists)) setShoppingLists(next.shoppingLists);
+    if (Array.isArray(next.shoppingItems)) setShoppingItems(next.shoppingItems);
+    if (Array.isArray(next.borrowItems)) setBorrowItems(next.borrowItems);
+    if (Array.isArray(next.nudges)) setNudges(next.nudges);
+    if (next.essentialsAssignees) setEssentialsAssignees(next.essentialsAssignees);
+    if (next.roommateStatuses) setRoommateStatusesState(next.roommateStatuses);
+    if (next.sleepStartedAt) setSleepStartedAtState(next.sleepStartedAt);
+    if ("homeLocation" in next) setHomeLocationState(next.homeLocation ?? null);
+    if ("choreChart" in next) setChoreChartState(next.choreChart ?? null);
+    if ("choreChartStartedAt" in next) setChoreChartStartedAtState(next.choreChartStartedAt ?? null);
+    if ("homeProfile" in next) setHomeProfileState(next.homeProfile ?? null);
+  }, []);
+
+  // Load the shared household document and subscribe to other devices.
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!loaded || !userId || !householdId) {
+      setCloudReady(false);
+      return;
+    }
+
+    let active = true;
+    const channel = supabase.channel(`household:${householdId}`);
+
+    async function connect() {
+      const { data, error } = await supabase
+        .from("household_states")
+        .select("state")
+        .eq("household_id", householdId)
+        .maybeSingle();
+
+      if (!active) return;
+      if (error) {
+        console.warn("Roomie cloud sync could not start:", error.message);
+        return;
+      }
+
+      if (data?.state) {
+        applyingRemoteRef.current = true;
+        const remote = data.state as Partial<SharedHouseholdState>;
+        const { data: members } = await supabase
+          .from("household_members")
+          .select("user_id, display_name, color")
+          .eq("household_id", householdId);
+        const existing = remote.roommates ?? [];
+        const memberIds = new Set((members ?? []).map((member) => member.user_id));
+        const hasNewMembers = (members ?? []).some((member) => !existing.some((roommate) => roommate.id === member.user_id));
+        remote.roommates = [
+          ...existing.filter((roommate) => memberIds.has(roommate.id)),
+          ...(members ?? []).filter((member) => !existing.some((roommate) => roommate.id === member.user_id)).map((member) => ({
+            id: member.user_id,
+            name: member.display_name,
+            color: member.color,
+            points: 0,
+            weeklyPoints: 0,
+          })),
+        ];
+        applySharedState(remote);
+        // Persist newly joined members into the shared snapshot so every
+        // already-connected device receives the updated roommate list.
+        if (hasNewMembers) applyingRemoteRef.current = false;
+      } else {
+        const { error: createError } = await supabase.from("household_states").upsert({
+          household_key: householdId,
+          household_id: householdId,
+          state: latestSharedStateRef.current,
+          updated_by: userId,
+          updated_at: new Date().toISOString(),
+        });
+        if (createError) {
+          console.warn("Roomie household could not be created:", createError.message);
+          return;
+        }
+      }
+
+      if (!active) return;
+      setCloudReady(true);
+      channel
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "household_states",
+            filter: `household_id=eq.${householdId}`,
+          },
+          (payload) => {
+            const row = payload.new as { state?: Partial<SharedHouseholdState>; updated_by?: string };
+            if (!row.state || row.updated_by === userId) return;
+            applyingRemoteRef.current = true;
+            applySharedState(row.state);
+          }
+        )
+        .subscribe();
+    }
+
+    connect();
+    return () => {
+      active = false;
+      setCloudReady(false);
+      supabase.removeChannel(channel);
+    };
+  }, [applySharedState, householdId, loaded, session?.user.id]);
+
+  // Coalesce quick mutations into one update and ignore realtime echoes.
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!loaded || !cloudReady || !userId || !householdId) return;
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      const { error } = await supabase.from("household_states").upsert({
+        household_key: householdId,
+        household_id: householdId,
+        state: latestSharedStateRef.current,
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) console.warn("Roomie change could not sync:", error.message);
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [cloudReady, householdId, loaded, session?.user.id, sharedState]);
+
+  const addChore = useCallback((chore: Omit<Chore, "id">) => {
+    setChores((prev) => [...prev, { ...chore, id: makeId() }]);
+  }, []);
+
+  // Toggle: complete an open chore (award points) or un-complete a done chore
+  // (deduct the same points). Only the original assignee's points are moved —
+  // picked-up chores would ideally track a separate creditee, but this keeps
+  // the model simple and matches the "unclick to uncross out" UX the user asked
+  // for on their own chores in My Home / Group.
+  const completeChore = useCallback((id: string) => {
+    const chore = chores.find((c) => c.id === id);
+    if (!chore) return;
+    const wasCompleted = chore.completed;
+    const delta = wasCompleted ? -chore.points : chore.points;
+
+    setChores((prev) =>
+      prev.map((c) =>
+        c.id === id
+          ? wasCompleted
+            ? { ...c, completed: false, completedAt: undefined }
+            : { ...c, completed: true, completedAt: new Date().toISOString() }
+          : c
+      )
+    );
+    setRoommates((prev) =>
+      prev.map((r) =>
+        r.id === chore.assignedTo
+          ? {
+              ...r,
+              points: r.points + delta,
+              weeklyPoints: r.weeklyPoints + delta,
+            }
+          : r
+      )
+    );
+  }, [chores]);
+
+  const PICKUP_BONUS = 25;
+
+  const pickUpChore = useCallback((choreId: string, completedById: string) => {
+    setChores((prev) =>
+      prev.map((c) =>
+        c.id === choreId
+          ? { ...c, completed: true, completedAt: new Date().toISOString() }
+          : c
+      )
+    );
+    setRoommates((prev) =>
+      prev.map((r) => {
+        if (r.id === completedById) {
+          const chore = chores.find((c) => c.id === choreId);
+          const earned = (chore?.points ?? 0) + PICKUP_BONUS;
+          return {
+            ...r,
+            points: r.points + earned,
+            weeklyPoints: r.weeklyPoints + earned,
+          };
+        }
+        return r;
+      })
+    );
+  }, [chores]);
+
+  const deleteChore = useCallback((id: string) => {
+    setChores((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  const addExpense = useCallback((expense: Omit<Expense, "id">) => {
+    setExpenses((prev) => [...prev, { ...expense, id: makeId() }]);
+  }, []);
+
+  const updateExpense = useCallback(
+    (id: string, updates: Partial<Omit<Expense, "id">>) => {
+      setExpenses((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, ...updates } : e))
+      );
+    },
+    []
+  );
+
+  const settleExpense = useCallback((id: string) => {
+    setExpenses((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, settled: true } : e))
+    );
+  }, []);
+
+  const deleteExpense = useCallback((id: string) => {
+    setExpenses((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  const markPersonPaid = useCallback((expenseId: string, personId: string) => {
+    setExpenses((prev) =>
+      prev.map((e) => {
+        if (e.id !== expenseId) return e;
+        const paidBack = { ...(e.paidBack ?? {}), [personId]: true };
+        const allPaid = Object.keys(e.splits ?? {}).every(
+          (id) => id === e.paidBy || paidBack[id]
+        );
+        return { ...e, paidBack, settled: allPaid ? true : e.settled };
+      })
+    );
+  }, []);
+
+  const addShoppingList = useCallback((name: string) => {
+    setShoppingLists((prev) => {
+      // Insert at the TOP of the unpinned partition.
+      const newList: ShoppingList = { id: makeId(), name };
+      const pinned = prev.filter((l) => l.pinned);
+      const unpinned = prev.filter((l) => !l.pinned);
+      return [...pinned, newList, ...unpinned];
+    });
+  }, []);
+
+  // Accept whatever id order the DraggableFlatList emits, then re-partition
+  // pinned-first / unpinned-second while preserving the user's relative order
+  // within each group. `shoppingLists` is the ONLY source of truth for the
+  // rendered order — consumers pass it directly to DraggableFlatList (no
+  // per-render re-sort).
+  const reorderShoppingLists = useCallback((newIds: string[]) => {
+    setShoppingLists((prev) => {
+      const byId = new Map(prev.map((l) => [l.id, l]));
+      // Rebuild in the exact order the drag emitted, keeping every list.
+      const reordered: ShoppingList[] = [];
+      newIds.forEach((id) => {
+        const l = byId.get(id);
+        if (l) {
+          reordered.push(l);
+          byId.delete(id);
+        }
+      });
+      // Defensive: append any list that wasn't in newIds (shouldn't happen).
+      byId.forEach((l) => reordered.push(l));
+      // Enforce the pinned-first partition after the drag.
+      const pinnedArr = reordered.filter((l) => l.pinned);
+      const unpinnedArr = reordered.filter((l) => !l.pinned);
+      return [...pinnedArr, ...unpinnedArr];
+    });
+  }, []);
+
+  const pinShoppingList = useCallback((id: string, pinned: boolean) => {
+    setShoppingLists((prev) => {
+      const target = prev.find((l) => l.id === id);
+      if (!target) return prev;
+      const updated: ShoppingList = { ...target, pinned };
+      const others = prev.filter((l) => l.id !== id);
+      const pinnedArr = others.filter((l) => l.pinned);
+      const unpinnedArr = others.filter((l) => !l.pinned);
+      // Pin: move to the TOP of the pinned partition.
+      // Unpin: move to the TOP of the unpinned partition.
+      return pinned
+        ? [updated, ...pinnedArr, ...unpinnedArr]
+        : [...pinnedArr, updated, ...unpinnedArr];
+    });
+  }, []);
+
+  const deleteShoppingList = useCallback((id: string) => {
+    setShoppingLists((prev) => prev.filter((l) => l.id !== id));
+    setShoppingItems((prev) => prev.filter((s) => s.listId !== id));
+  }, []);
+
+  const addShoppingItem = useCallback((item: Omit<ShoppingItem, "id">) => {
+    setShoppingItems((prev) => [...prev, { ...item, id: makeId() }]);
+  }, []);
+
+  const toggleShoppingItem = useCallback((id: string) => {
+    setShoppingItems((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, completed: !s.completed } : s))
+    );
+  }, []);
+
+  const deleteShoppingItem = useCallback((id: string) => {
+    setShoppingItems((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
+  // Accept the visible order emitted by NestableDraggableFlatList and rewrite
+  // the items belonging to `listId` in that order, then enforce the unchecked-
+  // first / checked-last partition so users can drag freely within either
+  // partition without the sort snapping items back on the next render.
+  const reorderShoppingItems = useCallback((listId: string, newIds: string[]) => {
+    setShoppingItems((prev) => {
+      const inList = prev.filter((s) => s.listId === listId);
+      const byId = new Map(inList.map((s) => [s.id, s]));
+      const reordered: ShoppingItem[] = [];
+      newIds.forEach((id) => {
+        const s = byId.get(id);
+        if (s) {
+          reordered.push(s);
+          byId.delete(id);
+        }
+      });
+      byId.forEach((s) => reordered.push(s));
+      const unchecked = reordered.filter((s) => !s.completed);
+      const checked = reordered.filter((s) => s.completed);
+      const finalListItems = [...unchecked, ...checked];
+      // Splice the reordered items back into the flat array at the position of
+      // this list's first item so other lists' relative ordering is preserved.
+      const firstIdx = prev.findIndex((s) => s.listId === listId);
+      const others = prev.filter((s) => s.listId !== listId);
+      if (firstIdx === -1) return prev;
+      return [
+        ...others.slice(0, firstIdx),
+        ...finalListItems,
+        ...others.slice(firstIdx),
+      ];
+    });
+  }, []);
+
+  const assignShoppingList = useCallback((id: string, roommateId: string | null) => {
+    setShoppingLists((prev) =>
+      prev.map((l) =>
+        l.id === id
+          ? { ...l, assignedTo: roommateId ?? undefined }
+          : l
+      )
+    );
+  }, []);
+
+  const assignShoppingItem = useCallback((id: string, roommateIds: string[]) => {
+    setShoppingItems((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, assignedTo: roommateIds.length > 0 ? roommateIds : undefined } : s
+      )
+    );
+  }, []);
+
+  const updateShoppingItemPrice = useCallback((id: string, price: number | null) => {
+    setShoppingItems((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, price: price ?? undefined } : s
+      )
+    );
+  }, []);
+
+  const addBorrowItem = useCallback((item: Omit<BorrowItem, "id">) => {
+    setBorrowItems((prev) => [...prev, { ...item, id: makeId() }]);
+  }, []);
+
+  const updateBorrowItem = useCallback(
+    (id: string, updates: Partial<Omit<BorrowItem, "id">>) => {
+      setBorrowItems((prev) =>
+        prev.map((b) => (b.id === id ? { ...b, ...updates } : b))
+      );
+    },
+    []
+  );
+
+  // Toggle: if the item was returned, un-return it (clear returnedAt);
+  // otherwise mark it returned with the current timestamp.
+  const returnBorrowItem = useCallback((id: string) => {
+    setBorrowItems((prev) =>
+      prev.map((b) => {
+        if (b.id !== id) return b;
+        if (b.returned) return { ...b, returned: false, returnedAt: undefined };
+        return { ...b, returned: true, returnedAt: new Date().toISOString() };
+      })
+    );
+  }, []);
+
+  const deleteBorrowItem = useCallback((id: string) => {
+    setBorrowItems((prev) => prev.filter((b) => b.id !== id));
+  }, []);
+
+  const setEssentialAssignee = useCallback((sectionKey: string, item: string, roommateId: string | null) => {
+    setEssentialsAssignees((prev) => {
+      const section = { ...(prev[sectionKey] ?? {}) };
+      if (roommateId === null) {
+        delete section[item];
+      } else {
+        section[item] = roommateId;
+      }
+      return { ...prev, [sectionKey]: section };
     });
   }, []);
 
   const sendNudge = useCallback((toRoommateId: string, choreId: string) => {
     setNudges((prev) => [
       ...prev,
-      { id: generateId(), toRoommateId, choreId, sentAt: new Date().toISOString() },
+      { id: makeId(), toRoommateId, choreId, sentAt: new Date().toISOString() },
     ]);
   }, []);
 
+  const suppressAlert = useCallback((id: string) => {
+    setSuppressedAlerts((prev) => ({ ...prev, [id]: true }));
+  }, []);
+
+  const setRoommateStatus = useCallback((id: string, status: RoommateStatus) => {
+    setRoommateStatusesState((prev) => ({ ...prev, [id]: status }));
+    setSleepStartedAtState((prev) => {
+      if (status === "asleep") {
+        return { ...prev, [id]: Date.now() };
+      }
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  // Auto-revert "asleep" → "home" after 9 hours; schedules the next-due timer
+  // and runs an immediate sweep on load (covers app being closed past expiry).
+  useEffect(() => {
+    if (!loaded) return;
+    const now = Date.now();
+    const expired: string[] = [];
+    let nextExpiry = Infinity;
+    for (const [id, startedAt] of Object.entries(sleepStartedAt)) {
+      if (roommateStatuses[id] !== "asleep") continue;
+      const expiresAt = startedAt + ASLEEP_AUTO_REVERT_MS;
+      if (expiresAt <= now) expired.push(id);
+      else if (expiresAt < nextExpiry) nextExpiry = expiresAt;
+    }
+    if (expired.length > 0) {
+      setRoommateStatusesState((prev) => {
+        const next = { ...prev };
+        for (const id of expired) if (next[id] === "asleep") next[id] = "home";
+        return next;
+      });
+      setSleepStartedAtState((prev) => {
+        const next = { ...prev };
+        for (const id of expired) delete next[id];
+        return next;
+      });
+      return;
+    }
+    if (nextExpiry === Infinity) return;
+    const t = setTimeout(() => {
+      setSleepStartedAtState((prev) => ({ ...prev }));
+    }, nextExpiry - now);
+    return () => clearTimeout(t);
+  }, [loaded, sleepStartedAt, roommateStatuses]);
+
+  const setHomeLocation = useCallback((loc: HomeLocation | null) => {
+    setHomeLocationState(loc);
+  }, []);
+
+  const setChoreChart = useCallback(
+    (data: ChoreChartData | null, startedAt: string | null) => {
+      setChoreChartState(data);
+      setChoreChartStartedAtState(startedAt);
+    },
+    []
+  );
+
+  const setCurrentUser = useCallback((id: string) => {
+    setCurrentUserIdState(id);
+  }, []);
+
+  const setPendingIouDraft = useCallback((draft: PendingIouDraft | null) => {
+    setPendingIouDraftState(draft);
+  }, []);
+
   const removeNudge = useCallback((toRoommateId: string, choreId: string) => {
-    setNudges((prev) => prev.filter((n) => !(n.toRoommateId === toRoommateId && n.choreId === choreId)));
+    setNudges((prev) =>
+      prev.filter((n) => !(n.toRoommateId === toRoommateId && n.choreId === choreId))
+    );
   }, []);
 
-  const suppressAlert = useCallback((alertId: string) => {
-    setSuppressedAlerts((prev) => ({ ...prev, [alertId]: true }));
-  }, []);
+  const getRoommateById = useCallback(
+    (id: string) => roommates.find((r) => r.id === id),
+    [roommates]
+  );
 
-  const setRoommateStatus = useCallback((roommateId: string, status: RoommateStatus) => {
-    setRoommateStatusesState((prev) => ({ ...prev, [roommateId]: status }));
-  }, []);
+  const updateRoommate = useCallback(
+    (id: string, patch: Partial<Pick<Roommate, "name" | "color" | "avatarUri">>) => {
+      setRoommates((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
+      );
+    },
+    []
+  );
 
-  const setHomeLocation = useCallback((location: HomeLocation) => {
-    setHomeLocationState(location);
-  }, []);
+  const getChoresByRoommate = useCallback(
+    (id: string) => chores.filter((c) => c.assignedTo === id),
+    [chores]
+  );
 
-  const getRoommateById = useCallback((id: string) => roommates.find((r) => r.id === id), [roommates]);
-
-  const getChoresByRoommate = useCallback((roommateId: string) =>
-    chores.filter((c) => c.assignedTo === roommateId), [chores]);
+  const getBalances = useCallback((): Record<string, number> => {
+    const balances: Record<string, number> = {};
+    roommates.forEach((r) => (balances[r.id] = 0));
+    expenses
+      .filter((e) => !e.settled)
+      .forEach((e) => {
+        Object.entries(e.splits ?? {}).forEach(([personId, amount]) => {
+          if (personId !== e.paidBy && !(e.paidBack ?? {})[personId]) {
+            balances[personId] = (balances[personId] ?? 0) - (amount as number);
+            balances[e.paidBy] = (balances[e.paidBy] ?? 0) + (amount as number);
+          }
+        });
+      });
+    return balances;
+  }, [expenses, roommates]);
 
   return (
     <AppContext.Provider
       value={{
+        preferencesLoaded,
+        preferencesOnboardingPending,
+        finishPreferencesOnboarding,
+        householdComplete,
+        setHouseholdComplete,
+        colorScheme,
+        setColorScheme,
+        pointsEnabled,
+        setPointsEnabled,
+        plantEnabled,
+        setPlantEnabled,
+        householdId,
+        householdName,
+        inviteCode,
+        householdLoading,
+        createHousehold,
+        joinHousehold,
+        deleteHousehold,
         currentUserId,
+        setCurrentUser,
         roommates,
         chores,
         expenses,
@@ -625,11 +1275,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         shoppingItems,
         borrowItems,
         nudges,
-        essentialsAssignees,
-        suppressedAlerts,
-        roommateStatuses,
-        homeLocation,
-        loaded,
         addChore,
         completeChore,
         pickUpChore,
@@ -639,24 +1284,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         settleExpense,
         deleteExpense,
         markPersonPaid,
-        getBalances,
         addShoppingList,
+        reorderShoppingLists,
+        pinShoppingList,
         deleteShoppingList,
         addShoppingItem,
         toggleShoppingItem,
         deleteShoppingItem,
+        reorderShoppingItems,
+        assignShoppingList,
         assignShoppingItem,
+        updateShoppingItemPrice,
+        pendingIouDraft,
+        setPendingIouDraft,
         addBorrowItem,
+        updateBorrowItem,
         returnBorrowItem,
         deleteBorrowItem,
-        setEssentialAssignee,
         sendNudge,
         removeNudge,
-        suppressAlert,
-        setRoommateStatus,
-        setHomeLocation,
         getRoommateById,
+        updateRoommate,
         getChoresByRoommate,
+        getBalances,
+        essentialsAssignees,
+        setEssentialAssignee,
+        suppressedAlerts,
+        suppressAlert,
+        roommateStatuses,
+        setRoommateStatus,
+        sleepStartedAt,
+        homeLocation,
+        setHomeLocation,
+        choreChart,
+        choreChartStartedAt,
+        setChoreChart,
+        homeProfile,
+        setHomeProfile: setHomeProfileState,
       }}
     >
       {children}
@@ -664,6 +1328,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export const useApp = () => useContext(AppContext);
-// Alias used throughout tab screens
-export const useAppContext = useApp;
+export function useAppContext(): AppContextType {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error("useAppContext must be used within AppProvider");
+  return ctx;
+}

@@ -1,8 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -14,32 +16,60 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAppContext, type ChoreCategory, type Roommate } from "@/context/AppContext";
-import { useColors } from "@/hooks/useColors";
-import { authHeaders } from "@/lib/api";
+import { useAppContext, type ChoreAssignment, type ChoreCategory, type ChoreChartData, type Roommate } from "@/context/AppContext";
+import { useTheme } from "@/constants/colors";
+import { error as hapticError } from "@/lib/haptics";
 
 type PlanType = "chore-chart" | "home-checklist" | null;
 type HousingType = "traditional" | "suite" | "apartment" | null;
 
-type ChoreAssignment = {
-  bathroom_heavy?: string;
-  bathroom_light?: string;
-  kitchen_heavy?: string;
-  kitchen_light?: string;
-  vacuum_mop?: string;
-  ad_hoc?: string;
-};
-type WeekEntry = { week: number; assignments: ChoreAssignment };
-type ChoreChartData = { weeks: WeekEntry[]; fairness_note?: string };
 
-const CHORE_SLOTS: { key: keyof ChoreAssignment; label: string; icon: keyof typeof Feather.glyphMap; color: string }[] = [
-  { key: "bathroom_heavy", label: "Bathroom Heavy", icon: "droplet", color: "#5B7FF2" },
-  { key: "bathroom_light", label: "Bathroom Light", icon: "wind", color: "#60A5FA" },
-  { key: "kitchen_heavy",  label: "Kitchen Heavy",  icon: "zap",     color: "#F97316" },
-  { key: "kitchen_light",  label: "Kitchen Light",  icon: "coffee",  color: "#FBBF24" },
-  { key: "vacuum_mop",     label: "Vacuum & Mop",   icon: "layers",  color: "#22C55E" },
-  { key: "ad_hoc",         label: "Ad Hoc",         icon: "help-circle", color: "#8B5CF6" },
-];
+// ── Slot metadata (icon + color) for known slot keys; falls back for unknown ──
+const SLOT_VISUAL_DEFAULT = { icon: "check-square" as keyof typeof Feather.glyphMap, color: "#8A7462" };
+
+const SLOT_VISUAL_BY_KEY: Record<string, { icon: keyof typeof Feather.glyphMap; color: string }> = {
+  bathroom_heavy: { icon: "droplet", color: "#72503A" },
+  bathroom_light: { icon: "wind", color: "#A88C76" },
+  bathroom: { icon: "droplet", color: "#87644B" },
+  kitchen_heavy: { icon: "zap", color: "#9B623B" },
+  kitchen_light: { icon: "coffee", color: "#C39870" },
+  kitchen: { icon: "coffee", color: "#A7744D" },
+  vacuum_mop: { icon: "layers", color: "#806B58" },
+  vacuum: { icon: "layers", color: "#917661" },
+  mop: { icon: "layers", color: "#A1866F" },
+  laundry: { icon: "refresh-cw", color: "#B09177" },
+  trash: { icon: "trash-2", color: "#65483A" },
+  dishes: { icon: "circle", color: "#B98255" },
+  outdoor: { icon: "sun", color: "#C19362" },
+  ad_hoc: { icon: "help-circle", color: "#7B6252" },
+};
+
+function slotVisualFor(key: string) {
+  return SLOT_VISUAL_BY_KEY[key] ?? SLOT_VISUAL_DEFAULT;
+}
+
+// Derive the slot list from chart data; fall back to keys present in week 1 if AI didn't return slots.
+function getActiveSlots(data: ChoreChartData): { key: string; label: string; category?: ChoreCategory }[] {
+  if (data.slots && data.slots.length > 0) return data.slots;
+  const seen = new Set<string>();
+  const ordered: { key: string; label: string }[] = [];
+  for (const w of data.weeks) {
+    for (const k of Object.keys(w.assignments)) {
+      if (!seen.has(k)) {
+        seen.add(k);
+        ordered.push({ key: k, label: humanizeKey(k) });
+      }
+    }
+  }
+  return ordered;
+}
+
+function humanizeKey(k: string): string {
+  return k
+    .split("_")
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(" ");
+}
 
 // ── Kitchen amenities (all housing types) ──────────────────────────────────
 const KITCHEN_AMENITIES = [
@@ -120,87 +150,142 @@ const HOME_ESSENTIALS_SECTIONS = [
     key: "room",
     title: "Room & Bedroom",
     icon: "home",
-    color: "#8B5CF6",
+    color: "#7B6252",
     items: [
-      "Shower Caddy", "Standing Fan / Box Fan", "Room Decor (string lights, posters, pictures)",
-      "Small Rug", "Mirror", "Towel Hook (Command Strip)", "Hangers",
-      "Plastic Storage Bins (under bed / wardrobe)", "Lamp", "Alarm Clock", "Whiteboard for Door",
+      // Lighting & electronics
+      "Lamp", "Alarm Clock", "Standing Fan / Box Fan",
+      // Room basics
+      "Mirror", "Small Rug",
+      // Storage
+      "Hangers", "Plastic Storage Bins (under bed / wardrobe)", "Towel Hook (Command Strip)", "Shower Caddy",
+      // Decor / personalization
+      "Room Decor (string lights, posters, pictures)", "Whiteboard for Door",
     ],
   },
   {
     key: "kitchen",
     title: "Kitchen",
     icon: "coffee",
-    color: "#F97316",
+    color: "#A7744D",
     items: [
-      "Mini-fridge", "Microwave", "Trash Can",
-      "Water Filter / Brita", "Hot Water Kettle", "Reusable Utensil Kit", "Tupperware",
-      "Microwave-safe Bowls", "Coffee Maker", "Chip Clips", "Paper Towels", "Dish Towel",
-      "Sponge", "Dish Soap", "Trash Bags", "Plastic Bags", "Reusable Water Bottle",
-      "Tumbler", "Mug", "Bottle Brush", "Saran Wrap / Cling Film", "Parchment Paper",
-      "Aluminium Foil", "Dishwasher Pods", "Air Fryer", "Blender", "Pans", "Pots",
-      "Cutting Board", "Silverware / Cutlery", "Silverware Organizer", "Oven / Baking Tray",
-      "Rice Cooker", "Plates", "Bowls", "Toaster", "Strainer / Colander", "Whisk",
-      "Measuring Cups", "Knives", "Dish Drying Mat", "Dish Drying Rack", "Spatulas",
-      "Mixing Spoons", "Can Opener", "Bottle Opener", "Tongs", "Food Storage Containers",
-      "Peeler", "Kitchen Scissors", "Oil Dispenser",
+      // Major appliances
+      "Mini-fridge", "Microwave", "Toaster", "Air Fryer", "Coffee Maker",
+      "Hot Water Kettle", "Blender", "Rice Cooker",
+      // Cookware
+      "Pans", "Pots", "Oven / Baking Tray",
+      // Prep tools
+      "Cutting Board", "Knives", "Kitchen Scissors", "Peeler", "Can Opener", "Bottle Opener",
+      "Measuring Cups", "Whisk", "Mixing Spoons", "Spatulas", "Tongs",
+      "Strainer / Colander", "Oil Dispenser",
+      // Tableware & drinkware
+      "Plates", "Bowls", "Microwave-safe Bowls", "Mug", "Tumbler", "Reusable Water Bottle",
+      // Cutlery
+      "Silverware / Cutlery", "Silverware Organizer", "Reusable Utensil Kit",
+      // Food storage & wraps
+      "Tupperware", "Food Storage Containers", "Chip Clips",
+      "Saran Wrap / Cling Film", "Parchment Paper", "Aluminium Foil",
+      // Dishwashing
+      "Sponge", "Bottle Brush", "Dish Soap", "Dishwasher Pods", "Dish Towel",
+      "Dish Drying Mat", "Dish Drying Rack",
+      // Cleaning & water
+      "Paper Towels", "Water Filter / Brita",
+      // Trash
+      "Trash Can", "Trash Bags", "Plastic Bags",
     ],
   },
   {
     key: "cleaning",
     title: "Cleaning Supplies",
     icon: "wind",
-    color: "#22C55E",
+    color: "#8A7462",
     items: [
-      "Laundry Detergent", "Laundry Basket", "All-purpose Cleaner", "Mini Vacuum",
-      "Clorox / Disinfectant Wipes", "Windex / Glass Cleaner", "Swiffer / Mop",
-      "Toilet Cleaner", "Mirror Cleaner", "Cleaning Rags", "Febreze / Air Freshener",
+      // Laundry
+      "Laundry Detergent", "Laundry Basket",
+      // Cleaning agents
+      "All-purpose Cleaner", "Clorox / Disinfectant Wipes", "Windex / Glass Cleaner",
+      "Mirror Cleaner", "Toilet Cleaner",
+      // Cleaning tools
+      "Mini Vacuum", "Swiffer / Mop", "Cleaning Rags",
+      // Air
+      "Febreze / Air Freshener",
     ],
   },
   {
     key: "bedding",
     title: "Bedding & Linens",
     icon: "moon",
-    color: "#EC4899",
+    color: "#B1846D",
     items: [
-      "Bath Towels", "Hand Towels", "Sheets", "Pillowcases", "Pillows",
-      "Mattress Pad / Topper", "Duvet / Comforter", "Throw Blanket", "Lint Roller", "Steamer / Iron",
+      // Bed (bottom-up)
+      "Mattress Pad / Topper", "Sheets", "Pillows", "Pillowcases",
+      "Duvet / Comforter", "Throw Blanket",
+      // Towels
+      "Bath Towels", "Hand Towels",
+      // Clothing care
+      "Lint Roller", "Steamer / Iron",
     ],
   },
   {
     key: "bathroom",
     title: "Bathroom",
     icon: "droplet",
-    color: "#5B7FF2",
+    color: "#87644B",
     items: [
-      "Toilet Paper", "Hand Soap", "Hand Soap Refills", "Shower Toiletries Holder / Caddy",
-      "Toilet Cleaner", "Mirror Cleaner", "Febreze", "Hand Towels", "Trashcan",
+      // Hygiene
+      "Toilet Paper", "Hand Soap", "Hand Soap Refills",
+      // Storage & towels
+      "Shower Toiletries Holder / Caddy", "Hand Towels",
+      // Cleaning
+      "Toilet Cleaner", "Mirror Cleaner", "Febreze",
+      // Trash
+      "Trashcan",
     ],
   },
   {
     key: "utility",
     title: "Utility & Misc",
     icon: "tool",
-    color: "#F59E0B",
+    color: "#C19362",
     items: [
-      "Batteries", "Duct Tape", "Painters Tape", "Extension Cord", "Power Strip",
-      "Lock or Lockbox", "Lint Roller", "Tissues", "Lighter", "Scissors",
-      "Calendar", "Desk Drawer Organizers", "Rag", "Steamer / Iron",
+      // Power
+      "Batteries", "Extension Cord", "Power Strip",
+      // Adhesives & fixing
+      "Duct Tape", "Painters Tape", "Scissors",
+      // Security
+      "Lock or Lockbox",
+      // Office / desk
+      "Calendar", "Desk Drawer Organizers",
+      // Misc
+      "Tissues", "Lighter",
+      // Cleaning & clothing care
+      "Rag", "Lint Roller", "Steamer / Iron",
     ],
   },
   {
     key: "food",
     title: "Food Staples",
     icon: "shopping-bag",
-    color: "#EF4444",
+    color: "#955C48",
     items: [
-      "Ramen", "Instant Oatmeal", "Chips / Crackers / Cookies", "Granola Bars",
-      "Microwave Popcorn", "Tea", "Hot Chocolate", "Coffee Pods", "Soup (canned)",
-      "Rice", "Pasta", "Tomato Sauce", "Bread", "Butter", "Milk", "Eggs",
-      "Sugar", "Salt", "Pepper", "Oil", "Cinnamon", "Garlic", "Ginger",
-      "Garlic Powder", "Chilli Flakes", "Soy Sauce", "Hot Sauce", "Ketchup",
-      "Honey", "Nutella", "Peanut Butter", "Jam", "Cereal", "Yogurt",
-      "Frozen Veggies", "Tofu", "Dahl",
+      // Grains & breads
+      "Rice", "Pasta", "Bread", "Cereal", "Instant Oatmeal", "Ramen",
+      // Canned & pantry
+      "Tomato Sauce", "Soup (canned)", "Dahl", "Tofu", "Frozen Veggies",
+      // Dairy & fridge
+      "Milk", "Butter", "Eggs", "Yogurt",
+      // Spreads
+      "Peanut Butter", "Nutella", "Jam", "Honey",
+      // Sauces & condiments
+      "Soy Sauce", "Hot Sauce", "Ketchup",
+      // Spices & seasonings
+      "Salt", "Pepper", "Sugar", "Oil",
+      "Garlic Powder", "Cinnamon", "Chilli Flakes",
+      // Aromatics
+      "Garlic", "Ginger",
+      // Snacks
+      "Chips / Crackers / Cookies", "Granola Bars", "Microwave Popcorn",
+      // Drinks
+      "Tea", "Hot Chocolate", "Coffee Pods",
     ],
   },
 ];
@@ -598,9 +683,9 @@ function SectionCard({
 }
 
 export default function PlanningScreen() {
-  const colors = useColors();
+  const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, addChore, essentialsAssignees, setEssentialAssignee } = useAppContext();
+  const { roommates, addChore, essentialsAssignees, setEssentialAssignee, setChoreChart, pointsEnabled, householdComplete } = useAppContext();
 
   const [selectedType, setSelectedType] = useState<PlanType>(null);
   const [housingType, setHousingType] = useState<HousingType>(null);
@@ -625,8 +710,9 @@ export default function PlanningScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
 
-  const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  const baseUrl = domain ? `https://${domain}` : "";
+  const baseUrl =
+    process.env.EXPO_PUBLIC_API_URL ??
+    (process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : "");
 
   function toggleSet(set: Set<string>, key: string): Set<string> {
     const next = new Set(set);
@@ -667,64 +753,157 @@ export default function PlanningScreen() {
     });
   }
 
-  // ── Build + create chores (grouped by fairness tiers) ───────────────────
+  // ── Build + create chores ────────────────────────────────────────────────
+  // Each chore *group* (Bathroom Heavy etc.) is expanded into the individual
+  // tasks it covers, so the user sees them as separate to-dos in My Home and
+  // the Group tab.
   function createChores(): number {
     if (!housingType) return 0;
     const n = roommates.length;
     let count = 0;
 
-    // ── Derive group titles from user selections ──
-    const bathHeavy =
-      housingType === "traditional"
-        ? "Communal bathroom deep clean — toilet, shower & floor"
-        : housingType === "suite"
-        ? "En-suite bathroom deep clean — toilet, shower & floor"
-        : "Apartment bathroom deep clean — toilet, shower & floor";
+    type Subtask = { title: string; category: ChoreCategory; points: number };
 
-    const bathLight = "Bathroom maintenance — sink, mirror, restock supplies & empty trash";
+    // Map a slot to its individual cleaning tasks. Uses the AI's slot label as a
+    // fallback for unknown keys so dynamically-generated slots (e.g. "laundry",
+    // "trash") still produce one chore per slot.
+    const subtasksFor = (slotKey: string, slotLabel?: string, slotCategory?: ChoreCategory): Subtask[] => {
+      switch (slotKey) {
+        case "bathroom_heavy":
+          return [
+            { title: "Clean toilet", category: "bathroom", points: 15 },
+            { title: "Clean shower / tub", category: "bathroom", points: 15 },
+            { title: "Sweep & mop bathroom floor", category: "bathroom", points: 15 },
+          ];
+        case "bathroom_light":
+        case "bathroom": {
+          const list: Subtask[] = [
+            { title: "Clean bathroom sink", category: "bathroom", points: 10 },
+            { title: "Clean bathroom mirror", category: "bathroom", points: 10 },
+            { title: "Restock bathroom supplies", category: "bathroom", points: 10 },
+            { title: "Empty bathroom trash", category: "bathroom", points: 10 },
+          ];
+          if (bathroomItems.has("bath_mat")) {
+            list.push({ title: "Wash bathmat", category: "bathroom", points: 10 });
+          }
+          return list;
+        }
+        case "kitchen_heavy": {
+          const heavyKeys = ["stove", "microwave", "oven", "air_fryer", "toaster_oven"];
+          const labels = heavyKeys
+            .filter((k) => kitchenAmenities.has(k))
+            .map((k) => KITCHEN_AMENITIES.find((a) => a.key === k)?.label)
+            .filter((l): l is string => !!l);
+          const tasks: Subtask[] =
+            labels.length > 0
+              ? labels.map((label) => ({
+                  title: `Clean ${label.toLowerCase()}`,
+                  category: "kitchen",
+                  points: 15,
+                }))
+              : [
+                  { title: "Clean stove", category: "kitchen", points: 15 },
+                  { title: "Clean microwave", category: "kitchen", points: 15 },
+                ];
+          tasks.push({ title: "Wipe down kitchen appliances", category: "kitchen", points: 10 });
+          return tasks;
+        }
+        case "kitchen_light":
+        case "kitchen": {
+          const tasks: Subtask[] = [
+            { title: "Wipe kitchen countertops", category: "kitchen", points: 10 },
+          ];
+          if (kitchenAmenities.has("dishwasher"))
+            tasks.push({ title: "Run / unload dishwasher", category: "kitchen", points: 10 });
+          if (kitchenAmenities.has("drying_rack"))
+            tasks.push({ title: "Empty drying rack", category: "kitchen", points: 10 });
+          if (kitchenAmenities.has("fridge"))
+            tasks.push({ title: "Check & tidy fridge", category: "kitchen", points: 10 });
+          if (kitchenAmenities.has("dining_table"))
+            tasks.push({ title: "Wipe dining table", category: "kitchen", points: 10 });
+          if (tasks.length === 1) {
+            tasks.push({ title: "Run / unload dishwasher", category: "kitchen", points: 10 });
+            tasks.push({ title: "Check & tidy fridge", category: "kitchen", points: 10 });
+          }
+          return tasks;
+        }
+        case "vacuum_mop":
+        case "vacuum":
+        case "mop":
+          return [
+            { title: "Vacuum common areas", category: "cleaning", points: 15 },
+            { title: "Vacuum hallway", category: "cleaning", points: 10 },
+            { title: "Mop living room", category: "cleaning", points: 10 },
+          ];
+        case "laundry":
+          return [
+            { title: "Wash & dry laundry", category: "laundry", points: 15 },
+            { title: "Fold & put away laundry", category: "laundry", points: 10 },
+          ];
+        case "trash":
+          return [
+            { title: "Take out trash & recycling", category: "other", points: 10 },
+          ];
+        case "dishes":
+          return [{ title: "Do the dishes", category: "kitchen", points: 10 }];
+        case "outdoor":
+          return [{ title: "Outdoor cleanup / yard tasks", category: "outdoor", points: 15 }];
+        case "ad_hoc":
+          return [
+            { title: "Ad hoc helper — assist where needed", category: "other", points: 10 },
+          ];
+        default: {
+          // Unknown slot key — make one chore using the slot's label
+          const title = slotLabel ?? slotKey.replace(/_/g, " ");
+          return [{ title, category: slotCategory ?? "other", points: 10 }];
+        }
+      }
+    };
 
-    const kitHeavyItems = ["stove", "microwave", "air_fryer", "oven"]
-      .filter((k) => kitchenAmenities.has(k))
-      .map((k) => KITCHEN_AMENITIES.find((a) => a.key === k)?.label ?? k);
-    const kitHeavy =
-      kitHeavyItems.length > 0
-        ? `Kitchen deep clean — ${kitHeavyItems.join(", ")}, wipe appliances`
-        : "Kitchen deep clean — stove, microwave & appliances";
-
-    const kitLightItems = ["dishwasher", "drying_rack", "fridge", "dining_table"]
-      .filter((k) => kitchenAmenities.has(k))
-      .map((k) => KITCHEN_AMENITIES.find((a) => a.key === k)?.label ?? k);
-    const kitLight =
-      kitLightItems.length > 0
-        ? `Kitchen upkeep — countertops, ${kitLightItems.join(", ")}`
-        : "Kitchen upkeep — countertops, dishes & fridge check";
-
-    const vacMop = "Vacuum & mop — common areas, hallway & living room";
-    const adHoc = "Ad hoc helper — check in & assist where needed";
-
-    // ── Ordered chore groups: one per person, most important first ──
-    // Fold user's appliance/bathroom selections into the group descriptions
-    const groups: [string, ChoreCategory, number][] = [
-      [bathHeavy, "bathroom", 35],
-      [kitHeavy, "kitchen", 30],
-      [bathLight, "bathroom", 20],
-      [kitLight, "kitchen", 20],
-      [vacMop, "cleaning", 20],
+    // ── Resolve slot list: prefer AI chart, else fall back to legacy default ──
+    const fallbackSlots: { key: string; label: string; category?: ChoreCategory }[] = [
+      { key: "bathroom_heavy", label: "Bathroom Heavy", category: "bathroom" },
+      { key: "kitchen_heavy", label: "Kitchen Heavy", category: "kitchen" },
+      { key: "bathroom_light", label: "Bathroom Light", category: "bathroom" },
+      { key: "kitchen_light", label: "Kitchen Light", category: "kitchen" },
+      { key: "vacuum_mop", label: "Vacuum & Mop", category: "cleaning" },
+      { key: "ad_hoc", label: "Ad Hoc", category: "other" },
     ];
 
-    // Assign exactly ONE chore group per person
-    for (let i = 0; i < n; i++) {
-      const [title, cat, pts] =
-        i < groups.length ? groups[i] : [adHoc, "other" as ChoreCategory, 10];
-      count++;
-      addChore({
-        title,
-        assignedTo: roommates[i].id,
-        dueDate: daysFromNow(7),
-        completed: false,
-        points: pts,
-        category: cat,
-      });
+    let activeSlots: { key: string; label: string; category?: ChoreCategory }[];
+    let week1: Record<string, string>;
+    if (choreChartData?.weeks?.[0]?.assignments) {
+      week1 = { ...choreChartData.weeks[0].assignments };
+      activeSlots =
+        choreChartData.slots && choreChartData.slots.length > 0
+          ? choreChartData.slots
+          : Object.keys(week1).map((k) => ({ key: k, label: k }));
+    } else {
+      // No AI chart — assign roommates 1:1 to the legacy slots
+      week1 = {};
+      activeSlots = fallbackSlots.slice(0, Math.min(n, fallbackSlots.length));
+      for (let i = 0; i < activeSlots.length; i++) {
+        week1[activeSlots[i].key] = roommates[i].name;
+      }
+    }
+
+    // Expand each slot into its individual subtasks for the assigned person
+    for (const slot of activeSlots) {
+      const name = week1[slot.key];
+      if (!name) continue;
+      const roommate = roommates.find((r) => r.name === name);
+      if (!roommate) continue;
+      for (const t of subtasksFor(slot.key, slot.label, slot.category)) {
+        addChore({
+          title: t.title,
+          assignedTo: roommate.id,
+          dueDate: daysFromNow(7),
+          completed: false,
+          points: t.points,
+          category: t.category,
+        });
+        count++;
+      }
     }
 
     // ── Custom chores (user-defined additions) — rotate through roommates ──
@@ -792,6 +971,7 @@ export default function PlanningScreen() {
 
   const generate = async () => {
     if (!selectedType) return;
+    if (selectedType === "chore-chart" && !householdComplete) return;
     setLoading(true);
     setError(null);
     setResult(null);
@@ -802,7 +982,7 @@ export default function PlanningScreen() {
     try {
       const res = await fetch(`${baseUrl}/api/planning/suggest`, {
         method: "POST",
-        headers: await authHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: selectedType,
           preferences: buildContext() || undefined,
@@ -816,6 +996,7 @@ export default function PlanningScreen() {
         try {
           const parsed = JSON.parse(data.suggestion) as ChoreChartData;
           setChoreChartData(parsed);
+          setChoreChart(parsed, new Date().toISOString());
         } catch {
           setResult(data.suggestion);
         }
@@ -826,7 +1007,7 @@ export default function PlanningScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       setError("Unable to generate suggestion. Please try again.");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      hapticError();
     } finally {
       setLoading(false);
     }
@@ -842,11 +1023,15 @@ export default function PlanningScreen() {
   const isChoreChart = selectedType === "chore-chart";
   const canGenerate =
     selectedType !== null &&
-    (selectedType === "home-checklist" || (isChoreChart && housingType !== null));
+    (selectedType === "home-checklist" || (isChoreChart && householdComplete && housingType !== null));
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 24 }}
@@ -854,12 +1039,23 @@ export default function PlanningScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={[styles.header, { paddingTop: topPad + 16 }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          Planning Helper
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          AI-powered suggestions for your home
-        </Text>
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[styles.backBtn, { backgroundColor: colors.muted }]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="chevron-left" size={20} color={colors.foreground} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.title, { color: colors.foreground }]}>
+              Planning Helper
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+              AI-powered suggestions for your home
+            </Text>
+          </View>
+        </View>
       </View>
 
       {/* ── Plan type selector ── */}
@@ -869,11 +1065,13 @@ export default function PlanningScreen() {
 
       <View style={styles.typeRow}>
         <TouchableOpacity
+          disabled={!householdComplete}
           style={[
             styles.typeCard,
             {
               backgroundColor: isChoreChart ? colors.primary + "12" : colors.card,
               borderColor: isChoreChart ? colors.primary : colors.border,
+              opacity: householdComplete ? 1 : 0.58,
             },
           ]}
           onPress={() => {
@@ -903,8 +1101,13 @@ export default function PlanningScreen() {
             Chore Chart
           </Text>
           <Text style={[styles.typeDesc, { color: colors.mutedForeground }]}>
-            Fair weekly schedule for all roommates
+            {householdComplete
+              ? "Fair weekly schedule for all roommates"
+              : "Locked until household setup is complete"}
           </Text>
+          {!householdComplete && (
+            <Feather name="lock" size={16} color={colors.mutedForeground} />
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -962,6 +1165,14 @@ export default function PlanningScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+      {!householdComplete && (
+        <View style={[styles.lockBanner, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+          <Feather name="lock" size={16} color={colors.mutedForeground} />
+          <Text style={[styles.lockText, { color: colors.mutedForeground }]}>
+            Add all roommates and mark household setup complete before building a chore chart.
+          </Text>
+        </View>
+      )}
 
       {/* ── Housing type (only for chore chart) ── */}
       {isChoreChart && (
@@ -1136,7 +1347,7 @@ export default function PlanningScreen() {
               {BATHROOM_CHORES.map((c) => (
                 <CheckRow
                   key={c.key}
-                  label={`${c.label} (+${c.points} pts)`}
+                  label={pointsEnabled ? `${c.label} (+${c.points} pts)` : c.label}
                   checked={bathroomChores.has(c.key)}
                   onToggle={() =>
                     setBathroomChores(toggleSet(bathroomChores, c.key))
@@ -1201,7 +1412,7 @@ export default function PlanningScreen() {
               {LIVING_CHORES.map((c) => (
                 <CheckRow
                   key={c.key}
-                  label={`${c.label} (+${c.points} pts)`}
+                  label={pointsEnabled ? `${c.label} (+${c.points} pts)` : c.label}
                   checked={livingChores.has(c.key)}
                   onToggle={() =>
                     setLivingChores(toggleSet(livingChores, c.key))
@@ -1352,15 +1563,16 @@ export default function PlanningScreen() {
           </View>
 
           {/* One card per chore category */}
-          {CHORE_SLOTS.map((slot) => {
+          {getActiveSlots(choreChartData).map((slot) => {
             const weeks = choreChartData.weeks.filter((e) => !!e.assignments[slot.key]);
             if (weeks.length === 0) return null;
+            const visual = slotVisualFor(slot.key);
             return (
               <View key={slot.key} style={[styles.slotSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 {/* Section header */}
                 <View style={styles.slotHeader}>
-                  <View style={[styles.slotIcon, { backgroundColor: slot.color + "18" }]}>
-                    <Feather name={slot.icon} size={14} color={slot.color} />
+                  <View style={[styles.slotIcon, { backgroundColor: visual.color + "18" }]}>
+                    <Feather name={visual.icon} size={14} color={visual.color} />
                   </View>
                   <Text style={[styles.slotLabel, { color: colors.foreground }]}>{slot.label}</Text>
                 </View>
@@ -1373,7 +1585,7 @@ export default function PlanningScreen() {
                   {weeks.map((entry) => {
                     const personName = entry.assignments[slot.key]!;
                     const roommate = roommates.find((r) => r.name === personName);
-                    const chipColor = roommate?.color ?? slot.color;
+                    const chipColor = roommate?.color ?? visual.color;
                     return (
                       <View key={entry.week} style={[styles.weekTile, { borderColor: chipColor + "44", backgroundColor: chipColor + "10" }]}>
                         <Text style={[styles.weekTileNum, { color: colors.mutedForeground }]}>Wk {entry.week}</Text>
@@ -1477,6 +1689,7 @@ export default function PlanningScreen() {
         </Pressable>
       ) : null}
     </View>
+    </KeyboardAvoidingView>
     </View>
   );
 }
@@ -1484,6 +1697,14 @@ export default function PlanningScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingHorizontal: 20, paddingBottom: 16 },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   title: { fontFamily: "Inter_700Bold", fontSize: 28 },
   subtitle: { fontFamily: "Inter_400Regular", fontSize: 14, marginTop: 4 },
 
@@ -1645,6 +1866,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   generateText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 15 },
+  lockBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
+  lockText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 13, lineHeight: 17 },
 
   // ── Banners ──
   successBanner: {

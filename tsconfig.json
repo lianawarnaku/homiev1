@@ -3,9 +3,9 @@
   "compileOnSave": false,
   "files": [],
   "references": [
-    {
-      "path": "./lib/db"
-    },
+    // Postgres/Drizzle scaffolding — disabled. See pnpm-workspace.yaml for
+    // context. Restore this entry to re-enable typechecking lib/db.
+    // { "path": "./lib/db" },
     {
       "path": "./lib/api-client-react"
     },

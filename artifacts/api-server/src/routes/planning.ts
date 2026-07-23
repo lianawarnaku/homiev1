@@ -32,45 +32,38 @@ router.post("/planning/suggest", async (req, res) => {
     const names = roommateNames;
     const n = Array.isArray(roommates) ? roommates.length : 6;
 
-    // Size-appropriate grouping guidance
-    let sizeGuide = "";
-    if (n <= 2) {
-      sizeGuide = "2 people: Person A alternates bathroom heavy + kitchen heavy; Person B does kitchen light + vacuum/mop + bathroom light. Swap each week.";
-    } else if (n === 3) {
-      sizeGuide = "3 people: A=Bathroom heavy, B=Kitchen heavy, C=Kitchen light + vacuum. Rotate each week.";
-    } else if (n === 4) {
-      sizeGuide = "4 people: A=Bathroom heavy, B=Bathroom light + vacuum, C=Kitchen heavy, D=Kitchen light + counters. Rotate each week.";
-    } else if (n <= 6) {
-      sizeGuide = `${n} people (5–6): Tier 1 (harder): Bathroom heavy, Kitchen heavy. Tier 2 (easier): Bathroom light, Kitchen light, Vacuum/mop. ${n === 6 ? "1 person on ad hoc rotation." : ""} Rotate tiers each week.`;
-    } else {
-      sizeGuide = `${n} people (7+): 5 main chore slots (bathroom heavy, bathroom light, kitchen heavy, kitchen light, vacuum/mop), remaining people on ad hoc rotation. Bathroom heavy rotates through a sub-group. Rotate slots weekly.`;
-    }
-
     userPrompt =
       `Generate a 12-week chore rotation chart for these ${n} roommates: ${names}.\n\n` +
-      `CHORE GROUPS (treat each as a single weekly assignment — do NOT split into daily tasks):\n` +
-      `1. Bathroom Heavy — toilet, shower/tub, floor sweep & mop (hardest, highest priority for fairness)\n` +
-      `2. Bathroom Light — sink, mirror, restock supplies, empty bathroom trash, bathmat\n` +
-      `3. Kitchen Heavy — stove, microwave, air fryer, wipe all appliances\n` +
-      `4. Kitchen Light — countertops, run/unload dishwasher or dish rack, check fridge\n` +
-      `5. Vacuum/Mop — common areas, hallway, living room\n` +
-      `6. Ad Hoc — on-call helper, check in with roommates and assist where needed\n\n` +
-      `GROUP SIZE GUIDE: ${sizeGuide}\n\n` +
-      `ROTATION RULES (strictly enforce these):\n` +
-      `- CRITICAL: No person does Bathroom Heavy two weeks in a row. This is the #1 fairness constraint.\n` +
-      `- It is okay for a person to repeat any other chore group in consecutive weeks.\n` +
-      `- Bathroom Heavy must be distributed as evenly as possible across all ${n} people over 12 weeks.\n` +
-      `- Lighter chores (Ad Hoc, Vacuum/Mop) should not consistently fall to the same people.\n` +
-      `- After 12 weeks the cycle can repeat.\n\n` +
-      (preferences ? `Home details: ${preferences}\n\n` : "") +
+      (preferences ? `USER'S HOME CONTEXT (this drives which slots you create):\n${preferences}\n\n` : "") +
+      `STEP 1 — DECIDE WHICH SLOTS TO INCLUDE.\n` +
+      `Each "slot" is a recurring weekly responsibility. Only include slots that correspond to chores, items, or rooms the user actually mentioned in their context above. Do NOT default to a fixed list of slots.\n\n` +
+      `Examples of how to choose:\n` +
+      `- If the user mentions a kitchen with multiple appliances + chores → include "kitchen_heavy" and "kitchen_light"\n` +
+      `- If only a few light kitchen tasks → just one "kitchen" slot\n` +
+      `- If the user has no kitchen content at all → omit kitchen slots entirely\n` +
+      `- Same logic for bathroom: heavy/light split only when there's enough volume; otherwise one slot or none\n` +
+      `- Add other slots if the notes reference them: "laundry", "trash", "vacuum_mop", "outdoor", "pets", "dishes", "shopping", etc.\n` +
+      `- Add "ad_hoc" only if there are more roommates than slots and you need a fill-in role\n\n` +
+      `Use lowercase snake_case keys (bathroom_heavy, kitchen_light, laundry, trash, vacuum_mop, ad_hoc, etc.).\n` +
+      `Each slot must have a category from: "bathroom", "kitchen", "cleaning", "laundry", "outdoor", "other".\n\n` +
+      `STEP 2 — ASSIGN SLOTS TO PEOPLE FOR 12 WEEKS.\n` +
+      `Rotation rules:\n` +
+      `- The hardest slot (whichever you pick — usually a "heavy" tier) must rotate evenly across all ${n} people; no person does it two weeks in a row.\n` +
+      `- Lighter slots can repeat for the same person but shouldn't always fall to the same people.\n` +
+      `- If a week has more roommates than slots, the extras rotate through "ad_hoc" or repeat lighter slots.\n` +
+      `- If a week has more slots than roommates, leave the unused slot keys out of that week's assignments.\n\n` +
       `OUTPUT — respond with ONLY this JSON shape, no other text:\n` +
       `{\n` +
-      `  "weeks": [\n` +
-      `    { "week": 1, "assignments": { "bathroom_heavy": "Name", "bathroom_light": "Name", "kitchen_heavy": "Name", "kitchen_light": "Name", "vacuum_mop": "Name", "ad_hoc": "Name" } }\n` +
+      `  "slots": [\n` +
+      `    { "key": "bathroom_heavy", "label": "Bathroom Heavy", "category": "bathroom" },\n` +
+      `    { "key": "kitchen_light", "label": "Kitchen Light", "category": "kitchen" }\n` +
       `  ],\n` +
-      `  "fairness_note": "One sentence noting how evenly bathroom heavy is distributed."\n` +
-      `}\n` +
-      `Rules: use exact first names from the list. Omit "ad_hoc" key entirely if no ad hoc slot needed. Produce all 12 weeks.`;
+      `  "weeks": [\n` +
+      `    { "week": 1, "assignments": { "bathroom_heavy": "Name", "kitchen_light": "Name" } }\n` +
+      `  ],\n` +
+      `  "fairness_note": "One sentence noting how the hardest slot is distributed."\n` +
+      `}\n\n` +
+      `Rules: use exact first names from the list. Slot keys in "weeks" must match keys in "slots". Produce all 12 weeks.`;
   } else {
     const masterList = `
 Room & Bedroom: Shower Caddy, Standing Fan / Box Fan, Room Decor (string lights, posters, pictures), Small Rug, Mirror, Towel Hook (Command Strip), Hangers, Plastic Storage Bins (under bed / top of wardrobe), Lamp, Alarm Clock, Whiteboard for Door.

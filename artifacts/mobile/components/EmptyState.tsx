@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { useColors } from "@/hooks/useColors";
+import { useTheme } from "@/constants/colors";
 
 interface EmptyStateProps {
   icon: keyof typeof Feather.glyphMap;
@@ -11,22 +11,13 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ icon, title, subtitle }: EmptyStateProps) {
-  const colors = useColors();
+  const colors = useTheme();
   return (
     <View style={styles.container}>
       <View
-        style={[
-          styles.iconContainer,
-          {
-            backgroundColor: colors.secondary,
-            shadowColor: colors.primary,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.12,
-            shadowRadius: 12,
-          },
-        ]}
+        style={[styles.iconContainer, { backgroundColor: colors.secondary }]}
       >
-        <Feather name={icon} size={34} color={colors.primary} />
+        <Feather name={icon} size={32} color={colors.mutedForeground} />
       </View>
       <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
       {subtitle ? (
@@ -42,28 +33,27 @@ const styles = StyleSheet.create({
   container: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 56,
-    paddingHorizontal: 32,
-    gap: 10,
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+    gap: 12,
   },
   iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   title: {
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
+    fontSize: 17,
+    fontFamily: "Inter_600SemiBold",
     textAlign: "center",
-    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
     textAlign: "center",
-    lineHeight: 21,
+    lineHeight: 20,
   },
 });

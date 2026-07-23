@@ -56,9 +56,13 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@expo-google-fonts/barlow-condensed": "^0.4.1",
     "@react-navigation/bottom-tabs": "^7.15.11",
-    "@supabase/supabase-js": "^2.110.5",
-    "expo-auth-session": "^7.0.11",
-    "expo-crypto": "~15.0.9"
+    "@supabase/supabase-js": "^2.110.0",
+    "expo-clipboard": "~8.0.8",
+    "expo-crypto": "^15.0.9",
+    "expo-secure-store": "^15.0.8",
+    "react-native-draggable-flatlist": "^4.0.3",
+    "react-native-url-polyfill": "^3.0.0"
   }
 }

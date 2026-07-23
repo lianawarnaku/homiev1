@@ -1,8 +1,11 @@
+// grabbing a specific named export from a package
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
 import {
+  Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -17,8 +20,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
-import { useAppContext } from "@/context/AppContext";
-import { useColors } from "@/hooks/useColors";
+import { useAppContext, type BorrowItem } from "@/context/AppContext";
+import { useTheme } from "@/constants/colors";
 import { useConfirm } from "@/hooks/useConfirm";
 
 function daysBetween(a: string, b: string) {
@@ -27,6 +30,7 @@ function daysBetween(a: string, b: string) {
   );
 }
 
+// Due date for borrowing function
 function formatDue(dueDate: string) {
   const now = new Date().toISOString();
   const diff = daysBetween(now, dueDate);
@@ -37,26 +41,35 @@ function formatDue(dueDate: string) {
   return `Due in ${diff}d`;
 }
 
+// The borrow screen? How it looks?
+
 export default function BorrowScreen() {
-  const colors = useColors();
+  const colors = useTheme();
   const insets = useSafeAreaInsets();
   const {
     borrowItems,
     roommates,
     currentUserId,
     addBorrowItem,
+    updateBorrowItem,
     returnBorrowItem,
     deleteBorrowItem,
   } = useAppContext();
 
   const { confirm } = useConfirm();
   const [showModal, setShowModal] = useState(false);
+  // `editingId` = null → modal is in ADD mode. Otherwise the id of the borrow
+  // being edited; the same modal UI is reused for both flows.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [item, setItem] = useState("");
   const [borrowedFrom, setBorrowedFrom] = useState(
     roommates.find((r) => r.id !== currentUserId)?.id ?? ""
   );
   const [dueDays, setDueDays] = useState("7");
   const [notes, setNotes] = useState("");
+  // Collapse the "Returned" section into a single tile when there are more
+  // than 3 returned items. Tap the tile to expand.
+  const [showAllReturned, setShowAllReturned] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
@@ -67,22 +80,67 @@ export default function BorrowScreen() {
     (b) => new Date(b.dueDate) < new Date()
   );
 
-  const handleAdd = () => {
-    if (!item.trim() || !borrowedFrom) return;
-    const due = new Date();
-    due.setDate(due.getDate() + parseInt(dueDays, 10));
-    addBorrowItem({
-      item: item.trim(),
-      borrowedFrom,
-      borrowedAt: new Date().toISOString(),
-      dueDate: due.toISOString(),
-      returned: false,
-      notes: notes.trim() || undefined,
-    });
+  const resetForm = () => {
     setItem("");
     setNotes("");
     setDueDays("7");
+    setBorrowedFrom(roommates.find((r) => r.id !== currentUserId)?.id ?? "");
+    setEditingId(null);
+  };
+
+  const closeModal = () => {
     setShowModal(false);
+    resetForm();
+  };
+
+  // Given an existing borrow's dueDate, pick the closest chip value so the
+  // "Return in Xd" row reflects the current schedule when the modal opens.
+  const nearestDueChip = (dueDate: string): string => {
+    const days = daysBetween(new Date().toISOString(), dueDate);
+    const options = [1, 3, 7, 14, 30];
+    let best = options[0];
+    let bestDiff = Math.abs(days - options[0]);
+    for (const o of options) {
+      const d = Math.abs(days - o);
+      if (d < bestDiff) {
+        bestDiff = d;
+        best = o;
+      }
+    }
+    return String(best);
+  };
+
+  const openEdit = (b: BorrowItem) => {
+    setEditingId(b.id);
+    setItem(b.item);
+    setBorrowedFrom(b.borrowedFrom);
+    setDueDays(nearestDueChip(b.dueDate));
+    setNotes(b.notes ?? "");
+    setShowModal(true);
+  };
+
+  const handleSave = () => {
+    if (!item.trim() || !borrowedFrom) return;
+    const due = new Date();
+    due.setDate(due.getDate() + parseInt(dueDays, 10));
+    if (editingId) {
+      updateBorrowItem(editingId, {
+        item: item.trim(),
+        borrowedFrom,
+        dueDate: due.toISOString(),
+        notes: notes.trim() || undefined,
+      });
+    } else {
+      addBorrowItem({
+        item: item.trim(),
+        borrowedFrom,
+        borrowedAt: new Date().toISOString(),
+        dueDate: due.toISOString(),
+        returned: false,
+        notes: notes.trim() || undefined,
+      });
+    }
+    closeModal();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
@@ -93,19 +151,21 @@ export default function BorrowScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
       <View
         style={[
           styles.header,
-          { paddingTop: topPad + 20, backgroundColor: colors.background },
+          {
+            paddingTop: topPad + 16,
+            backgroundColor: colors.background,
+          },
         ]}
       >
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-            Keep track of
-          </Text>
+        <View>
           <Text style={[styles.title, { color: colors.foreground }]}>
-            Borrowing
+            Borrowing Buddy
+          </Text>
+          <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+            Never forget what you borrowed
           </Text>
         </View>
         <TouchableOpacity
@@ -116,25 +176,31 @@ export default function BorrowScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Overdue alert banner */}
-      {overdue.length > 0 && (
+      {overdue.length > 0 ? (
         <View
           style={[
             styles.overdueAlert,
-            { backgroundColor: colors.warning + "15", borderColor: colors.warning + "40" },
+            {
+              backgroundColor: colors.warning + "12",
+              borderColor: colors.warning + "44",
+            },
           ]}
         >
-          <View style={[styles.overdueIconWrap, { backgroundColor: colors.warning + "22" }]}>
-            <Feather name="alert-circle" size={16} color={colors.warning} />
-          </View>
+          <Feather name="alert-circle" size={16} color={colors.warning} />
           <Text style={[styles.overdueText, { color: colors.warning }]}>
             {overdue.length} item{overdue.length > 1 ? "s" : ""} overdue — time to return!
           </Text>
         </View>
-      )}
+      ) : null}
 
       <FlatList
-        data={[...activeBorrows, ...returnedBorrows]}
+        // When there are >3 returned items and the section is collapsed, hide
+        // the returned items from the list — the ListFooterComponent below
+        // renders a single "Returned (N)" tile instead.
+        data={[
+          ...activeBorrows,
+          ...(returnedBorrows.length > 3 && !showAllReturned ? [] : returnedBorrows),
+        ]}
         keyExtractor={(b) => b.id}
         contentContainerStyle={[
           styles.list,
@@ -142,40 +208,88 @@ export default function BorrowScreen() {
         ]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <EmptyState
-            icon="repeat"
-            title="Nothing borrowed"
-            subtitle="Track items you borrow from roommates"
-          />
+          returnedBorrows.length > 3 && !showAllReturned && activeBorrows.length === 0 ? null : (
+            <EmptyState
+              icon="repeat"
+              title="Nothing borrowed"
+              subtitle="Track items you borrow from roommates"
+            />
+          )
         }
         ListHeaderComponent={
           activeBorrows.length > 0 ? (
-            <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>
+            <Text
+              style={[
+                styles.sectionHeader,
+                { color: colors.mutedForeground },
+              ]}
+            >
               Active ({activeBorrows.length})
             </Text>
+          ) : null
+        }
+        ListFooterComponent={
+          returnedBorrows.length > 3 && !showAllReturned ? (
+            <TouchableOpacity
+              style={[
+                styles.returnedTile,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => setShowAllReturned(true)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.returnedTileIcon, { backgroundColor: colors.success + "18" }]}>
+                <Feather name="check-circle" size={16} color={colors.success} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.returnedTileTitle, { color: colors.foreground }]}>
+                  Returned ({returnedBorrows.length})
+                </Text>
+                <Text style={[styles.returnedTileSub, { color: colors.mutedForeground }]}>
+                  Tap to expand
+                </Text>
+              </View>
+              <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          ) : returnedBorrows.length > 3 && showAllReturned ? (
+            <TouchableOpacity
+              style={[
+                styles.hideReturnedBtn,
+                { borderColor: colors.border },
+              ]}
+              onPress={() => setShowAllReturned(false)}
+              activeOpacity={0.7}
+            >
+              <Feather name="chevron-up" size={14} color={colors.mutedForeground} />
+              <Text style={[styles.hideReturnedText, { color: colors.mutedForeground }]}>
+                Hide returned
+              </Text>
+            </TouchableOpacity>
           ) : null
         }
         renderItem={({ item: borrow, index }) => {
           const showReturnedHeader =
             returnedBorrows.length > 0 &&
-            index === activeBorrows.length;
+            index === activeBorrows.length &&
+            returnedBorrows.length > 0;
           const owner = roommates.find((r) => r.id === borrow.borrowedFrom);
-          const isOverdueItem = !borrow.returned && new Date(borrow.dueDate) < new Date();
+          const isOverdueItem =
+            !borrow.returned && new Date(borrow.dueDate) < new Date();
           const dueText = borrow.returned
             ? `Returned ${new Date(borrow.returnedAt ?? "").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
             : formatDue(borrow.dueDate);
-
-          const accentColor = borrow.returned
-            ? colors.mutedForeground
-            : isOverdueItem
-            ? colors.warning
-            : colors.primary;
 
           return (
             <>
               {showReturnedHeader ? (
                 <Text
-                  style={[styles.sectionHeader, { color: colors.mutedForeground, marginTop: 16 }]}
+                  style={[
+                    styles.sectionHeader,
+                    {
+                      color: colors.mutedForeground,
+                      marginTop: 16,
+                    },
+                  ]}
                 >
                   Returned ({returnedBorrows.length})
                 </Text>
@@ -185,35 +299,53 @@ export default function BorrowScreen() {
                   styles.borrowCard,
                   {
                     backgroundColor: colors.card,
-                    shadowColor: isOverdueItem ? colors.warning : "#1A1140",
-                    opacity: borrow.returned ? 0.7 : 1,
-                    borderLeftWidth: 3,
-                    borderLeftColor: accentColor,
+                    borderColor: isOverdueItem
+                      ? colors.warning + "55"
+                      : borrow.returned
+                      ? colors.border
+                      : colors.border,
+                    opacity: borrow.returned ? 0.65 : 1,
                   },
                 ]}
               >
-                {/* Icon */}
-                <View
-                  style={[
-                    styles.itemIcon,
-                    { backgroundColor: accentColor + "15" },
-                  ]}
-                >
-                  <Feather
-                    name={borrow.returned ? "check-circle" : isOverdueItem ? "alert-circle" : "repeat"}
-                    size={20}
-                    color={accentColor}
-                  />
+                <View style={styles.cardLeft}>
+                  <View
+                    style={[
+                      styles.itemIcon,
+                      {
+                        backgroundColor: borrow.returned
+                          ? colors.muted
+                          : isOverdueItem
+                          ? colors.warning + "18"
+                          : colors.primary + "18",
+                      },
+                    ]}
+                  >
+                    <Feather
+                      name={borrow.returned ? "check" : "repeat"}
+                      size={18}
+                      color={
+                        borrow.returned
+                          ? colors.mutedForeground
+                          : isOverdueItem
+                          ? colors.warning
+                          : colors.primary
+                      }
+                    />
+                  </View>
                 </View>
 
-                {/* Content */}
                 <View style={styles.cardContent}>
                   <Text
                     style={[
                       styles.borrowItemName,
                       {
-                        color: borrow.returned ? colors.mutedForeground : colors.foreground,
-                        textDecorationLine: borrow.returned ? "line-through" : "none",
+                        color: borrow.returned
+                          ? colors.mutedForeground
+                          : colors.foreground,
+                        textDecorationLine: borrow.returned
+                          ? "line-through"
+                          : "none",
                       },
                     ]}
                     numberOfLines={1}
@@ -222,14 +354,27 @@ export default function BorrowScreen() {
                   </Text>
                   {owner ? (
                     <View style={styles.ownerRow}>
-                      <RoommateAvatar name={owner.name} color={owner.color} size={18} />
-                      <Text style={[styles.ownerText, { color: colors.mutedForeground }]}>
+                      <RoommateAvatar
+                        name={owner.name}
+                        color={owner.color}
+                        size={18}
+                        imageUri={owner.avatarUri}
+                      />
+                      <Text
+                        style={[
+                          styles.ownerText,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
                         From {owner.name}
                       </Text>
                     </View>
                   ) : null}
                   {borrow.notes ? (
-                    <Text style={[styles.notesText, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    <Text
+                      style={[styles.notesText, { color: colors.mutedForeground }]}
+                      numberOfLines={1}
+                    >
                       {borrow.notes}
                     </Text>
                   ) : null}
@@ -237,8 +382,14 @@ export default function BorrowScreen() {
                     style={[
                       styles.dueText,
                       {
-                        color: borrow.returned ? colors.success : isOverdueItem ? colors.warning : colors.mutedForeground,
-                        fontFamily: isOverdueItem ? "Inter_700Bold" : "Inter_400Regular",
+                        color: borrow.returned
+                          ? colors.success
+                          : isOverdueItem
+                          ? colors.warning
+                          : colors.mutedForeground,
+                        fontFamily: isOverdueItem
+                          ? "Inter_600SemiBold"
+                          : "Inter_400Regular",
                       },
                     ]}
                   >
@@ -246,22 +397,32 @@ export default function BorrowScreen() {
                   </Text>
                 </View>
 
-                {/* Actions */}
                 <View style={styles.cardActions}>
-                  {!borrow.returned ? (
-                    <TouchableOpacity
+                  {/* Toggle: shows "Return" for active items, "Undo" for
+                      already-returned items so the user can flip them back. */}
+                  <TouchableOpacity
+                    style={[
+                      styles.returnBtn,
+                      borrow.returned
+                        ? { backgroundColor: colors.muted, borderColor: colors.border }
+                        : { backgroundColor: colors.success + "18", borderColor: colors.success + "44" },
+                    ]}
+                    onPress={() => handleReturn(borrow.id)}
+                  >
+                    <Feather
+                      name={borrow.returned ? "rotate-ccw" : "check"}
+                      size={14}
+                      color={borrow.returned ? colors.mutedForeground : colors.success}
+                    />
+                    <Text
                       style={[
-                        styles.returnBtn,
-                        { backgroundColor: colors.success + "15", borderColor: colors.success + "40" },
+                        styles.returnBtnText,
+                        { color: borrow.returned ? colors.mutedForeground : colors.success },
                       ]}
-                      onPress={() => handleReturn(borrow.id)}
                     >
-                      <Feather name="check" size={13} color={colors.success} />
-                      <Text style={[styles.returnBtnText, { color: colors.success }]}>
-                        Return
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
+                      {borrow.returned ? "Undo" : "Return"}
+                    </Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() =>
                       confirm("delete_borrow", "Delete", "Remove this item?", () => deleteBorrowItem(borrow.id), { confirmText: "Delete", destructive: true })
@@ -277,16 +438,19 @@ export default function BorrowScreen() {
         }}
       />
 
-      {/* Add Item Modal */}
       <Modal visible={showModal} transparent animationType="slide">
         <Pressable style={styles.overlay} onPress={() => setShowModal(false)} />
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} pointerEvents="box-none">
         <View
           style={[
             styles.sheet,
-            { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 },
+            {
+              backgroundColor: colors.card,
+              paddingBottom: insets.bottom + 24,
+            },
           ]}
         >
-          <View style={[styles.handle, { backgroundColor: colors.muted }]} />
+          <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
             Log Borrowed Item
           </Text>
@@ -297,7 +461,11 @@ export default function BorrowScreen() {
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border },
+              {
+                backgroundColor: colors.secondary,
+                color: colors.foreground,
+                borderColor: colors.border,
+              },
             ]}
             placeholder="e.g. Phone charger"
             placeholderTextColor={colors.mutedForeground}
@@ -321,18 +489,20 @@ export default function BorrowScreen() {
                   style={[
                     styles.roommateChip,
                     {
-                      backgroundColor: borrowedFrom === r.id ? r.color + "20" : colors.muted,
-                      borderColor: borrowedFrom === r.id ? r.color : "transparent",
-                      borderWidth: borrowedFrom === r.id ? 2 : 0,
+                      backgroundColor:
+                        borrowedFrom === r.id ? r.color + "22" : colors.secondary,
+                      borderColor:
+                        borrowedFrom === r.id ? r.color : colors.border,
                     },
                   ]}
                   onPress={() => setBorrowedFrom(r.id)}
                 >
-                  <RoommateAvatar name={r.name} color={r.color} size={24} />
+                  <RoommateAvatar name={r.name} color={r.color} size={22} imageUri={r.avatarUri} />
                   <Text
                     style={{
-                      color: borrowedFrom === r.id ? r.color : colors.mutedForeground,
-                      fontFamily: borrowedFrom === r.id ? "Inter_700Bold" : "Inter_500Medium",
+                      color:
+                        borrowedFrom === r.id ? r.color : colors.mutedForeground,
+                      fontFamily: "Inter_600SemiBold",
                       fontSize: 13,
                     }}
                   >
@@ -352,7 +522,10 @@ export default function BorrowScreen() {
                 style={[
                   styles.dueChip,
                   {
-                    backgroundColor: dueDays === d ? colors.primary : colors.muted,
+                    backgroundColor:
+                      dueDays === d ? colors.primary : colors.secondary,
+                    borderColor:
+                      dueDays === d ? colors.primary : colors.border,
                   },
                 ]}
                 onPress={() => setDueDays(d)}
@@ -360,8 +533,8 @@ export default function BorrowScreen() {
                 <Text
                   style={{
                     color: dueDays === d ? "#fff" : colors.mutedForeground,
-                    fontFamily: "Inter_700Bold",
-                    fontSize: 13,
+                    fontFamily: "Inter_600SemiBold",
+                    fontSize: 12,
                   }}
                 >
                   {d}d
@@ -376,7 +549,11 @@ export default function BorrowScreen() {
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border },
+              {
+                backgroundColor: colors.secondary,
+                color: colors.foreground,
+                borderColor: colors.border,
+              },
             ]}
             placeholder="Any details..."
             placeholderTextColor={colors.mutedForeground}
@@ -387,14 +564,18 @@ export default function BorrowScreen() {
           <TouchableOpacity
             style={[
               styles.saveBtn,
-              { backgroundColor: item.trim() && borrowedFrom ? colors.primary : colors.muted },
+              {
+                backgroundColor:
+                  item.trim() && borrowedFrom ? colors.primary : colors.muted,
+              },
             ]}
             disabled={!item.trim() || !borrowedFrom}
-            onPress={handleAdd}
+            onPress={handleSave}
           >
-            <Text style={styles.saveBtnText}>Log Item</Text>
+            <Text style={styles.saveBtnText}>Save</Text>
           </TouchableOpacity>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -404,130 +585,144 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 18,
+    paddingBottom: 16,
   },
-  headerSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginBottom: 2 },
-  title: { fontFamily: "Inter_700Bold", fontSize: 28, letterSpacing: -0.5 },
+  title: { fontFamily: "Inter_700Bold", fontSize: 30, lineHeight: 36 },
+  subtitle: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
   addBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
   },
   overdueAlert: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
     marginHorizontal: 16,
-    marginBottom: 14,
-    borderRadius: 14,
+    marginBottom: 12,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 14,
-  },
-  overdueIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
+    padding: 12,
   },
   overdueText: { fontFamily: "Inter_600SemiBold", fontSize: 13, flex: 1 },
   list: { paddingHorizontal: 16, gap: 12 },
   sectionHeader: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 1.2,
-    marginBottom: 6,
+    letterSpacing: 0.8,
+    marginBottom: 4,
   },
   borrowCard: {
     flexDirection: "row",
     alignItems: "flex-start",
-    paddingVertical: 16,
-    paddingRight: 14,
-    paddingLeft: 11,
-    borderRadius: 18,
+    padding: 16,
+    borderRadius: 22,
+    borderWidth: 1,
     gap: 12,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 3,
   },
+  cardLeft: {},
   itemIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
   },
-  cardContent: { flex: 1, gap: 4 },
-  borrowItemName: { fontFamily: "Inter_700Bold", fontSize: 16 },
-  ownerRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  cardContent: { flex: 1, gap: 3 },
+  borrowItemName: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
+  ownerRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   ownerText: { fontFamily: "Inter_400Regular", fontSize: 12 },
   notesText: { fontFamily: "Inter_400Regular", fontSize: 12, fontStyle: "italic" },
   dueText: { fontSize: 12, marginTop: 2 },
-  cardActions: { alignItems: "flex-end", gap: 10, paddingTop: 2 },
+  cardActions: { alignItems: "flex-end", gap: 8 },
   returnBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
     borderWidth: 1,
   },
-  returnBtnText: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  overlay: { flex: 1, backgroundColor: "rgba(26,17,64,0.45)" },
+  returnBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)" },
   sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 22,
-    gap: 10,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingTop: 12,
+    gap: 4,
   },
   handle: {
-    width: 40,
+    width: 36,
     height: 4,
     borderRadius: 2,
     alignSelf: "center",
-    marginBottom: 8,
+    marginBottom: 16,
   },
-  sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 22, marginBottom: 4, letterSpacing: -0.4 },
-  label: { fontFamily: "Inter_600SemiBold", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 4 },
+  sheetTitle: { fontFamily: "Inter_700Bold", fontSize: 20, marginBottom: 12 },
+  label: { fontFamily: "Inter_500Medium", fontSize: 13, marginTop: 8, marginBottom: 6 },
   input: {
-    borderRadius: 14,
+    borderRadius: 10,
     borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 15,
     fontFamily: "Inter_400Regular",
   },
   roommateChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 22,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
   },
   dueChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
   },
-  saveBtn: {
-    marginTop: 8,
-    borderRadius: 16,
-    paddingVertical: 15,
-    alignItems: "center",
-  },
+  saveBtn: { marginTop: 12, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   saveBtnText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 16 },
+
+  // ── Collapsed "Returned" section ──
+  returnedTile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginTop: 16,
+  },
+  returnedTileIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  returnedTileTitle: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  returnedTileSub: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  hideReturnedBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 10,
+    marginTop: 12,
+  },
+  hideReturnedText: { fontFamily: "Inter_500Medium", fontSize: 12 },
 });

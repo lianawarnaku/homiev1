@@ -11,35 +11,6 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Project"
 
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "artifacts/api-server: API Server"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "artifacts/mobile: expo"
-
-[[workflows.workflow]]
-name = "artifacts/api-server: API Server"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
-
-[[workflows.workflow]]
-name = "artifacts/mobile: expo"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=18115 pnpm --filter @workspace/mobile run dev"
-
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
@@ -75,12 +46,3 @@ externalPort = 3003
 
 [nix]
 channel = "stable-25_05"
-
-[userenv]
-
-[userenv.shared]
-EXPO_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxbm9nYWZ0ZWJ1cWZ3d2VsYmR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyMTE2MjEsImV4cCI6MjA5ODc4NzYyMX0.OSkhl21uFPXdVVp18lxR1VVOgtMh6Vb5kPGI9hDJBKk"
-EXPO_PUBLIC_SUPABASE_URL = "https://eqnogaftebuqfwwelbdx.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxbm9nYWZ0ZWJ1cWZ3d2VsYmR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyMTE2MjEsImV4cCI6MjA5ODc4NzYyMX0.OSkhl21uFPXdVVp18lxR1VVOgtMh6Vb5kPGI9hDJBKk"
-SUPABASE_URL = "https://eqnogaftebuqfwwelbdx.supabase.co"
-EXPO_PUBLIC_GOOGLE_CLIENT_ID = "653392398023-3a3j7eob2lumtd07vmochmkq2lohdt6o.apps.googleusercontent.com"

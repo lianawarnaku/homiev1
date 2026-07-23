@@ -1,48 +1,54 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as Location from "expo-location";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
+  Animated,
+  Dimensions,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+
+const SCREEN_HEIGHT = Dimensions.get("window").height;
+const SCREEN_WIDTH = Dimensions.get("window").width;
+
+// Lighter tan brown revealed behind a chore row as it slides out on complete.
+const COMPLETE_REVEAL_BROWN = "#A87C50";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
 import { HomePlant } from "@/components/HomePlant";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
-import { useAppContext } from "@/context/AppContext";
-import { useHousehold } from "@/context/HouseholdContext";
-import { useGoogleCalendar } from "@/context/GoogleCalendarContext";
-import { authHeaders } from "@/lib/api";
-import { useColors } from "@/hooks/useColors";
+import { useAppContext, type ChoreAssignment, type ChoreCategory } from "@/context/AppContext";
+import { useTheme } from "@/constants/colors";
+import { success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 
-// ── Location helpers ───────────────────────────────────────────────────────
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+// ── Add-chore modal constants (same as My Home) ────────────────────────────
+const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feather.glyphMap }[] = [
+  { key: "cleaning", label: "Cleaning", icon: "wind" },
+  { key: "kitchen", label: "Kitchen", icon: "coffee" },
+  { key: "bathroom", label: "Bathroom", icon: "droplet" },
+  { key: "laundry", label: "Laundry", icon: "refresh-cw" },
+  { key: "outdoor", label: "Outdoor", icon: "sun" },
+  { key: "other", label: "Other", icon: "package" },
+];
+
+const POINTS_OPTIONS = ["5", "10", "15", "20", "25", "30"];
+
+function daysFromNow(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(23, 59, 0, 0);
+  return d.toISOString();
 }
-
-const STATUS_CONFIG = {
-  home:    { icon: "home"      as const, label: "Home",    color: "#22C55E" },
-  away:    { icon: "map-pin"   as const, label: "Away",    color: "#F59E0B" },
-  asleep:  { icon: "moon"      as const, label: "Asleep",  color: "#8B5CF6" },
-  unknown: { icon: "help-circle" as const, label: "Unknown", color: "#94A3B8" },
-};
 
 function isOverdue(dateStr: string) {
   return new Date(dateStr) < new Date();
@@ -59,10 +65,77 @@ function formatDueDate(dateStr: string) {
   return `${diff}d left`;
 }
 
+// ── Calendar / chore-chart helpers ────────────────────────────────────────
+const DOW_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+const SLOT_VISUAL_DEFAULT = { icon: "check-square" as keyof typeof Feather.glyphMap, color: "#8A7462" };
+const SLOT_VISUAL_BY_KEY: Record<string, { icon: keyof typeof Feather.glyphMap; color: string }> = {
+  bathroom_heavy: { icon: "droplet", color: "#72503A" },
+  bathroom_light: { icon: "wind", color: "#A88C76" },
+  bathroom: { icon: "droplet", color: "#87644B" },
+  kitchen_heavy: { icon: "zap", color: "#9B623B" },
+  kitchen_light: { icon: "coffee", color: "#C39870" },
+  kitchen: { icon: "coffee", color: "#A7744D" },
+  vacuum_mop: { icon: "layers", color: "#806B58" },
+  vacuum: { icon: "layers", color: "#917661" },
+  mop: { icon: "layers", color: "#A1866F" },
+  laundry: { icon: "refresh-cw", color: "#B09177" },
+  trash: { icon: "trash-2", color: "#65483A" },
+  dishes: { icon: "circle", color: "#B98255" },
+  outdoor: { icon: "sun", color: "#C19362" },
+  ad_hoc: { icon: "help-circle", color: "#7B6252" },
+};
+
+function slotVisualFor(key: string) {
+  return SLOT_VISUAL_BY_KEY[key] ?? SLOT_VISUAL_DEFAULT;
+}
+
+function humanizeSlotKey(k: string): string {
+  return k.split("_").map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
+}
+
+function startOfWeekMonday(d: Date): Date {
+  const dow = d.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  const r = new Date(d);
+  r.setDate(d.getDate() + diff);
+  r.setHours(0, 0, 0, 0);
+  return r;
+}
+
+function chartWeekFor(date: Date, startedAtIso: string | null): number | null {
+  if (!startedAtIso) return null;
+  const start = startOfWeekMonday(new Date(startedAtIso));
+  const targetMon = startOfWeekMonday(date);
+  const diffDays = Math.round((targetMon.getTime() - start.getTime()) / 86400000);
+  const weekIdx = Math.floor(diffDays / 7);
+  if (weekIdx < 0 || weekIdx >= 12) return null;
+  return weekIdx + 1;
+}
+
+function buildMonthGrid(monthAnchor: Date): { date: Date; inMonth: boolean }[][] {
+  const year = monthAnchor.getFullYear();
+  const month = monthAnchor.getMonth();
+  const firstOfMonth = new Date(year, month, 1);
+  const gridStart = startOfWeekMonday(firstOfMonth);
+  const rows: { date: Date; inMonth: boolean }[][] = [];
+  for (let row = 0; row < 6; row++) {
+    const week: { date: Date; inMonth: boolean }[] = [];
+    for (let col = 0; col < 7; col++) {
+      const d = new Date(gridStart);
+      d.setDate(gridStart.getDate() + row * 7 + col);
+      week.push({ date: d, inMonth: d.getMonth() === month });
+    }
+    rows.push(week);
+  }
+  return rows;
+}
+
 const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
   blooming: {
     title: "In full bloom! 🌸",
-    subtitle: "look! your home looks beautiful",
+    subtitle: "Look! Your home looks beautiful!",
   },
   thriving: {
     title: "Thriving! 🌿",
@@ -82,197 +155,138 @@ const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
   },
 };
 
-// ── Calendar helpers ──────────────────────────────────────────────────────
-const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function getWeekDays(offset: number): Date[] {
-  const now = new Date();
-  const dow = now.getDay(); // 0=Sun
-  const diffToMon = dow === 0 ? -6 : 1 - dow;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + diffToMon + offset * 7);
-  monday.setHours(0, 0, 0, 0);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d;
-  });
-}
-
-function toDateKey(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
-
-function formatWeekRange(days: Date[]) {
-  const fmt = (d: Date) =>
-    d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `${fmt(days[0])} – ${fmt(days[6])}`;
-}
-
 export default function GroupChoresScreen() {
-  const colors = useColors();
+  const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, homeLocation, setHomeLocation } = useAppContext();
-  const { household, myMembership } = useHousehold();
+  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, choreChart, choreChartStartedAt, addChore, pointsEnabled, plantEnabled } = useAppContext();
 
   const { confirm, info } = useConfirm();
-
-  const isOwner = myMembership?.role === "owner";
-
-  async function handleShareInvite() {
-    if (!household?.invite_code) return;
-    try {
-      await Share.share({
-        message: `Join my household on Homie! Use invite code: ${household.invite_code}`,
-        title: "Homie Invite Code",
-      });
-    } catch {
-      Alert.alert("Invite Code", household.invite_code);
-    }
-  }
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
   const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [viewMode] = useState<"activity" | "calendar">("activity");
+  const [monthOffset, setMonthOffset] = useState(0);
 
-  // ── Location / Activity ───────────────────────────────────────────────────
-  const [locationPermission, setLocationPermission] = useState<"granted" | "denied" | "unknown">("unknown");
-  const [currentPosition, setCurrentPosition] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [distanceFromHome, setDistanceFromHome] = useState<number | null>(null);
-  const watchSubRef = useRef<Location.LocationSubscription | null>(null);
+  // ── Add-chore-to-any-roommate modal state ──
+  const [showAddChoreModal, setShowAddChoreModal] = useState(false);
 
-  // Start location watching when permission granted (native only)
+  // Full-screen slide-up animation for the Add Chore modal (matches New IOU).
+  const addChoreTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   useEffect(() => {
-    if (Platform.OS === "web") return;
-    if (locationPermission !== "granted") return;
-
-    let active = true;
-    Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
-      (loc) => {
-        if (!active) return;
-        const pos = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-        setCurrentPosition(pos);
-        if (homeLocation) {
-          const dist = haversineMeters(pos.latitude, pos.longitude, homeLocation.latitude, homeLocation.longitude);
-          setDistanceFromHome(Math.round(dist));
-          const currentStatus = roommateStatuses[currentUserId] ?? "unknown";
-          if (dist <= homeLocation.radius && currentStatus !== "asleep") {
-            setRoommateStatus(currentUserId, "home");
-          } else if (dist > homeLocation.radius && currentStatus !== "away") {
-            setRoommateStatus(currentUserId, "away");
-          }
-        }
-      }
-    ).then((sub) => { if (active) watchSubRef.current = sub; });
-
-    return () => {
-      active = false;
-      watchSubRef.current?.remove();
-      watchSubRef.current = null;
-    };
-  }, [locationPermission, homeLocation]);
-
-  const requestLocation = async () => {
-    setLocationLoading(true);
-    try {
-      if (Platform.OS === "web") {
-        // Web geolocation fallback
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const p = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-            setCurrentPosition(p);
-            setLocationPermission("granted");
-            setLocationLoading(false);
-          },
-          () => { setLocationPermission("denied"); setLocationLoading(false); }
-        );
-        return;
-      }
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      setLocationPermission(status === "granted" ? "granted" : "denied");
-    } catch {
-      setLocationPermission("denied");
-    } finally {
-      if (Platform.OS !== "web") setLocationLoading(false);
+    if (showAddChoreModal) {
+      addChoreTranslateY.setValue(SCREEN_HEIGHT);
+      Animated.spring(addChoreTranslateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        damping: 22,
+        stiffness: 180,
+        mass: 0.8,
+      }).start();
     }
+  }, [showAddChoreModal, addChoreTranslateY]);
+  const closeAddChoreSheet = () => {
+    Animated.timing(addChoreTranslateY, {
+      toValue: SCREEN_HEIGHT,
+      duration: 260,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setShowAddChoreModal(false);
+        setAddChoreTargetId(null);
+      }
+    });
+  };
+  const addChoreDragHandlers = useDraggableSheet(addChoreTranslateY, () => {
+    setShowAddChoreModal(false);
+    setAddChoreTargetId(null);
+  });
+  const [addChoreTargetId, setAddChoreTargetId] = useState<string | null>(null);
+  const [newChoreTitle, setNewChoreTitle] = useState("");
+  const [newChoreCategory, setNewChoreCategory] = useState<ChoreCategory>("cleaning");
+  const [newChorePoints, setNewChorePoints] = useState("20");
+
+  // Which roommates' chore sections are expanded. By default, only the current
+  // user is open — everyone else's section is collapsed and shows only the
+  // header (name, progress, points). Tapping the chevron on the right expands
+  // that section.
+  const [expandedChoreSections, setExpandedChoreSections] = useState<Set<string>>(
+    () => new Set([currentUserId])
+  );
+  const toggleChoreSection = (roommateId: string) => {
+    setExpandedChoreSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(roommateId)) next.delete(roommateId);
+      else next.add(roommateId);
+      return next;
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const captureHomeLocation = async () => {
-    setLocationLoading(true);
-    const capture = (lat: number, lon: number) => {
-      setHomeLocation({ latitude: lat, longitude: lon, radius: 100 });
-      setRoommateStatus(currentUserId, "home");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setLocationLoading(false);
-    };
-    try {
-      if (Platform.OS === "web") {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => capture(pos.coords.latitude, pos.coords.longitude),
-          () => setLocationLoading(false)
-        );
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      capture(loc.coords.latitude, loc.coords.longitude);
-    } catch {
-      setLocationLoading(false);
-    }
+  const openAddChoreFor = (roommateId: string) => {
+    setAddChoreTargetId(roommateId);
+    setNewChoreTitle("");
+    setNewChoreCategory("cleaning");
+    setNewChorePoints("20");
+    setShowAddChoreModal(true);
   };
 
-  // ── Availability ──────────────────────────────────────────────────────────
-  const [availabilityMode, setAvailabilityMode] = useState(false);
-  const [myBusyDays, setMyBusyDays] = useState<Set<string>>(new Set());
-  const [availabilityLoading, setAvailabilityLoading] = useState(false);
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
-
-  const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  const baseUrl = domain ? `https://${domain}` : "";
-  const { ensureToken } = useGoogleCalendar();
-
-  const fetchAvailability = async (offset: number) => {
-    setAvailabilityLoading(true);
-    setAvailabilityError(null);
-    try {
-      const googleToken = await ensureToken();
-      if (!googleToken) {
-        setAvailabilityError("Connect Google Calendar to see availability");
-        return;
-      }
-      const days = getWeekDays(offset);
-      const weekStart = toDateKey(days[0]);
-      const res = await fetch(`${baseUrl}/api/calendar/availability?weekStart=${weekStart}`, {
-        headers: await authHeaders({ "X-Google-Access-Token": googleToken }),
-      });
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = (await res.json()) as { busyDays: string[]; connected: boolean };
-      setMyBusyDays(new Set(data.busyDays));
-    } catch {
-      setAvailabilityError("Could not load calendar data");
-    } finally {
-      setAvailabilityLoading(false);
-    }
+  const submitAddChore = () => {
+    if (!addChoreTargetId || !newChoreTitle.trim()) return;
+    addChore({
+      title: newChoreTitle.trim(),
+      assignedTo: addChoreTargetId,
+      dueDate: daysFromNow(1),
+      completed: false,
+      points: parseInt(newChorePoints, 10),
+      category: newChoreCategory,
+    });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    closeAddChoreSheet();
   };
 
-  const toggleAvailability = () => {
-    const next = !availabilityMode;
-    setAvailabilityMode(next);
-    if (next) fetchAvailability(weekOffset);
+  // Cycle a roommate's mood: home (😊) → asleep (😴) → away (🤫) → home
+  const cycleHomieMood = (roommateId: string) => {
+    const current = roommateStatuses[roommateId] ?? "home";
+    const next =
+      current === "home" ? "asleep" : current === "asleep" ? "away" : "home";
+    setRoommateStatus(roommateId, next);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleChorePress = (choreId: string, assignedTo: string, choreName: string, chorePoints: number) => {
     const chore = chores.find((c) => c.id === choreId);
-    if (!chore || chore.completed) return;
+    if (!chore) return;
+
+    // If already completed, only allow the ORIGINAL ASSIGNEE (or the current
+    // user if it's their own chore) to un-complete it. Picked-up chores are
+    // left alone — undoing a pickup would need to track who picked it up to
+    // correctly refund the bonus points, which we don't store.
+    if (chore.completed) {
+      if (assignedTo === currentUserId) {
+        confirm(
+          "uncomplete_chore",
+          "Uncomplete chore?",
+          `Mark "${choreName}" as not done?`,
+          () => {
+            completeChore(choreId);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          },
+          { confirmText: "Uncomplete" }
+        );
+      }
+      return;
+    }
 
     if (assignedTo === currentUserId) {
       confirm(
         "complete_chore",
         "Complete chore?",
         `Mark "${choreName}" as done?`,
-        () => {
+        async () => {
+          hapticSuccess();
+          // Slide right, then apply the completion (which triggers the sort
+          // that moves the row to the bottom of the section).
+          await runSlideRight(choreId);
           completeChore(choreId);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         },
         { confirmText: "Done ✓" }
       );
@@ -280,15 +294,20 @@ export default function GroupChoresScreen() {
       confirm(
         "pickup_chore",
         "Pick up this chore? 🙌",
-        `Complete "${choreName}" for them and earn ${chorePoints + 25} pts (${chorePoints} + 25 bonus)!`,
-        () => {
-          pickUpChore(choreId);
+        pointsEnabled
+          ? `Complete "${choreName}" for them and earn ${chorePoints + 25} pts (${chorePoints} + 25 bonus)!`
+          : `Complete "${choreName}" for them?`,
+        async () => {
+          hapticSuccess();
+          await runSlideRight(choreId);
+          pickUpChore(choreId, currentUserId);
           setPickedUpChores((prev) => new Set([...prev, choreId]));
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           info(
             "pickup_success",
             "Nice one! 🌟",
-            `You earned ${chorePoints + 25} pts — ${chorePoints} for the chore + 25 bonus!`
+            pointsEnabled
+              ? `You earned ${chorePoints + 25} pts — ${chorePoints} for the chore + 25 bonus!`
+              : `You completed "${choreName}" for them.`
           );
         },
         { confirmText: "Pick it up!" }
@@ -329,8 +348,63 @@ export default function GroupChoresScreen() {
 
   const roommatesWithChores = roommates.map((r) => ({
     roommate: r,
-    chores: chores.filter((c) => c.assignedTo === r.id),
+    // Completed chores automatically move to the bottom of each roommate's section.
+    chores: chores
+      .filter((c) => c.assignedTo === r.id)
+      .sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1)),
   }));
+
+  // Per-chore Animated values for the slide-out animation on completion.
+  // Keyed by chore id so the animation applies to the right row even when the
+  // list re-renders. `x` slides the row right (clipped by the outer wrapper's
+  // overflow: hidden, so it stays within the row's own bounds), `dark` is a
+  // fast-fading black overlay so the row darkens the instant it's checked. The
+  // brown reveal panel + "Done!" label is only mounted for ids currently in
+  // `animatingChores` — already-completed rows never show brown behind them at
+  // rest, since chore rows have transparent backgrounds.
+  const slideAnimRefs = useRef<
+    Map<string, { x: Animated.Value; dark: Animated.Value }>
+  >(new Map());
+  const getSlideAnim = (id: string) => {
+    let entry = slideAnimRefs.current.get(id);
+    if (!entry) {
+      entry = {
+        x: new Animated.Value(0),
+        dark: new Animated.Value(0),
+      };
+      slideAnimRefs.current.set(id, entry);
+    }
+    return entry;
+  };
+  const [animatingChores, setAnimatingChores] = useState<Set<string>>(new Set());
+  const runSlideRight = (id: string): Promise<void> => {
+    const { x, dark } = getSlideAnim(id);
+    setAnimatingChores((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    return new Promise((resolve) => {
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(dark, { toValue: 0.55, duration: 90, useNativeDriver: true }),
+          Animated.timing(x, { toValue: SCREEN_WIDTH, duration: 320, useNativeDriver: true }),
+        ]),
+        Animated.delay(160),
+      ]).start(() => {
+        // Reset atomically so the row appears at its new (bottom) position in
+        // its normal state on the next render.
+        x.setValue(0);
+        dark.setValue(0);
+        setAnimatingChores((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        resolve();
+      });
+    });
+  };
 
   const handleNudge = (
     roommateId: string,
@@ -395,40 +469,180 @@ export default function GroupChoresScreen() {
         </View>
       </View>
 
+      {viewMode === "calendar" ? (
+        (() => {
+          const today = new Date();
+          const monthAnchor = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+          const grid = buildMonthGrid(monthAnchor);
+          const monthLabel = `${MONTHS[monthAnchor.getMonth()]} ${monthAnchor.getFullYear()}`;
+          const todayKey = today.toDateString();
+          // Weeks (Mondays) in this month, dedup, with chart-week mapping
+          const monthWeeks = grid
+            .map((row) => row[0].date)
+            .filter((d, i, arr) => i === 0 || d.getTime() !== arr[i - 1].getTime());
+          const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          return (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 90 + botPad, paddingHorizontal: 16 }}
+            >
+              {/* Month header */}
+              <View style={[styles.monthHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TouchableOpacity
+                  onPress={() => setMonthOffset(monthOffset - 1)}
+                  style={[styles.monthNavBtn, { backgroundColor: colors.muted }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="chevron-left" size={18} color={colors.foreground} />
+                </TouchableOpacity>
+                <Text style={[styles.monthLabel, { color: colors.foreground }]}>{monthLabel}</Text>
+                <TouchableOpacity
+                  onPress={() => setMonthOffset(monthOffset + 1)}
+                  style={[styles.monthNavBtn, { backgroundColor: colors.muted }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="chevron-right" size={18} color={colors.foreground} />
+                </TouchableOpacity>
+              </View>
+
+              {/* DOW row */}
+              <View style={styles.dowRow}>
+                {DOW_LABELS.map((d, i) => (
+                  <Text key={i} style={[styles.dowText, { color: colors.mutedForeground }]}>
+                    {d}
+                  </Text>
+                ))}
+              </View>
+
+              {/* Day grid */}
+              <View style={[styles.daysGrid, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                {grid.map((row, ri) => (
+                  <View key={ri} style={styles.weekRow}>
+                    {row.map(({ date, inMonth }, ci) => {
+                      const isToday = date.toDateString() === todayKey;
+                      const cw = chartWeekFor(date, choreChartStartedAt);
+                      return (
+                        <View
+                          key={ci}
+                          style={[
+                            styles.dayCell,
+                            {
+                              backgroundColor: isToday
+                                ? colors.primary + "18"
+                                : "transparent",
+                              borderColor: isToday ? colors.primary + "55" : "transparent",
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dayNum,
+                              {
+                                color: !inMonth
+                                  ? colors.border
+                                  : isToday
+                                  ? colors.primary
+                                  : colors.foreground,
+                                fontFamily: isToday ? "Inter_700Bold" : "Inter_500Medium",
+                              },
+                            ]}
+                          >
+                            {date.getDate()}
+                          </Text>
+                          {cw !== null && inMonth && (
+                            <View style={[styles.chartWeekDot, { backgroundColor: colors.primary }]} />
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+
+              {/* Per-week breakdown */}
+              {!choreChart || !choreChartStartedAt ? (
+                <View style={[styles.calEmptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Feather name="calendar" size={22} color={colors.mutedForeground} />
+                  <Text style={[styles.calEmptyTitle, { color: colors.foreground }]}>No chart yet</Text>
+                  <Text style={[styles.calEmptySub, { color: colors.mutedForeground }]}>
+                    Generate a chore chart in Settings → Planning to see week-by-week assignments here.
+                  </Text>
+                </View>
+              ) : (
+                monthWeeks.map((mon) => {
+                  const cw = chartWeekFor(mon, choreChartStartedAt);
+                  const sun = new Date(mon);
+                  sun.setDate(mon.getDate() + 6);
+                  const weekRange = `${fmt(mon)} – ${fmt(sun)}`;
+                  if (cw === null) {
+                    return (
+                      <View
+                        key={mon.toISOString()}
+                        style={[styles.weekOutCard, { backgroundColor: colors.muted, borderColor: colors.border }]}
+                      >
+                        <Text style={[styles.weekOutText, { color: colors.mutedForeground }]}>
+                          {weekRange} · outside chart
+                        </Text>
+                      </View>
+                    );
+                  }
+                  const week = choreChart.weeks.find((w) => w.week === cw);
+                  if (!week) return null;
+                  // Derive slots from the chart: prefer chart.slots, else infer from assignment keys
+                  const slots =
+                    choreChart.slots && choreChart.slots.length > 0
+                      ? choreChart.slots
+                      : Object.keys(week.assignments).map((k) => ({ key: k, label: humanizeSlotKey(k) }));
+                  return (
+                    <View
+                      key={mon.toISOString()}
+                      style={[styles.weekCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    >
+                      <View style={styles.weekCardHeader}>
+                        <View style={[styles.weekChip, { backgroundColor: colors.primary + "18" }]}>
+                          <Text style={[styles.weekChipText, { color: colors.primary }]}>Week {cw}</Text>
+                        </View>
+                        <Text style={[styles.weekRangeText, { color: colors.mutedForeground }]}>
+                          {weekRange}
+                        </Text>
+                      </View>
+                      {slots.map((slot) => {
+                        const name = week.assignments[slot.key];
+                        if (!name) return null;
+                        const rm = roommates.find((r) => r.name === name);
+                        const visual = slotVisualFor(slot.key);
+                        const dotColor = rm?.color ?? visual.color;
+                        return (
+                          <View key={slot.key} style={[styles.assignRow, { borderTopColor: colors.border }]}>
+                            <View style={[styles.slotIconWrap, { backgroundColor: visual.color + "18" }]}>
+                              <Feather name={visual.icon} size={13} color={visual.color} />
+                            </View>
+                            <Text style={[styles.slotLabelText, { color: colors.foreground }]}>
+                              {slot.label}
+                            </Text>
+                            <View style={[styles.assigneeTag, { backgroundColor: dotColor + "22", borderColor: dotColor + "55" }]}>
+                              <View style={[styles.assigneeDot, { backgroundColor: dotColor }]} />
+                              <Text style={[styles.assigneeName, { color: dotColor }]}>
+                                {rm?.id === currentUserId ? "You" : name}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          );
+        })()
+      ) : (
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 90 + botPad }}
       >
-        {/* ── Invite Code Card (owner only) ─────────────── */}
-        {isOwner && household?.invite_code && (
-          <View style={[styles.inviteCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.inviteTop}>
-              <View style={[styles.inviteIconWrap, { backgroundColor: "#8D552418" }]}>
-                <Feather name="user-plus" size={14} color="#8D5524" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.inviteLabel, { color: colors.mutedForeground }]}>Invite roommates</Text>
-                <Text style={[styles.inviteSub, { color: colors.mutedForeground }]}>Share this code — they enter it on the Join screen</Text>
-              </View>
-            </View>
-            <View style={styles.inviteCodeRow}>
-              <Text style={[styles.inviteCode, { color: colors.foreground, letterSpacing: 8 }]}>
-                {household.invite_code}
-              </Text>
-              <TouchableOpacity
-                style={[styles.inviteShareBtn, { backgroundColor: "#8D5524" }]}
-                onPress={handleShareInvite}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Feather name="share-2" size={14} color="#FFF" />
-                <Text style={styles.inviteShareText}>Share</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
         {/* ── Plant Health Card ──────────────────────────── */}
-        <View
+        {plantEnabled && <View
           style={[
             styles.plantCard,
             {
@@ -440,6 +654,7 @@ export default function GroupChoresScreen() {
         >
           {/* Ambient glow strip at top */}
           <View
+            {...addChoreDragHandlers}
             style={[
               styles.glowStrip,
               { backgroundColor: healthColor + "28" },
@@ -518,435 +733,57 @@ export default function GroupChoresScreen() {
               </View>
             </View>
           </View>
-        </View>
+        </View>}
 
-        {/* ── Weekly Schedule Calendar ─────────────────── */}
-        {(() => {
-          const weekDays = getWeekDays(weekOffset);
-          const todayKey = toDateKey(new Date());
-          const weekRange = formatWeekRange(weekDays);
-          const isCurrentWeek = weekOffset === 0;
-
-          // ── Availability state for this render ──────────────────────────
-          const currentUser = roommates.find((r) => r.id === currentUserId);
-
-          return (
-            <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {/* Card header row 1: icon + title + availability toggle */}
-              <View style={styles.calHeader}>
-                <View style={[styles.calHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
-                  <Feather name="calendar" size={14} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.calTitle, { color: colors.foreground }]}>Weekly Schedule</Text>
-                  <Text style={[styles.calRange, { color: colors.mutedForeground }]}>{weekRange}</Text>
-                </View>
-
-                {/* Availability toggle */}
-                <TouchableOpacity
+        {/* ── The Homies ─────────────────────────────────
+            Tap a roommate's emoji to cycle through their vibe:
+              😊 (chill / around)  →  😴 (sleeping)  →  🤫 (do not disturb)  →  😊
+            Sleeping still auto-reverts after 9 hours via AppContext. */}
+        <View style={[styles.activityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.activityHeader}>
+            <View style={[styles.activityHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
+              <Feather name="users" size={14} color={colors.primary} />
+            </View>
+            <Text style={[styles.activityTitle, { color: colors.foreground }]}>The Homies</Text>
+          </View>
+          <View style={styles.homiesGrid}>
+            {roommates.map((rm) => {
+              const status = roommateStatuses[rm.id] ?? "home";
+              const emoji =
+                status === "asleep" ? "😴" : status === "away" ? "🤫" : "😊";
+              return (
+                <View
+                  key={rm.id}
                   style={[
-                    styles.availBtn,
-                    {
-                      backgroundColor: availabilityMode ? colors.success + "18" : colors.secondary,
-                      borderColor: availabilityMode ? colors.success + "55" : colors.border,
-                    },
+                    styles.homieTile,
+                    { backgroundColor: colors.background, borderColor: colors.border },
                   ]}
-                  onPress={toggleAvailability}
                 >
-                  {availabilityLoading ? (
-                    <ActivityIndicator size="small" color={colors.success} style={{ width: 12, height: 12 }} />
-                  ) : (
-                    <Feather
-                      name="radio"
-                      size={12}
-                      color={availabilityMode ? colors.success : colors.mutedForeground}
-                    />
-                  )}
-                  <Text style={[styles.availBtnText, { color: availabilityMode ? colors.success : colors.mutedForeground }]}>
-                    Availability
+                  <RoommateAvatar
+                    name={rm.name}
+                    color={rm.color}
+                    size={44}
+                    imageUri={rm.avatarUri}
+                  />
+                  <Text style={[styles.homieName, { color: colors.foreground }]} numberOfLines={1}>
+                    {rm.id === currentUserId ? "You" : rm.name.split(" ")[0]}
                   </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Week navigation row */}
-              <View style={styles.calNavRow}>
-                <TouchableOpacity
-                  style={[styles.calNavBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
-                  onPress={() => {
-                    const next = weekOffset - 1;
-                    setWeekOffset(next);
-                    if (availabilityMode) fetchAvailability(next);
-                  }}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                >
-                  <Feather name="chevron-left" size={14} color={colors.mutedForeground} />
-                </TouchableOpacity>
-                {!isCurrentWeek && (
                   <TouchableOpacity
-                    style={[styles.calNavBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "44" }]}
-                    onPress={() => {
-                      setWeekOffset(0);
-                      if (availabilityMode) fetchAvailability(0);
-                    }}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    onPress={() => cycleHomieMood(rm.id)}
+                    activeOpacity={0.6}
+                    style={[
+                      styles.homieEmojiBtn,
+                      { backgroundColor: colors.muted, borderColor: colors.border },
+                    ]}
+                    hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                   >
-                    <Text style={[styles.calNavToday, { color: colors.primary }]}>Today</Text>
+                    <Text style={styles.homieEmoji}>{emoji}</Text>
                   </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={[styles.calNavBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
-                  onPress={() => {
-                    const next = weekOffset + 1;
-                    setWeekOffset(next);
-                    if (availabilityMode) fetchAvailability(next);
-                  }}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                >
-                  <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Availability error */}
-              {availabilityError ? (
-                <View style={[styles.availErrorRow, { backgroundColor: colors.destructive + "10" }]}>
-                  <Feather name="alert-circle" size={12} color={colors.destructive} />
-                  <Text style={[styles.availErrorText, { color: colors.destructive }]}>{availabilityError}</Text>
                 </View>
-              ) : null}
-
-              {/* Day columns */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.calDaysRow}
-              >
-                {weekDays.map((day, idx) => {
-                  const key = toDateKey(day);
-                  const isToday = key === todayKey;
-                  const dayChores = chores.filter((c) => c.dueDate.slice(0, 10) === key);
-                  const isWeekend = idx >= 5;
-                  const isMeBusy = availabilityMode && myBusyDays.has(key);
-
-                  return (
-                    <View
-                      key={key}
-                      style={[
-                        styles.calDayCol,
-                        {
-                          backgroundColor: isMeBusy
-                            ? colors.warning + "0D"
-                            : isToday
-                            ? colors.primary + "0D"
-                            : isWeekend
-                            ? colors.secondary + "88"
-                            : "transparent",
-                          borderColor: isMeBusy
-                            ? colors.warning + "55"
-                            : isToday
-                            ? colors.primary + "44"
-                            : colors.border,
-                        },
-                      ]}
-                    >
-                      {/* Day name */}
-                      <Text style={[styles.calDayName, { color: isToday ? colors.primary : colors.mutedForeground }]}>
-                        {DAY_NAMES[idx]}
-                      </Text>
-                      {/* Day number */}
-                      <View style={[styles.calDayNum, isToday && { backgroundColor: colors.primary }]}>
-                        <Text style={[styles.calDayNumText, { color: isToday ? "#fff" : colors.foreground }]}>
-                          {day.getDate()}
-                        </Text>
-                      </View>
-
-                      {/* Busy badge */}
-                      {isMeBusy && (
-                        <View style={[styles.busyBadge, { backgroundColor: colors.warning + "22", borderColor: colors.warning + "44" }]}>
-                          <Text style={[styles.busyBadgeText, { color: colors.warning }]}>busy</Text>
-                        </View>
-                      )}
-
-                      {/* Chore pills */}
-                      <View style={styles.calChores}>
-                        {dayChores.length === 0 ? (
-                          <View style={[styles.calEmpty, { backgroundColor: colors.muted + "60" }]} />
-                        ) : (
-                          dayChores.map((chore) => {
-                            const rm = roommates.find((r) => r.id === chore.assignedTo);
-                            const color = rm?.color ?? colors.primary;
-                            return (
-                              <View
-                                key={chore.id}
-                                style={[
-                                  styles.calPill,
-                                  {
-                                    backgroundColor: color + "18",
-                                    borderColor: color + "44",
-                                    opacity: chore.completed ? 0.5 : 1,
-                                  },
-                                ]}
-                              >
-                                <View style={[styles.calPillDot, { backgroundColor: color }]} />
-                                <Text style={[styles.calPillName, { color: color }]} numberOfLines={1}>
-                                  {rm?.name?.split(" ")[0] ?? "?"}
-                                </Text>
-                              </View>
-                            );
-                          })
-                        )}
-                      </View>
-
-                      {/* Availability dots (one per roommate) */}
-                      {availabilityMode && (
-                        <View style={styles.availDotRow}>
-                          {roommates.map((rm) => {
-                            const isMe = rm.id === currentUserId;
-                            const isBusy = isMe && myBusyDays.has(key);
-                            const dotColor = isMe
-                              ? isBusy ? colors.warning : colors.success
-                              : colors.muted;
-                            return (
-                              <View
-                                key={rm.id}
-                                style={[
-                                  styles.availDot,
-                                  {
-                                    backgroundColor: isMe ? dotColor : "transparent",
-                                    borderColor: isMe ? dotColor : colors.border,
-                                    borderWidth: isMe ? 0 : 1,
-                                  },
-                                ]}
-                              />
-                            );
-                          })}
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </ScrollView>
-
-              {/* Legend */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.calLegend}>
-                {roommates.map((rm) => (
-                  <View key={rm.id} style={styles.calLegendItem}>
-                    <View style={[styles.calLegendDot, { backgroundColor: rm.color }]} />
-                    <Text style={[styles.calLegendName, { color: colors.mutedForeground }]}>
-                      {rm.name.split(" ")[0]}
-                    </Text>
-                  </View>
-                ))}
-              </ScrollView>
-
-              {/* Availability connections panel */}
-              {availabilityMode && (
-                <View style={[styles.availPanel, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.availPanelTitle, { color: colors.foreground }]}>Calendar Connections</Text>
-
-                  {/* Current user — connected */}
-                  <View style={[styles.availRoommateRow, { backgroundColor: colors.success + "0C", borderColor: colors.success + "33" }]}>
-                    <View style={[styles.availRoommateDot, { backgroundColor: currentUser?.color ?? colors.primary }]}>
-                      <Text style={styles.availRoommateInitial}>
-                        {currentUser?.name?.charAt(0) ?? "?"}
-                      </Text>
-                    </View>
-                    <Text style={[styles.availRoommateName, { color: colors.foreground }]}>
-                      {currentUser?.name ?? "You"} <Text style={{ color: colors.mutedForeground }}>(you)</Text>
-                    </Text>
-                    <View style={[styles.availConnectedBadge, { backgroundColor: colors.success + "20", borderColor: colors.success + "44" }]}>
-                      <Feather name="check-circle" size={10} color={colors.success} />
-                      <Text style={[styles.availConnectedText, { color: colors.success }]}>Connected</Text>
-                    </View>
-                  </View>
-
-                  {/* Other roommates — not connected */}
-                  {roommates.filter((r) => r.id !== currentUserId).map((rm) => (
-                    <View key={rm.id} style={[styles.availRoommateRow, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-                      <View style={[styles.availRoommateDot, { backgroundColor: rm.color + "44" }]}>
-                        <Text style={[styles.availRoommateInitial, { color: rm.color }]}>
-                          {rm.name.charAt(0)}
-                        </Text>
-                      </View>
-                      <Text style={[styles.availRoommateName, { color: colors.mutedForeground }]}>{rm.name}</Text>
-                      <View style={[styles.availInviteBtn, { backgroundColor: colors.primary + "14", borderColor: colors.primary + "33" }]}>
-                        <Feather name="send" size={9} color={colors.primary} />
-                        <Text style={[styles.availInviteText, { color: colors.primary }]}>Invite</Text>
-                      </View>
-                    </View>
-                  ))}
-
-                  {/* Availability legend */}
-                  <View style={styles.availLegendRow}>
-                    <View style={styles.availLegendItem}>
-                      <View style={[styles.availDot, { backgroundColor: colors.success }]} />
-                      <Text style={[styles.availLegendLabel, { color: colors.mutedForeground }]}>Free</Text>
-                    </View>
-                    <View style={styles.availLegendItem}>
-                      <View style={[styles.availDot, { backgroundColor: colors.warning }]} />
-                      <Text style={[styles.availLegendLabel, { color: colors.mutedForeground }]}>Busy</Text>
-                    </View>
-                    <View style={styles.availLegendItem}>
-                      <View style={[styles.availDot, { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border }]} />
-                      <Text style={[styles.availLegendLabel, { color: colors.mutedForeground }]}>Not connected</Text>
-                    </View>
-                  </View>
-                </View>
-              )}
-            </View>
-          );
-        })()}
-
-        {/* ── Roommate Activity ────────────────────────── */}
-        {(() => {
-          const myStatus = roommateStatuses[currentUserId] ?? "unknown";
-          const myStatusCfg = STATUS_CONFIG[myStatus];
-          const isHome = myStatus === "home" || myStatus === "asleep";
-
-          return (
-            <View style={[styles.activityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {/* Header */}
-              <View style={styles.activityHeader}>
-                <View style={[styles.activityHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
-                  <Feather name="users" size={14} color={colors.primary} />
-                </View>
-                <Text style={[styles.activityTitle, { color: colors.foreground }]}>Roommate Activity</Text>
-                {homeLocation && locationPermission === "granted" && distanceFromHome !== null && (
-                  <View style={[styles.distBadge, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-                    <Feather name="navigation" size={9} color={colors.mutedForeground} />
-                    <Text style={[styles.distText, { color: colors.mutedForeground }]}>{distanceFromHome}m</Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Current user row */}
-              <View style={[styles.activitySection, { borderColor: colors.border }]}>
-                <Text style={[styles.activitySectionLabel, { color: colors.mutedForeground }]}>Your status</Text>
-
-                {/* Status indicator */}
-                <View style={styles.myStatusRow}>
-                  {/* Avatar with status dot */}
-                  <View>
-                    <RoommateAvatar
-                      name={roommates.find((r) => r.id === currentUserId)?.name ?? "Me"}
-                      color={roommates.find((r) => r.id === currentUserId)?.color ?? colors.primary}
-                      size={42}
-                    />
-                    <View style={[styles.statusDotBig, { backgroundColor: myStatusCfg.color, borderColor: colors.card }]}>
-                      <Feather name={myStatusCfg.icon} size={8} color="#fff" />
-                    </View>
-                  </View>
-
-                  <View style={{ flex: 1, gap: 6 }}>
-                    {/* Current status display */}
-                    <View style={[styles.myStatusBadge, { backgroundColor: myStatusCfg.color + "18", borderColor: myStatusCfg.color + "44" }]}>
-                      <Feather name={myStatusCfg.icon} size={13} color={myStatusCfg.color} />
-                      <Text style={[styles.myStatusLabel, { color: myStatusCfg.color }]}>{myStatusCfg.label}</Text>
-                      {locationPermission === "granted" && homeLocation && (
-                        <Text style={[styles.myStatusSub, { color: myStatusCfg.color + "99" }]}>• auto-tracked</Text>
-                      )}
-                    </View>
-
-                    {/* Manual status buttons */}
-                    <View style={styles.statusBtnRow}>
-                      {locationPermission !== "granted" ? (
-                        <TouchableOpacity
-                          style={[styles.statusBtn, { backgroundColor: colors.primary, flex: 1 }]}
-                          onPress={requestLocation}
-                        >
-                          {locationLoading ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                          ) : (
-                            <>
-                              <Feather name="map-pin" size={12} color="#fff" />
-                              <Text style={[styles.statusBtnText, { color: "#fff" }]}>Enable Location</Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-                      ) : (
-                        <>
-                          <TouchableOpacity
-                            style={[styles.statusBtn, { backgroundColor: isHome ? colors.muted : colors.success + "18", borderColor: isHome ? colors.border : colors.success + "44", borderWidth: 1 }]}
-                            onPress={() => { setRoommateStatus(currentUserId, "home"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                          >
-                            <Feather name="home" size={12} color={isHome && myStatus === "home" ? colors.success : colors.mutedForeground} />
-                            <Text style={[styles.statusBtnText, { color: myStatus === "home" ? colors.success : colors.mutedForeground }]}>Home</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.statusBtn, { backgroundColor: myStatus === "asleep" ? colors.secondary : "transparent", borderColor: myStatus === "asleep" ? "#8B5CF6" + "55" : colors.border, borderWidth: 1, opacity: isHome ? 1 : 0.4 }]}
-                            disabled={!isHome}
-                            onPress={() => { setRoommateStatus(currentUserId, myStatus === "asleep" ? "home" : "asleep"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                          >
-                            <Feather name="moon" size={12} color={myStatus === "asleep" ? "#8B5CF6" : colors.mutedForeground} />
-                            <Text style={[styles.statusBtnText, { color: myStatus === "asleep" ? "#8B5CF6" : colors.mutedForeground }]}>Asleep</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.statusBtn, { backgroundColor: myStatus === "away" ? colors.warning + "18" : "transparent", borderColor: myStatus === "away" ? colors.warning + "55" : colors.border, borderWidth: 1 }]}
-                            onPress={() => { setRoommateStatus(currentUserId, "away"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                          >
-                            <Feather name="map-pin" size={12} color={myStatus === "away" ? colors.warning : colors.mutedForeground} />
-                            <Text style={[styles.statusBtnText, { color: myStatus === "away" ? colors.warning : colors.mutedForeground }]}>Away</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
-                  </View>
-                </View>
-
-                {/* Home location control */}
-                {locationPermission === "granted" && (
-                  <TouchableOpacity
-                    style={[styles.homeLocBtn, { backgroundColor: homeLocation ? colors.success + "0C" : colors.primary + "10", borderColor: homeLocation ? colors.success + "33" : colors.primary + "33" }]}
-                    onPress={captureHomeLocation}
-                  >
-                    {locationLoading ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    ) : (
-                      <>
-                        <Feather name="crosshair" size={13} color={homeLocation ? colors.success : colors.primary} />
-                        <Text style={[styles.homeLocText, { color: homeLocation ? colors.success : colors.primary }]}>
-                          {homeLocation ? `Home set · ${homeLocation.radius}m radius` : "Set Home Location"}
-                        </Text>
-                        {!homeLocation && (
-                          <Text style={[styles.homeLocHint, { color: colors.mutedForeground }]}>tap to use current location</Text>
-                        )}
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Other roommates */}
-              <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 8 }}>
-                <Text style={[styles.activitySectionLabel, { color: colors.mutedForeground }]}>Household</Text>
-                <View style={styles.activityGrid}>
-                  {roommates.filter((r) => r.id !== currentUserId).map((rm) => {
-                    const st = roommateStatuses[rm.id] ?? "unknown";
-                    const cfg = STATUS_CONFIG[st];
-                    return (
-                      <View key={rm.id} style={[styles.activityRmCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                        <View style={{ position: "relative" }}>
-                          <RoommateAvatar name={rm.name} color={rm.color} size={34} />
-                          <View style={[styles.statusDotSm, { backgroundColor: cfg.color, borderColor: colors.card }]}>
-                            <Feather name={cfg.icon} size={6} color="#fff" />
-                          </View>
-                        </View>
-                        <Text style={[styles.activityRmName, { color: colors.foreground }]} numberOfLines={1}>
-                          {rm.name.split(" ")[0]}
-                        </Text>
-                        <View style={[styles.activityRmBadge, { backgroundColor: cfg.color + "18" }]}>
-                          <Text style={[styles.activityRmStatus, { color: cfg.color }]}>{cfg.label}</Text>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-                <Text style={[styles.activityHint, { color: colors.mutedForeground }]}>
-                  Roommates update their own status when they join Homie
-                </Text>
-              </View>
-            </View>
-          );
-        })()}
+              );
+            })}
+          </View>
+        </View>
 
         {/* ── Roommate chore sections ───────────────────── */}
         <View style={styles.listPad}>
@@ -960,6 +797,7 @@ export default function GroupChoresScreen() {
             roommatesWithChores.map(({ roommate, chores: rc }) => {
               const pending = rc.filter((c) => !c.completed);
               const done = rc.filter((c) => c.completed);
+              const isExpanded = expandedChoreSections.has(roommate.id);
               return (
                 <View
                   key={roommate.id}
@@ -971,12 +809,17 @@ export default function GroupChoresScreen() {
                     },
                   ]}
                 >
-                  {/* Roommate header */}
-                  <View style={styles.sectionHeader}>
+                  {/* Roommate header — tap anywhere to expand/collapse */}
+                  <TouchableOpacity
+                    style={styles.sectionHeader}
+                    onPress={() => toggleChoreSection(roommate.id)}
+                    activeOpacity={0.7}
+                  >
                     <RoommateAvatar
                       name={roommate.name}
                       color={roommate.color}
                       size={38}
+                      imageUri={roommate.avatarUri}
                     />
                     <View style={styles.sectionInfo}>
                       <Text
@@ -996,6 +839,17 @@ export default function GroupChoresScreen() {
                         {done.length}/{rc.length} done
                       </Text>
                     </View>
+                    {/* + Add a chore to this roommate's list */}
+                    <TouchableOpacity
+                      onPress={() => openAddChoreFor(roommate.id)}
+                      style={[
+                        styles.sectionAddBtn,
+                        { backgroundColor: roommate.color + "18", borderColor: roommate.color + "44" },
+                      ]}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Feather name="plus" size={15} color={roommate.color} />
+                    </TouchableOpacity>
                     {/* Mini health bar for this roommate */}
                     <View style={styles.miniBarContainer}>
                       <View
@@ -1018,7 +872,7 @@ export default function GroupChoresScreen() {
                           ]}
                         />
                       </View>
-                      <View
+                      {pointsEnabled && <View
                         style={[
                           styles.ptsBadge,
                           { backgroundColor: roommate.color + "18" },
@@ -1032,12 +886,19 @@ export default function GroupChoresScreen() {
                         >
                           {roommate.weeklyPoints} pts
                         </Text>
-                      </View>
+                      </View>}
                     </View>
-                  </View>
+                    {/* Chevron — visual affordance for expand/collapse */}
+                    <Feather
+                      name={isExpanded ? "chevron-up" : "chevron-down"}
+                      size={18}
+                      color={colors.mutedForeground}
+                      style={{ marginLeft: 4 }}
+                    />
+                  </TouchableOpacity>
 
-                  {/* Chore rows */}
-                  {rc.length === 0 ? (
+                  {/* Chore rows (only when this section is expanded) */}
+                  {isExpanded && (rc.length === 0 ? (
                     <Text
                       style={[
                         styles.noChores,
@@ -1054,11 +915,52 @@ export default function GroupChoresScreen() {
                       const nudged = nudgedChores.has(key);
                       const isPickedUp = pickedUpChores.has(chore.id);
                       const isSomeoneElse = chore.assignedTo !== currentUserId;
+                      const slideAnim = getSlideAnim(chore.id);
 
                       return (
-                        <TouchableOpacity
+                        <View
                           key={chore.id}
-                          activeOpacity={chore.completed ? 1 : 0.7}
+                          style={{ overflow: "hidden", position: "relative" }}
+                        >
+                        {/* Brown reveal panel behind the row — only mounted
+                            while the row is animating, so already-completed
+                            rows never show brown behind their transparent bg. */}
+                        {animatingChores.has(chore.id) && (
+                          <View
+                            pointerEvents="none"
+                            style={{
+                              position: "absolute",
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              backgroundColor: COMPLETE_REVEAL_BROWN,
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexDirection: "row",
+                              gap: 8,
+                            }}
+                          >
+                            <Feather name="check" size={14} color="#FFFFFF" />
+                            <Text
+                              style={{
+                                color: "#FFFFFF",
+                                fontFamily: "Inter_600SemiBold",
+                                fontSize: 13,
+                                letterSpacing: 0.2,
+                              }}
+                            >
+                              Done!
+                            </Text>
+                          </View>
+                        )}
+                        <Animated.View
+                          style={{
+                            transform: [{ translateX: slideAnim.x }],
+                          }}
+                        >
+                        <TouchableOpacity
+                          activeOpacity={0.7}
                           onPress={() =>
                             handleChorePress(chore.id, chore.assignedTo, chore.title, chore.points)
                           }
@@ -1172,15 +1074,213 @@ export default function GroupChoresScreen() {
                             </TouchableOpacity>
                           )}
                         </TouchableOpacity>
+                        {/* Darkening overlay — fades in fast on top of the row
+                            so it darkens the instant it's checked. */}
+                        <Animated.View
+                          pointerEvents="none"
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: "#000",
+                            opacity: slideAnim.dark,
+                          }}
+                        />
+                        </Animated.View>
+                        </View>
                       );
                     })
-                  )}
+                  ))}
                 </View>
               );
             })
           )}
         </View>
       </ScrollView>
+      )}
+
+      {/* ── Add Chore Modal (full-screen, matches New IOU) ── */}
+      <Modal visible={showAddChoreModal} transparent animationType="none" onRequestClose={closeAddChoreSheet}>
+        <Animated.View
+          style={[
+            styles.addChoreContainer,
+            { backgroundColor: colors.background, transform: [{ translateY: addChoreTranslateY }] },
+          ]}
+        >
+          {/* Header: title + X close button */}
+          <View
+            style={[
+              styles.addChoreHeaderRow,
+              { paddingTop: insets.top + 10, borderBottomColor: colors.border },
+            ]}
+          >
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border, top: insets.top + 5 }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.addChoreHeaderTitle, { color: colors.foreground }]}>Add Chore</Text>
+              <Text style={[styles.addChoreHeaderSub, { color: colors.mutedForeground }]}>
+                Assign to any roommate — including yourself
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={closeAddChoreSheet}
+              style={[styles.addChoreCloseBtn, { backgroundColor: colors.muted }]}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Feather name="x" size={22} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1 }}
+          >
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.addChoreBody}
+            >
+              {/* Assign to — pre-selected to whoever's + button was tapped */}
+              <Text style={[styles.addChoreLabel, { color: colors.mutedForeground }]}>Assign to</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+                style={{ marginBottom: 6 }}
+              >
+                {roommates.map((r) => {
+                  const selected = addChoreTargetId === r.id;
+                  return (
+                    <TouchableOpacity
+                      key={r.id}
+                      style={[
+                        styles.addChoreRoommateChip,
+                        {
+                          backgroundColor: selected ? r.color + "22" : colors.muted,
+                          borderColor: selected ? r.color : colors.border,
+                        },
+                      ]}
+                      onPress={() => setAddChoreTargetId(r.id)}
+                    >
+                      <RoommateAvatar name={r.name} color={r.color} size={22} imageUri={r.avatarUri} />
+                      <Text
+                        style={{
+                          color: selected ? r.color : colors.mutedForeground,
+                          fontFamily: "Inter_600SemiBold",
+                          fontSize: 13,
+                          marginLeft: 6,
+                        }}
+                      >
+                        {r.id === currentUserId ? "You" : r.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={[styles.addChoreLabel, { color: colors.mutedForeground }]}>Task Name</Text>
+              <TextInput
+                style={[styles.addChoreInput, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
+                placeholder="e.g. Clean bathroom"
+                placeholderTextColor={colors.mutedForeground}
+                value={newChoreTitle}
+                onChangeText={setNewChoreTitle}
+                autoFocus
+              />
+
+              <Text style={[styles.addChoreLabel, { color: colors.mutedForeground }]}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }} style={{ marginBottom: 6 }}>
+                {CATEGORIES.map((cat) => {
+                  const selected = newChoreCategory === cat.key;
+                  return (
+                    <TouchableOpacity
+                      key={cat.key}
+                      style={[
+                        styles.addChoreCatChip,
+                        {
+                          backgroundColor: selected ? colors.primary + "22" : colors.secondary,
+                          borderColor: selected ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => setNewChoreCategory(cat.key)}
+                    >
+                      <Feather name={cat.icon} size={14} color={selected ? colors.primary : colors.mutedForeground} />
+                      <Text
+                        style={{
+                          color: selected ? colors.primary : colors.mutedForeground,
+                          fontFamily: "Inter_600SemiBold",
+                          fontSize: 12,
+                          marginLeft: 4,
+                        }}
+                      >
+                        {cat.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {pointsEnabled && <><Text style={[styles.addChoreLabel, { color: colors.mutedForeground }]}>Points ({newChorePoints})</Text>
+              <View style={styles.addChorePointsRow}>
+                {POINTS_OPTIONS.map((p) => {
+                  const selected = newChorePoints === p;
+                  return (
+                    <TouchableOpacity
+                      key={p}
+                      style={[
+                        styles.addChorePointsChip,
+                        {
+                          backgroundColor: selected ? colors.primary : colors.secondary,
+                          borderColor: selected ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => setNewChorePoints(p)}
+                    >
+                      <Text
+                        style={{
+                          color: selected ? "#fff" : colors.mutedForeground,
+                          fontFamily: "Inter_600SemiBold",
+                          fontSize: 13,
+                        }}
+                      >
+                        {p}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View></>}
+            </ScrollView>
+
+            {/* Sticky footer — primary action */}
+            <View
+              style={[
+                styles.addChoreFooter,
+                {
+                  backgroundColor: colors.background,
+                  borderTopColor: colors.border,
+                  paddingBottom: Math.max(insets.bottom, 12) + 4,
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.addChoreSubmit,
+                  {
+                    backgroundColor: newChoreTitle.trim() && addChoreTargetId ? colors.primary : colors.muted,
+                  },
+                ]}
+                disabled={!newChoreTitle.trim() || !addChoreTargetId}
+                onPress={submitAddChore}
+              >
+                <Text style={[styles.addChoreSubmitText, { color: newChoreTitle.trim() && addChoreTargetId ? "#fff" : colors.mutedForeground }]}>
+                  Add Chore
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </Animated.View>
+      </Modal>
     </View>
   );
 }
@@ -1189,13 +1289,13 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     paddingHorizontal: 20,
-    paddingBottom: 14,
+    paddingBottom: 16,
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
   },
-  headerSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginBottom: 2 },
-  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 28, marginTop: 0, letterSpacing: -0.5 },
+  headerSub: { fontFamily: "Inter_400Regular", fontSize: 13 },
+  headerTitle: { fontFamily: "Inter_700Bold", fontSize: 30, lineHeight: 36, marginTop: 2 },
   anonBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -1212,11 +1312,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 14,
     borderRadius: 22,
+    borderWidth: 1,
     overflow: "hidden",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.09,
-    shadowRadius: 16,
-    elevation: 4,
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 3,
   },
   glowStrip: { height: 4, width: "100%" },
   plantCardInner: {
@@ -1268,13 +1369,9 @@ const styles = StyleSheet.create({
   // Roommate list
   listPad: { paddingHorizontal: 16, gap: 12 },
   section: {
-    borderRadius: 20,
+    borderRadius: 22,
+    borderWidth: 1,
     overflow: "hidden",
-    shadowColor: "#1A1140",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 3,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -1333,110 +1430,13 @@ const styles = StyleSheet.create({
   },
   nudgeTxt: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
 
-  // ── Calendar ──
-  calCard: {
-    marginHorizontal: 16,
-    marginBottom: 14,
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowColor: "#1A1140",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  calHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 10,
-  },
-  calHeaderIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  calTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
-  calRange: { fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 1 },
-  calNav: { flexDirection: "row", alignItems: "center", gap: 4 },
-  calNavBtn: {
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 7,
-    paddingVertical: 5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  calNavToday: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
-  calDaysRow: {
-    paddingHorizontal: 10,
-    paddingBottom: 10,
-    gap: 6,
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  calDayCol: {
-    width: 56,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    alignItems: "center",
-    gap: 4,
-  },
-  calDayName: { fontFamily: "Inter_500Medium", fontSize: 10 },
-  calDayNum: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  calDayNumText: { fontFamily: "Inter_700Bold", fontSize: 13 },
-  calChores: { width: "100%", gap: 3, marginTop: 2 },
-  calEmpty: {
-    height: 4,
-    borderRadius: 2,
-    width: "60%",
-    alignSelf: "center",
-    marginTop: 4,
-  },
-  calPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    paddingHorizontal: 5,
-    paddingVertical: 3,
-  },
-  calPillDot: { width: 5, height: 5, borderRadius: 3 },
-  calPillName: { fontFamily: "Inter_600SemiBold", fontSize: 10, flex: 1 },
-  calLegend: {
-    flexDirection: "row",
-    paddingHorizontal: 14,
-    paddingBottom: 12,
-    gap: 12,
-  },
-  calLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  calLegendDot: { width: 8, height: 8, borderRadius: 4 },
-  calLegendName: { fontFamily: "Inter_400Regular", fontSize: 11 },
-
   // ── Roommate Activity ──
   activityCard: {
     marginHorizontal: 16,
     marginBottom: 14,
-    borderRadius: 20,
+    borderRadius: 22,
+    borderWidth: 1,
     overflow: "hidden",
-    shadowColor: "#1A1140",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 3,
   },
   activityHeader: {
     flexDirection: "row",
@@ -1536,7 +1536,7 @@ const styles = StyleSheet.create({
   activityRmCard: {
     alignItems: "center",
     gap: 4,
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 10,
@@ -1551,158 +1551,292 @@ const styles = StyleSheet.create({
   activityRmStatus: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
   activityHint: { fontFamily: "Inter_400Regular", fontSize: 11, textAlign: "center", marginTop: 2 },
 
-  // ── Calendar nav row ──
-  calNavRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingBottom: 8,
-    gap: 6,
-    justifyContent: "flex-end",
-  },
-
-  // ── Busy badge ──
-  busyBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 5,
-    borderWidth: 1,
-    alignSelf: "center",
-  },
-  busyBadgeText: { fontFamily: "Inter_700Bold", fontSize: 8 },
-
-  // ── Availability toggle button ──
-  availBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  availBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
-
-  // ── Availability dot row inside each day column ──
-  availDotRow: {
+  // ── The Homies ──
+  homiesGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 2,
-    justifyContent: "center",
-    marginTop: 4,
-    paddingHorizontal: 2,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    gap: 10,
   },
-  availDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+  homieTile: {
+    flexBasis: "30%",
+    flexGrow: 1,
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  homieName: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+    maxWidth: "100%",
+  },
+  homieEmojiBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  homieEmoji: {
+    fontSize: 22,
+    // Ensures the emoji centers visually in the button
+    textAlign: "center",
+    lineHeight: 28,
   },
 
-  // ── Availability panel ──
-  availPanel: {
-    borderTopWidth: StyleSheet.hairlineWidth,
+  // ── Tab switch ──
+  tabSwitch: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 4,
+    gap: 4,
+  },
+  tabSwitchBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  tabSwitchText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
+
+  // ── Calendar ──
+  monthHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  monthLabel: { fontFamily: "Inter_700Bold", fontSize: 16 },
+  monthNavBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dowRow: {
+    flexDirection: "row",
+    paddingHorizontal: 4,
+    marginBottom: 4,
+  },
+  dowText: {
+    flex: 1,
+    textAlign: "center",
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  daysGrid: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    marginBottom: 14,
+  },
+  weekRow: {
+    flexDirection: "row",
+  },
+  dayCell: {
+    flex: 1,
+    aspectRatio: 1,
+    margin: 2,
+    borderRadius: 9,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dayNum: { fontSize: 13 },
+  chartWeekDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 3,
+  },
+  weekCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 10,
+    overflow: "hidden",
+  },
+  weekCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 14,
     paddingTop: 12,
-    paddingBottom: 14,
-    gap: 8,
+    paddingBottom: 8,
   },
-  availPanelTitle: { fontFamily: "Inter_600SemiBold", fontSize: 13, marginBottom: 2 },
-  availRoommateRow: {
+  weekChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  weekChipText: { fontFamily: "Inter_700Bold", fontSize: 11 },
+  weekRangeText: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  assignRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  availRoommateDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  slotIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
   },
-  availRoommateInitial: { fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff" },
-  availRoommateName: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 13 },
-  availConnectedBadge: {
+  slotLabelText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 13 },
+  assigneeTag: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
   },
-  availConnectedText: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
-  availInviteBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+  assigneeDot: { width: 6, height: 6, borderRadius: 3 },
+  assigneeName: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
+  weekOutCard: {
+    borderRadius: 12,
     borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    alignItems: "center",
   },
-  availInviteText: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
-
-  // ── Availability error ──
-  availErrorRow: {
-    flexDirection: "row",
+  weekOutText: { fontFamily: "Inter_400Regular", fontSize: 12 },
+  calEmptyCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20,
     alignItems: "center",
     gap: 6,
-    marginHorizontal: 14,
-    marginBottom: 6,
-    borderRadius: 8,
+  },
+  calEmptyTitle: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  calEmptySub: { fontFamily: "Inter_400Regular", fontSize: 12, textAlign: "center" },
+
+  // ── Section-header + button ──
+  sectionAddBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+
+  // ── Full-screen Add Chore modal (matches New IOU) ──
+  addChoreContainer: { flex: 1, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden" },
+  addChoreHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  addChoreHeaderTitle: { fontFamily: "Inter_700Bold", fontSize: 26 },
+  addChoreHeaderSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
+  addChoreCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetHandle: {
+    position: "absolute",
+    left: "50%",
+    marginLeft: -20,
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+  },
+  addChoreBody: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 28,
+    gap: 4,
+  },
+  addChoreFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  addChoreLabel: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    marginBottom: 4,
+    marginTop: 6,
+  },
+  addChoreInput: {
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontFamily: "Inter_500Medium",
+    fontSize: 15,
+    marginBottom: 4,
+  },
+  addChoreRoommateChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 20,
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  availErrorText: { fontFamily: "Inter_400Regular", fontSize: 11 },
-
-  // ── Availability legend ──
-  availLegendRow: {
+  addChoreCatChip: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 2,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(0,0,0,0.06)",
+    alignItems: "center",
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
-  availLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  availLegendLabel: { fontFamily: "Inter_400Regular", fontSize: 11 },
-
-  // ── Invite code card ──
-  inviteCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
+  addChorePointsRow: {
+    flexDirection: "row",
+    gap: 8,
     marginBottom: 4,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    padding: 16,
-    gap: 14,
   },
-  inviteTop: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  inviteIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+  addChorePointsChip: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  addChoreSubmit: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 14,
   },
-  inviteLabel: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
-  inviteSub: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2, lineHeight: 16 },
-  inviteCodeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  inviteCode: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 26,
-  },
-  inviteShareBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 10,
-  },
-  inviteShareText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#FFF" },
+  addChoreSubmitText: { fontFamily: "Inter_700Bold", fontSize: 16 },
 });

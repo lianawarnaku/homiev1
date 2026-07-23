@@ -3,6 +3,8 @@ import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
+  Dimensions,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -15,14 +17,26 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Reanimated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
+
+const SCREEN_HEIGHT = Dimensions.get("window").height;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
-import { useColors } from "@/hooks/useColors";
+import { useTheme } from "@/constants/colors";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useDraggableSheet } from "@/hooks/useDraggableSheet";
+import { success as hapticSuccess } from "@/lib/haptics";
 import {
   type ExpenseCategory,
+  type Expense,
   type RecurringInterval,
   useAppContext,
 } from "@/context/AppContext";
@@ -38,6 +52,8 @@ const EXPENSE_CATEGORIES: {
   { key: "entertainment", label: "Fun", icon: "music" },
   { key: "other", label: "Other", icon: "package" },
 ];
+
+const AnimatedFlatList = Reanimated.createAnimatedComponent(FlatList<Expense>);
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -58,7 +74,7 @@ function buildEvenSplits(
 }
 
 export default function ExpensesScreen() {
-  const colors = useColors();
+  const colors = useTheme();
   const insets = useSafeAreaInsets();
   const {
     roommates,
@@ -70,6 +86,8 @@ export default function ExpensesScreen() {
     markPersonPaid,
     getBalances,
     currentUserId,
+    pendingIouDraft,
+    setPendingIouDraft,
   } = useAppContext();
 
   const { confirm } = useConfirm();
@@ -90,8 +108,114 @@ export default function ExpensesScreen() {
   const [expSplits, setExpSplits] = useState<Record<string, string>>({});
   const [expRecurring, setExpRecurring] = useState<RecurringInterval | null>(null);
   const [expRecurringCustom, setExpRecurringCustom] = useState("");
+  // Locked per-person amounts baked in from the shopping list — the builder
+  // adds `expGroupTotal / N` on top of each of these to derive `expSplits`.
+  // Only populated for shopping-generated IOUs; regular IOUs leave it empty
+  // and the group-total row is hidden.
+  const [expItemizedSplits, setExpItemizedSplits] = useState<Record<string, number>>({});
+  const [expGroupTotal, setExpGroupTotal] = useState("");
+
+  // Consume a pre-filled IOU draft handed off from the Shopping tab. When
+  // present, populate the builder state and pop the modal, then clear the
+  // draft so we don't re-open on subsequent renders.
+  useEffect(() => {
+    if (!pendingIouDraft) return;
+    setEditingExpenseId(null);
+    setExpTitle(pendingIouDraft.title);
+    setExpCategory(pendingIouDraft.category);
+    setExpPaidBy(pendingIouDraft.paidBy);
+    setExpTotalAmount(pendingIouDraft.totalAmount);
+    setExpParticipants(pendingIouDraft.participants);
+    setExpSplits(pendingIouDraft.splits);
+    setExpItemizedSplits(pendingIouDraft.itemizedSplits ?? {});
+    setExpGroupTotal(pendingIouDraft.groupTotal ?? "");
+    setExpRecurring(null);
+    setExpRecurringCustom("");
+    setShowExpenseModal(true);
+    setPendingIouDraft(null);
+  }, [pendingIouDraft, setPendingIouDraft]);
+
+  const hasItemized = Object.keys(expItemizedSplits).length > 0;
+
+  // Whenever itemized amounts, group total, or participants change, recompute
+  // per-person splits and the grand total. This only fires for shopping-
+  // generated IOUs (where itemizedSplits is non-empty); ordinary IOUs are
+  // unaffected because the effect is a no-op with empty itemized.
+  useEffect(() => {
+    if (!hasItemized) return;
+    const groupParsed = parseFloat(expGroupTotal);
+    const group = Number.isFinite(groupParsed) && groupParsed > 0 ? groupParsed : 0;
+    const N = expParticipants.length;
+    const groupShare = N > 0 ? group / N : 0;
+    const nextSplits: Record<string, string> = {};
+    let sum = 0;
+    expParticipants.forEach((id) => {
+      const itemized = expItemizedSplits[id] ?? 0;
+      const owed = itemized + groupShare;
+      nextSplits[id] = owed > 0 ? owed.toFixed(2) : "";
+      sum += owed;
+    });
+    setExpSplits(nextSplits);
+    setExpTotalAmount(sum > 0 ? sum.toFixed(2) : "");
+  }, [hasItemized, expItemizedSplits, expGroupTotal, expParticipants]);
 
   const flatListRef = useRef<FlatList>(null);
+  const expenseScrollY = useSharedValue(0);
+  const expenseScrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      expenseScrollY.value = Math.max(0, event.contentOffset.y);
+    },
+  });
+  const balanceCardStyle = useAnimatedStyle(() => ({
+    height: interpolate(
+      expenseScrollY.value,
+      [0, 120],
+      [112, 64],
+      Extrapolation.CLAMP,
+    ),
+  }));
+  const balanceCardContentStyle = useAnimatedStyle(() => ({
+    paddingVertical: interpolate(
+      expenseScrollY.value,
+      [0, 120],
+      [14, 6],
+      Extrapolation.CLAMP,
+    ),
+  }));
+  const balanceAmountStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(
+      expenseScrollY.value,
+      [0, 120],
+      [34, 22],
+      Extrapolation.CLAMP,
+    ),
+    marginTop: interpolate(
+      expenseScrollY.value,
+      [0, 120],
+      [4, 0],
+      Extrapolation.CLAMP,
+    ),
+  }));
+  const balanceHintStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      expenseScrollY.value,
+      [0, 72],
+      [1, 0],
+      Extrapolation.CLAMP,
+    ),
+    height: interpolate(
+      expenseScrollY.value,
+      [0, 100],
+      [18, 0],
+      Extrapolation.CLAMP,
+    ),
+    marginTop: interpolate(
+      expenseScrollY.value,
+      [0, 100],
+      [2, 0],
+      Extrapolation.CLAMP,
+    ),
+  }));
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
@@ -143,8 +267,12 @@ export default function ExpensesScreen() {
   }, [expTotalAmount, expParticipants]);
 
   useEffect(() => {
+    // For shopping-derived IOUs, splits are driven by expItemizedSplits +
+    // expGroupTotal via the recompute effect above — don't clobber them with
+    // an even-split of the total.
+    if (hasItemized) return;
     recalcEvenSplit();
-  }, [expParticipants]);
+  }, [expParticipants, hasItemized, recalcEvenSplit]);
 
   // ── Derived: sum of splits, remainder ─────────────────────────────────────
   const splitSum = useMemo(() => {
@@ -188,7 +316,46 @@ export default function ExpensesScreen() {
     setExpRecurring(null);
     setExpRecurringCustom("");
     setEditingExpenseId(null);
+    setExpItemizedSplits({});
+    setExpGroupTotal("");
   };
+
+  // ── Open / close animation for the New IOU sheet ───────────────────────────
+  // The sheet is a full-screen overlay driven entirely by a single translateY
+  // value. On open: spring up from below with a subtle overshoot. On close (via
+  // the top-right X button or after sending): timed slide back down off-screen,
+  // then dismiss the modal and reset form state.
+  const iouTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+
+  useEffect(() => {
+    if (showExpenseModal) {
+      iouTranslateY.setValue(SCREEN_HEIGHT);
+      Animated.spring(iouTranslateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        damping: 22,
+        stiffness: 180,
+        mass: 0.8,
+      }).start();
+    }
+  }, [showExpenseModal, iouTranslateY]);
+
+  const closeIou = useCallback(() => {
+    Animated.timing(iouTranslateY, {
+      toValue: SCREEN_HEIGHT,
+      duration: 260,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      setShowExpenseModal(false);
+      resetModal();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [iouTranslateY]);
+  const iouDragHandlers = useDraggableSheet(iouTranslateY, () => {
+    setShowExpenseModal(false);
+    resetModal();
+  });
 
   const openEditModal = (item: (typeof expenses)[number]) => {
     setEditingExpenseId(item.id);
@@ -204,6 +371,9 @@ export default function ExpensesScreen() {
     );
     setExpRecurring(item.recurring ?? null);
     setExpRecurringCustom(item.recurringCustom ?? "");
+    // Editing an existing IOU: no shopping-list itemization to preserve
+    setExpItemizedSplits({});
+    setExpGroupTotal("");
     setShowExpenseModal(true);
   };
 
@@ -229,8 +399,7 @@ export default function ExpensesScreen() {
       addExpense({ ...payload, date: new Date().toISOString(), settled: false });
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    resetModal();
-    setShowExpenseModal(false);
+    closeIou();
   };
 
   const handleSendIOU = () => {
@@ -260,12 +429,15 @@ export default function ExpensesScreen() {
           { paddingTop: topPad + 16, backgroundColor: colors.background },
         ]}
       >
-        <Text style={[styles.title, { color: colors.foreground }]}>Expenses</Text>
+        <View>
+          <Text style={[styles.title, { color: colors.foreground }]}>Expenses</Text>
+          <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Shared costs and repayments</Text>
+        </View>
         <TouchableOpacity
           style={[styles.addHeaderBtn, { backgroundColor: colors.primary }]}
           onPress={() => { resetModal(); setShowExpenseModal(true); }}
         >
-          <Feather name="plus" size={18} color="#fff" />
+          <Feather name="plus" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -273,122 +445,78 @@ export default function ExpensesScreen() {
           {/* Balance cards — You owe on top, Owed to you below */}
           <View style={styles.balanceRow}>
             {iOwe > 0 && (
-              <TouchableOpacity
+              <Reanimated.View
                 style={[
                   styles.balanceCard,
+                  balanceCardStyle,
                   { backgroundColor: colors.destructive + "14", borderColor: colors.destructive + "40" },
                 ]}
-                onPress={() => scrollToExpense(firstIOweIndex)}
-                activeOpacity={0.75}
               >
-                <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>
-                  You owe
-                </Text>
-                <Text style={[styles.balanceAmount, { color: colors.destructive }]}>
-                  -${iOwe.toFixed(2)}
-                </Text>
-                <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>
-                  Tap to view
-                </Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.balanceCardPressable}
+                  onPress={() => scrollToExpense(firstIOweIndex)}
+                  activeOpacity={0.75}
+                >
+                  <Reanimated.View style={[styles.balanceCardContent, balanceCardContentStyle]}>
+                    <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>You owe</Text>
+                    <Reanimated.Text style={[styles.balanceAmount, balanceAmountStyle, { color: colors.destructive }]}>
+                      -${iOwe.toFixed(2)}
+                    </Reanimated.Text>
+                    <Reanimated.Text style={[styles.balanceHint, balanceHintStyle, { color: colors.mutedForeground }]}>
+                      Tap to view
+                    </Reanimated.Text>
+                  </Reanimated.View>
+                </TouchableOpacity>
+              </Reanimated.View>
             )}
             {owedToMe > 0 && (
-              <TouchableOpacity
+              <Reanimated.View
                 style={[
                   styles.balanceCard,
+                  balanceCardStyle,
                   { backgroundColor: colors.success + "14", borderColor: colors.success + "40" },
                 ]}
-                onPress={() => scrollToExpense(firstOwedToMeIndex)}
-                activeOpacity={0.75}
               >
-                <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>
-                  Owed to you
-                </Text>
-                <Text style={[styles.balanceAmount, { color: colors.success }]}>
-                  +${owedToMe.toFixed(2)}
-                </Text>
-                <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>
-                  Tap to view
-                </Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.balanceCardPressable}
+                  onPress={() => scrollToExpense(firstOwedToMeIndex)}
+                  activeOpacity={0.75}
+                >
+                  <Reanimated.View style={[styles.balanceCardContent, balanceCardContentStyle]}>
+                    <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Owed to you</Text>
+                    <Reanimated.Text style={[styles.balanceAmount, balanceAmountStyle, { color: colors.success }]}>
+                      +${owedToMe.toFixed(2)}
+                    </Reanimated.Text>
+                    <Reanimated.Text style={[styles.balanceHint, balanceHintStyle, { color: colors.mutedForeground }]}>
+                      Tap to view
+                    </Reanimated.Text>
+                  </Reanimated.View>
+                </TouchableOpacity>
+              </Reanimated.View>
             )}
             {owedToMe === 0 && iOwe === 0 && (
-              <View
+              <Reanimated.View
                 style={[
                   styles.balanceCard,
+                  balanceCardStyle,
                   { backgroundColor: colors.success + "14", borderColor: colors.success + "40" },
                 ]}
               >
-                <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>
-                  Balance
-                </Text>
-                <Text style={[styles.balanceAmount, { color: colors.success }]}>
-                  $0.00
-                </Text>
-                <Text style={[styles.balanceHint, { color: colors.mutedForeground }]}>
-                  All settled up
-                </Text>
-              </View>
+                <Reanimated.View style={[styles.balanceCardContent, balanceCardContentStyle]}>
+                  <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Balance</Text>
+                  <Reanimated.Text style={[styles.balanceAmount, balanceAmountStyle, { color: colors.success }]}>
+                    $0.00
+                  </Reanimated.Text>
+                  <Reanimated.Text style={[styles.balanceHint, balanceHintStyle, { color: colors.mutedForeground }]}>
+                    All settled up
+                  </Reanimated.Text>
+                </Reanimated.View>
+              </Reanimated.View>
             )}
           </View>
 
-          {/* Per-roommate mini balance strip */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: "center" }}
-            style={{ marginBottom: 10, minHeight: 96 }}
-          >
-            {roommates
-              .filter((r) => r.id !== currentUserId)
-              .map((r) => {
-                const bal = -(balances[r.id] ?? 0);
-                return (
-                  <View
-                    key={r.id}
-                    style={[
-                      styles.miniBalance,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                      },
-                    ]}
-                  >
-                    <RoommateAvatar name={r.name} color={r.color} size={28} />
-                    <Text
-                      style={[
-                        styles.miniName,
-                        { color: colors.foreground },
-                      ]}
-                    >
-                      {r.name}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.miniAmount,
-                        {
-                          color:
-                            bal > 0
-                              ? colors.destructive
-                              : bal < 0
-                              ? colors.success
-                              : colors.mutedForeground,
-                        },
-                      ]}
-                    >
-                      {bal > 0
-                        ? `owes $${bal.toFixed(0)}`
-                        : bal < 0
-                        ? `gets $${Math.abs(bal).toFixed(0)}`
-                        : "even"}
-                    </Text>
-                  </View>
-                );
-              })}
-          </ScrollView>
-
           {/* Expense list */}
-          <FlatList
+          <AnimatedFlatList
             ref={flatListRef}
             data={activeExpenses}
             keyExtractor={(e) => e.id}
@@ -403,6 +531,8 @@ export default function ExpensesScreen() {
               { paddingBottom: 90 + botPad },
             ]}
             showsVerticalScrollIndicator={false}
+            onScroll={expenseScrollHandler}
+            scrollEventThrottle={16}
             ListEmptyComponent={
               <EmptyState
                 icon="dollar-sign"
@@ -492,7 +622,10 @@ export default function ExpensesScreen() {
                           <TouchableOpacity
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             onPress={() =>
-                              confirm("settle_expense", "Settle Up", "Mark this IOU as settled?", () => settleExpense(item.id), { confirmText: "Settle" })
+                              confirm("settle_expense", "Settle Up", "Mark this IOU as settled?", () => {
+                                settleExpense(item.id);
+                                hapticSuccess();
+                              }, { confirmText: "Settle" })
                             }
                           >
                             <Feather
@@ -654,7 +787,7 @@ export default function ExpensesScreen() {
                             },
                           ]}
                         >
-                          <RoommateAvatar name={person.name} color={person.color} size={32} />
+                          <RoommateAvatar name={person.name} color={person.color} size={32} imageUri={person.avatarUri} />
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.detailPersonName, { color: colors.foreground }]}>
                               {isMe ? "You" : person.name}
@@ -694,7 +827,7 @@ export default function ExpensesScreen() {
                                     `Confirm that you've paid ${payer?.name ?? "them"} back $${(amount as number).toFixed(2)}?`,
                                     () => {
                                       markPersonPaid(detailExp.id, currentUserId);
-                                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                                      hapticSuccess();
                                     },
                                     { confirmText: "Yes, I paid" }
                                   );
@@ -744,7 +877,11 @@ export default function ExpensesScreen() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.detailActionBtn, { backgroundColor: colors.success + "14", borderColor: colors.success + "30" }]}
-                        onPress={() => confirm("settle_expense", "Settle Up", "Mark this entire IOU as settled?", () => { settleExpense(detailExp.id); setDetailExpenseId(null); }, { confirmText: "Settle" })}
+                        onPress={() => confirm("settle_expense", "Settle Up", "Mark this entire IOU as settled?", () => {
+                          settleExpense(detailExp.id);
+                          setDetailExpenseId(null);
+                          hapticSuccess();
+                        }, { confirmText: "Settle" })}
                       >
                         <Feather name="check-circle" size={14} color={colors.success} />
                         <Text style={[styles.detailActionBtnText, { color: colors.success }]}>Settle all</Text>
@@ -771,35 +908,52 @@ export default function ExpensesScreen() {
           })()}
         </>
 
-      {/* ── IOU Builder Modal ────────────────────────────────────────────── */}
-      <Modal visible={showExpenseModal} transparent animationType="slide">
-        <Pressable
-          style={styles.overlay}
-          onPress={() => { setShowExpenseModal(false); resetModal(); }}
-        />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.kvContainer}
+      {/* ── New IOU Modal (full-screen; custom spring slide-up, X-button close) ── */}
+      <Modal visible={showExpenseModal} transparent animationType="none" onRequestClose={closeIou}>
+        <Animated.View
+          style={[
+            styles.iouContainer,
+            {
+              backgroundColor: colors.background,
+              transform: [{ translateY: iouTranslateY }],
+            },
+          ]}
         >
+          {/* Header: title left, X close button right */}
           <View
+            {...iouDragHandlers}
             style={[
-              styles.sheet,
-              styles.sheetTall,
-              {
-                backgroundColor: colors.card,
-                paddingBottom: Math.max(insets.bottom, 16) + 8,
-              },
+              styles.iouHeader,
+              { paddingTop: insets.top + 10, borderBottomColor: colors.border },
             ]}
           >
-            <View style={[styles.handle, { backgroundColor: colors.border }]} />
-            <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
-              {editingExpenseId ? "Edit IOU" : "New IOU"}
-            </Text>
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border, top: insets.top + 5 }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.iouHeaderTitle, { color: colors.foreground }]}>
+                {editingExpenseId ? "Edit IOU" : "New IOU"}
+              </Text>
+              <Text style={[styles.iouHeaderSub, { color: colors.mutedForeground }]}>
+                {editingExpenseId ? "Update the details" : "Log a shared expense"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={closeIou}
+              style={[styles.iouCloseBtn, { backgroundColor: colors.muted }]}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Feather name="x" size={22} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
 
+          {/* Body — keyboard-avoiding scroll with sticky footer */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1 }}
+          >
             <ScrollView
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ gap: 14, paddingBottom: 8 }}
+              contentContainerStyle={styles.iouBody}
             >
               {/* Title */}
               <View>
@@ -836,48 +990,40 @@ export default function ExpensesScreen() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={{ gap: 8 }}
                 >
-                  {EXPENSE_CATEGORIES.map((cat) => (
-                    <TouchableOpacity
-                      key={cat.key}
-                      style={[
-                        styles.chip,
-                        {
-                          backgroundColor:
-                            expCategory === cat.key
-                              ? colors.primary
+                  {EXPENSE_CATEGORIES.map((cat) => {
+                    const selected = expCategory === cat.key;
+                    return (
+                      <TouchableOpacity
+                        key={cat.key}
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: selected
+                              ? colors.primary + "22"
                               : colors.muted,
-                          borderColor:
-                            expCategory === cat.key
-                              ? colors.primary
-                              : colors.border,
-                        },
-                      ]}
-                      onPress={() => setExpCategory(cat.key)}
-                    >
-                      <Feather
-                        name={cat.icon}
-                        size={12}
-                        color={
-                          expCategory === cat.key
-                            ? "#fff"
-                            : colors.mutedForeground
-                        }
-                      />
-                      <Text
-                        style={{
-                          color:
-                            expCategory === cat.key
-                              ? "#fff"
-                              : colors.mutedForeground,
-                          fontFamily: "Inter_500Medium",
-                          fontSize: 12,
-                          marginLeft: 4,
-                        }}
+                            borderColor: selected ? colors.primary : colors.border,
+                          },
+                        ]}
+                        onPress={() => setExpCategory(cat.key)}
                       >
-                        {cat.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                        <Feather
+                          name={cat.icon}
+                          size={12}
+                          color={selected ? colors.primary : colors.mutedForeground}
+                        />
+                        <Text
+                          style={{
+                            color: selected ? colors.primary : colors.mutedForeground,
+                            fontFamily: "Inter_600SemiBold",
+                            fontSize: 12,
+                            marginLeft: 4,
+                          }}
+                        >
+                          {cat.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
               </View>
 
@@ -913,6 +1059,7 @@ export default function ExpensesScreen() {
                         name={r.name}
                         color={r.color}
                         size={20}
+                        imageUri={r.avatarUri}
                       />
                       <Text
                         style={{
@@ -959,8 +1106,9 @@ export default function ExpensesScreen() {
                     onChangeText={(v) => setExpTotalAmount(v)}
                     onBlur={recalcEvenSplit}
                     keyboardType="decimal-pad"
+                    editable={!hasItemized}
                   />
-                  {totalParsed > 0 && expParticipants.length > 0 && (
+                  {totalParsed > 0 && expParticipants.length > 0 && !hasItemized && (
                     <TouchableOpacity
                       style={[
                         styles.evenSplitBtn,
@@ -980,7 +1128,57 @@ export default function ExpensesScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
+                {hasItemized && (
+                  <Text
+                    style={{
+                      fontFamily: "Inter_400Regular",
+                      fontSize: 11,
+                      color: colors.mutedForeground,
+                      marginTop: 4,
+                    }}
+                  >
+                    Auto-computed from itemized amounts + group total below
+                  </Text>
+                )}
               </View>
+
+              {/* Group total — shared portion split evenly across participants,
+                  in addition to each person's itemized amount. Only shown when
+                  the IOU was seeded from a shopping list. */}
+              {hasItemized && (
+                <View>
+                  <Text style={[styles.label, { color: colors.mutedForeground }]}>
+                    Group total
+                  </Text>
+                  <View
+                    style={[
+                      styles.amountInputRow,
+                      { backgroundColor: colors.muted, borderColor: colors.border },
+                    ]}
+                  >
+                    <Text style={[styles.dollarSign, { color: colors.mutedForeground }]}>$</Text>
+                    <TextInput
+                      style={[styles.amountInput, { color: colors.foreground }]}
+                      placeholder="0.00"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={expGroupTotal}
+                      onChangeText={setExpGroupTotal}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                  <Text
+                    style={{
+                      fontFamily: "Inter_400Regular",
+                      fontSize: 11,
+                      color: colors.mutedForeground,
+                      marginTop: 4,
+                    }}
+                  >
+                    Shared amount — split evenly across {expParticipants.length}
+                    {expParticipants.length === 1 ? " person" : " people"} on top of their itemized share
+                  </Text>
+                </View>
+              )}
 
               {/* Split between */}
               <View>
@@ -1012,6 +1210,7 @@ export default function ExpensesScreen() {
                             name={r.name}
                             color={r.color}
                             size={20}
+                            imageUri={r.avatarUri}
                           />
                           <Text
                             style={{
@@ -1068,31 +1267,34 @@ export default function ExpensesScreen() {
                 {expRecurring ? (
                   <View style={{ marginTop: 8, gap: 8 }}>
                     <View style={styles.recurringOptions}>
-                      {(["daily", "monthly", "custom"] as RecurringInterval[]).map((opt) => (
-                        <TouchableOpacity
-                          key={opt}
-                          style={[
-                            styles.recurringChip,
-                            {
-                              backgroundColor: expRecurring === opt ? colors.primary : colors.muted,
-                              borderColor: expRecurring === opt ? colors.primary : colors.border,
-                              flex: 1,
-                            },
-                          ]}
-                          onPress={() => setExpRecurring(opt)}
-                        >
-                          <Text
-                            style={{
-                              fontFamily: "Inter_600SemiBold",
-                              fontSize: 13,
-                              color: expRecurring === opt ? "#fff" : colors.mutedForeground,
-                              textAlign: "center",
-                            }}
+                      {(["daily", "monthly", "custom"] as RecurringInterval[]).map((opt) => {
+                        const selected = expRecurring === opt;
+                        return (
+                          <TouchableOpacity
+                            key={opt}
+                            style={[
+                              styles.recurringChip,
+                              {
+                                backgroundColor: selected ? colors.primary + "22" : colors.muted,
+                                borderColor: selected ? colors.primary : colors.border,
+                                flex: 1,
+                              },
+                            ]}
+                            onPress={() => setExpRecurring(opt)}
                           >
-                            {opt.charAt(0).toUpperCase() + opt.slice(1)}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                            <Text
+                              style={{
+                                fontFamily: "Inter_600SemiBold",
+                                fontSize: 13,
+                                color: selected ? colors.primary : colors.mutedForeground,
+                                textAlign: "center",
+                              }}
+                            >
+                              {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                     {expRecurring === "custom" ? (
                       <TextInput
@@ -1171,6 +1373,7 @@ export default function ExpensesScreen() {
                             name={person.name}
                             color={person.color}
                             size={28}
+                            imageUri={person.avatarUri}
                           />
                           <Text
                             style={[
@@ -1213,40 +1416,44 @@ export default function ExpensesScreen() {
                 </View>
               )}
 
-              {/* Send button */}
+            </ScrollView>
+
+            {/* Sticky footer with the primary action */}
+            <View
+              style={[
+                styles.iouFooter,
+                {
+                  backgroundColor: colors.background,
+                  borderTopColor: colors.border,
+                  paddingBottom: Math.max(insets.bottom, 12) + 4,
+                },
+              ]}
+            >
               <TouchableOpacity
                 style={[
-                  styles.addBtn,
-                  {
-                    backgroundColor: canSubmit
-                      ? colors.primary
-                      : colors.border,
-                    marginTop: 4,
-                  },
+                  styles.iouSendBtn,
+                  { backgroundColor: canSubmit ? colors.primary : colors.muted },
                 ]}
                 disabled={!canSubmit}
                 onPress={handleSendIOU}
               >
                 <Feather
                   name="send"
-                  size={15}
+                  size={16}
                   color={canSubmit ? "#fff" : colors.mutedForeground}
                 />
                 <Text
                   style={[
-                    styles.addBtnText,
-                    {
-                      color: canSubmit ? "#fff" : colors.mutedForeground,
-                      marginLeft: 8,
-                    },
+                    styles.iouSendBtnText,
+                    { color: canSubmit ? "#fff" : colors.mutedForeground },
                   ]}
                 >
                   {editingExpenseId ? "Save Changes" : "Send IOU"}
                 </Text>
               </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
+            </View>
+          </KeyboardAvoidingView>
+        </Animated.View>
       </Modal>
 
     </View>
@@ -1260,20 +1467,16 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 8,
+    paddingBottom: 16,
   },
-  title: { fontFamily: "Inter_700Bold", fontSize: 28, letterSpacing: -0.5 },
+  title: { fontFamily: "Inter_700Bold", fontSize: 30, lineHeight: 36 },
+  subtitle: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
   addHeaderBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
   },
   balanceRow: {
     flexDirection: "column",
@@ -1282,48 +1485,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   balanceCard: {
-    borderRadius: 20,
-    padding: 18,
-    alignItems: "center",
-    shadowColor: "#1A1140",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 3,
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: "hidden",
   },
+  balanceCardPressable: { flex: 1 },
+  balanceCardContent: { flex: 1, alignItems: "center", justifyContent: "center" },
   balanceLabel: { fontFamily: "Inter_400Regular", fontSize: 13 },
-  balanceAmount: { fontFamily: "Inter_700Bold", fontSize: 30, marginTop: 2 },
+  balanceAmount: { fontFamily: "Inter_700Bold", fontSize: 34, marginTop: 4 },
   balanceHint: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
-  miniBalance: {
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    gap: 4,
-    shadowColor: "#1A1140",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  miniName: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
-  miniAmount: { fontFamily: "Inter_500Medium", fontSize: 11 },
-  listContent: { paddingHorizontal: 16, paddingTop: 4, gap: 10 },
+  listContent: { paddingHorizontal: 16, paddingTop: 6, gap: 12 },
   expenseCard: {
-    borderRadius: 18,
+    borderRadius: 22,
     padding: 16,
+    borderWidth: 1,
     gap: 10,
-    shadowColor: "#1A1140",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 3,
   },
   expenseCardTop: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   expCatIcon: {
     width: 34,
     height: 34,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1350,14 +1532,22 @@ const styles = StyleSheet.create({
   iouChipText: { fontFamily: "Inter_500Medium", fontSize: 12 },
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(26,17,64,0.45)",
+    backgroundColor: "rgba(0,0,0,0.35)",
   },
   kvContainer: { justifyContent: "flex-end" },
+  // Full-screen variant: KAV fills the screen so the sheet can take the entire viewport.
+  kvContainerFull: { flex: 1 },
+  iouFullScreen: { flex: 1 },
   sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 22,
-    paddingTop: 10,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingTop: 12,
+  },
+  // Full-screen sheet: no rounded corners (it's the whole page), fills the screen.
+  sheetFull: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
   sheetTall: { maxHeight: "90%" },
   handle: {
@@ -1365,7 +1555,11 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     alignSelf: "center",
-    marginBottom: 14,
+  },
+  handleHitArea: {
+    paddingTop: 6,
+    paddingBottom: 14,
+    alignItems: "center",
   },
   sheetTitle: {
     fontFamily: "Inter_700Bold",
@@ -1657,13 +1851,64 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   detailCloseBtn: {
-    borderRadius: 12,
-    paddingVertical: 13,
+    borderRadius: 16,
+    paddingVertical: 20,
+    paddingHorizontal: 24,
     alignItems: "center",
-    marginTop: 4,
+    marginTop: 10,
+    marginHorizontal: 4,
   },
   detailCloseBtnText: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+    fontSize: 18,
+    letterSpacing: 0.3,
   },
+
+  // ── New IOU full-screen modal (custom slide-up + X close) ──
+  iouContainer: { flex: 1, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden" },
+  iouHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  iouHeaderTitle: { fontFamily: "Inter_700Bold", fontSize: 26 },
+  iouHeaderSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
+  iouCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetHandle: {
+    position: "absolute",
+    left: "50%",
+    marginLeft: -20,
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+  },
+  iouBody: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 28,
+    gap: 18,
+  },
+  iouFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  iouSendBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
+  iouSendBtnText: { fontFamily: "Inter_700Bold", fontSize: 16 },
 });

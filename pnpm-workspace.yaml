@@ -37,9 +37,13 @@ minimumReleaseAgeExclude:
 packages:
   - artifacts/*
   - lib/*
+  # Postgres/Drizzle scaffolding — disabled. Mobile state lives in
+  # AsyncStorage and the AI endpoint is stateless, so this package is dead
+  # code. Re-enable by removing this exclusion + restoring the @workspace/db
+  # and drizzle-orm deps in artifacts/api-server/package.json.
+  - '!lib/db'
   - lib/integrations/*
   - scripts
-  - lib/shell-quote-stub
 
 catalog:
   '@replit/vite-plugin-cartographer': ^0.5.1
@@ -48,12 +52,8 @@ catalog:
   '@tailwindcss/vite': ^4.1.14
   '@tanstack/react-query': ^5.90.21
   '@types/node': ^25.3.3
-  # Keep @types/react aligned with the pinned react@19.1.0 below. Running these
-  # at ^19.2 pulled a second @types/react copy into the tree (19.2.x alongside
-  # mobile's 19.1.x), which broke mockup-sandbox's typecheck with duplicate,
-  # unrelated React ref types.
-  '@types/react': ~19.1.10
-  '@types/react-dom': ~19.1.7
+  '@types/react': ^19.2.0
+  '@types/react-dom': ^19.2.0
   '@vitejs/plugin-react': ^5.0.4
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
@@ -80,8 +80,6 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
-  # shell-quote is blocked by Replit's package firewall; use local stub
-  "shell-quote": "link:lib/shell-quote-stub"
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"
@@ -152,7 +150,6 @@ overrides:
   "rollup>@rollup/rollup-win32-ia32-msvc": "-"
   "rollup>@rollup/rollup-win32-x64-gnu": "-"
   "rollup>@rollup/rollup-win32-x64-msvc": "-"
-  "@expo/ngrok-bin>@expo/ngrok-bin-darwin-arm64": "-"
   "@expo/ngrok-bin>@expo/ngrok-bin-darwin-x64": "-"
   "@expo/ngrok-bin>@expo/ngrok-bin-freebsd-ia32": "-"
   "@expo/ngrok-bin>@expo/ngrok-bin-freebsd-x64": "-"
@@ -165,3 +162,6 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+
+allowBuilds:
+  esbuild: true

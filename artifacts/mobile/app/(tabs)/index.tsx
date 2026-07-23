@@ -1,12 +1,16 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useState } from "react";
+import { router } from "expo-router";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
+  Dimensions,
   FlatList,
+  KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,14 +18,17 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+const SCREEN_HEIGHT = Dimensions.get("window").height;
+const SCREEN_WIDTH = Dimensions.get("window").width;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
 import { type ChoreCategory, useAppContext } from "@/context/AppContext";
-import { useGoogleCalendar } from "@/context/GoogleCalendarContext";
-import { authHeaders } from "@/lib/api";
-import { useColors } from "@/hooks/useColors";
+import { useTheme } from "@/constants/colors";
+import { success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 
 const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feather.glyphMap }[] = [
   { key: "cleaning", label: "Cleaning", icon: "wind" },
@@ -32,7 +39,12 @@ const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feathe
   { key: "other", label: "Other", icon: "package" },
 ];
 
-type Filter = "all" | "today" | "done";
+type Filter = "all" | "today" | "done" | "day";
+
+// Dark birchwood brown used for the bordered section-title chips on My Home.
+const SECTION_TITLE_BROWN = "#6B4226";
+// Lighter tan brown revealed behind a chore row while it slides out on complete.
+const COMPLETE_REVEAL_BROWN = "#A87C50";
 
 function isToday(dateStr: string) {
   const d = new Date(dateStr);
@@ -41,6 +53,16 @@ function isToday(dateStr: string) {
     d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate()
+  );
+}
+
+function isSameDay(left: Date | string, right: Date | string) {
+  const a = new Date(left);
+  const b = new Date(right);
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
   );
 }
 
@@ -75,11 +97,52 @@ interface ChoreRowProps {
 }
 
 function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProps) {
-  const colors = useColors();
+  const colors = useTheme();
+  const { pointsEnabled } = useAppContext();
   const { confirm } = useConfirm();
   const cat = CATEGORIES.find((c) => c.key === chore.category) ?? CATEGORIES[5];
   const overdue = isOverdue(chore.dueDate, chore.completed);
   const [calState, setCalState] = useState<"idle" | "loading" | "done" | "error">("idle");
+
+  // Slide-out animation on completion — the row slides right within its own
+  // bounds (clipped by the outer wrapper) revealing a brown "Done!" panel
+  // behind it. The panel is only mounted while `isAnimating` is true so already-
+  // completed rows never show brown behind them at rest. A dark overlay fades
+  // in fast so the row darkens the instant it's checked.
+  const slideX = useRef(new Animated.Value(0)).current;
+  const darkenOpacity = useRef(new Animated.Value(0)).current;
+  const [isAnimating, setIsAnimating] = useState(false);
+  const handleCheckPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (chore.completed) {
+      // Un-complete: no animation, just flip
+      onComplete(chore.id);
+      return;
+    }
+    setIsAnimating(true);
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(darkenOpacity, {
+          toValue: 0.55,
+          duration: 90,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideX, {
+          toValue: SCREEN_WIDTH,
+          duration: 320,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.delay(160),
+    ]).start(({ finished }) => {
+      if (!finished) return;
+      slideX.setValue(0);
+      darkenOpacity.setValue(0);
+      setIsAnimating(false);
+      onComplete(chore.id);
+      hapticSuccess();
+    });
+  };
 
   const dueDateColor = chore.completed
     ? colors.mutedForeground
@@ -113,41 +176,61 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
       : colors.primary;
 
   return (
-    <View
-      style={[
-        styles.choreRow,
-        {
-          backgroundColor: colors.card,
-          shadowColor: overdue ? colors.warning : "#1A1140",
-          borderLeftWidth: 3,
-          borderLeftColor: chore.completed
-            ? colors.success
-            : overdue
-            ? colors.warning
-            : isToday(chore.dueDate)
-            ? colors.primary
-            : "transparent",
-        },
-      ]}
-    >
+    <View style={{ borderRadius: 12, overflow: "hidden", position: "relative" }}>
+      {/* Brown reveal panel — only mounted while the slide-out is running so
+          completed rows never show brown behind them at rest. */}
+      {isAnimating && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: COMPLETE_REVEAL_BROWN,
+            alignItems: "center",
+            justifyContent: "center",
+            flexDirection: "row",
+            gap: 8,
+          }}
+        >
+          <Feather name="check" size={16} color="#FFFFFF" />
+          <Text
+            style={{
+              color: "#FFFFFF",
+              fontFamily: "Inter_600SemiBold",
+              fontSize: 14,
+              letterSpacing: 0.2,
+            }}
+          >
+            Done!
+          </Text>
+        </View>
+      )}
+      <Animated.View
+        style={[
+          styles.choreRow,
+          {
+            backgroundColor: colors.card,
+            borderColor: overdue ? colors.warning + "44" : colors.border,
+            transform: [{ translateX: slideX }],
+            overflow: "hidden",
+          },
+        ]}
+      >
       <TouchableOpacity
         style={[
           styles.checkBox,
           {
             borderColor: chore.completed ? colors.success : overdue ? colors.warning : colors.border,
-            backgroundColor: chore.completed ? colors.success : "transparent",
+            backgroundColor: chore.completed ? colors.success + "22" : "transparent",
           },
         ]}
-        onPress={() => {
-          if (!chore.completed) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            onComplete(chore.id);
-          }
-        }}
-        disabled={chore.completed}
+        onPress={handleCheckPress}
       >
         {chore.completed ? (
-          <Feather name="check" size={12} color="#fff" />
+          <Feather name="check" size={14} color={colors.success} />
         ) : null}
       </TouchableOpacity>
 
@@ -177,12 +260,13 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
         </View>
       </View>
 
-      <View style={[styles.pointsBadge, { backgroundColor: colors.primary + "15" }]}>
+      {pointsEnabled && <View style={[styles.pointsBadge, { backgroundColor: colors.primary + "18" }]}>
         <Text style={[styles.pointsText, { color: colors.primary }]}>
           +{chore.points}
         </Text>
-      </View>
+      </View>}
 
+      {/* Add to Google Calendar */}
       <TouchableOpacity
         onPress={handleCalendar}
         disabled={calState === "loading" || calState === "done"}
@@ -190,7 +274,16 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
         style={[
           styles.calBtn,
           {
-            backgroundColor: calState === "done" ? colors.success + "15" : colors.secondary,
+            backgroundColor:
+              calState === "done"
+                ? colors.success + "18"
+                : calState === "loading"
+                ? colors.muted
+                : colors.primary + "14",
+            borderColor:
+              calState === "done"
+                ? colors.success + "55"
+                : colors.primary + "30",
           },
         ]}
       >
@@ -209,20 +302,64 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
       >
         <Feather name="trash-2" size={16} color={colors.mutedForeground} />
       </TouchableOpacity>
+      {/* Darkening overlay — fades in fast on top of the row so it darkens
+          the instant the checkbox is tapped. */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "#000",
+          opacity: darkenOpacity,
+        }}
+      />
+      </Animated.View>
     </View>
   );
 }
 
 export default function MyChoresScreen() {
-  const colors = useColors();
+  const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { ensureToken } = useGoogleCalendar();
-  const { currentUserId, chores, roommates, completeChore, deleteChore, addChore, essentialsAssignees, setEssentialAssignee } =
+  const { currentUserId, chores, roommates, completeChore, deleteChore, addChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled } =
     useAppContext();
 
   const currentUser = roommates.find((r) => r.id === currentUserId);
   const [filter, setFilter] = useState<Filter>("all");
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [calendarExpanded, setCalendarExpanded] = useState(false);
   const [showModal, setShowModal] = useState(false);
+
+  // Full-screen slide-up animation for the Add Chore modal (matches New IOU).
+  const addChoreTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  useEffect(() => {
+    if (showModal) {
+      addChoreTranslateY.setValue(SCREEN_HEIGHT);
+      Animated.spring(addChoreTranslateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        damping: 22,
+        stiffness: 180,
+        mass: 0.8,
+      }).start();
+    }
+  }, [showModal, addChoreTranslateY]);
+  const closeAddChore = () => {
+    Animated.timing(addChoreTranslateY, {
+      toValue: SCREEN_HEIGHT,
+      duration: 260,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setShowModal(false);
+    });
+  };
+  const addChoreDragHandlers = useDraggableSheet(addChoreTranslateY, () => {
+    setShowModal(false);
+  });
   const [newTitle, setNewTitle] = useState("");
   const [newCategory, setNewCategory] = useState<ChoreCategory>("cleaning");
   const [newPoints, setNewPoints] = useState("20");
@@ -244,12 +381,65 @@ export default function MyChoresScreen() {
         .map(([item]) => ({ sectionKey, item }))
   );
 
+  const myShoppingItems = shoppingItems
+    .filter((item) => {
+      if (item.completed) return false;
+      const list = shoppingLists.find((l) => l.id === item.listId);
+      const itemAssignees = Array.isArray(item.assignedTo)
+        ? item.assignedTo
+        : item.assignedTo
+          ? [item.assignedTo]
+          : [];
+      return (
+        itemAssignees.includes(currentUserId) ||
+        item.addedBy === currentUserId ||
+        list?.assignedTo === currentUserId
+      );
+    })
+    .map((item) => ({
+      ...item,
+      listName: shoppingLists.find((l) => l.id === item.listId)?.name ?? "",
+    }));
+
   const myChores = chores.filter((c) => c.assignedTo === currentUserId);
-  const filtered = myChores.filter((c) => {
-    if (filter === "today") return isToday(c.dueDate) && !c.completed;
-    if (filter === "done") return c.completed;
-    return true;
-  });
+  const weekDays = useMemo(() => {
+    const start = new Date();
+    start.setHours(12, 0, 0, 0);
+    start.setDate(start.getDate() - start.getDay() + weekOffset * 7);
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      return date;
+    });
+  }, [weekOffset]);
+  const selectedOpenCount = myChores.filter(
+    (chore) => !chore.completed && isSameDay(chore.dueDate, selectedDate)
+  ).length;
+  const selectedHouseholdChores = chores.filter((chore) =>
+    isSameDay(chore.dueDate, selectedDate)
+  );
+  const selectedHouseholdOpenCount = selectedHouseholdChores.filter(
+    (chore) => !chore.completed
+  ).length;
+  const monthDays = useMemo(() => {
+    const first = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1, 12);
+    const start = new Date(first);
+    start.setDate(first.getDate() - first.getDay());
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      return date;
+    });
+  }, [selectedDate]);
+  const filtered = myChores
+    .filter((c) => {
+      if (filter === "today") return isToday(c.dueDate) && !c.completed;
+      if (filter === "done") return c.completed;
+      if (filter === "day") return isSameDay(c.dueDate, selectedDate);
+      return true;
+    })
+    // Completed chores auto-move to the bottom of the visible list.
+    .sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1));
 
   const completedCount = myChores.filter((c) => c.completed).length;
   const totalCount = myChores.length;
@@ -260,147 +450,6 @@ export default function MyChoresScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          { paddingTop: topPad + 20, backgroundColor: colors.background },
-        ]}
-      >
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.greeting, { color: colors.mutedForeground }]}>
-            Welcome back
-          </Text>
-          <Text style={[styles.username, { color: colors.foreground }]}>
-            {currentUser?.name ?? "You"} 🏠
-          </Text>
-        </View>
-        <View
-          style={[
-            styles.totalPoints,
-            { backgroundColor: colors.primary },
-          ]}
-        >
-          <Feather name="star" size={13} color="#fff" />
-          <Text style={styles.totalPointsText}>
-            {currentUser?.points ?? 0}
-          </Text>
-        </View>
-      </View>
-
-      {/* Progress card */}
-      <View
-        style={[
-          styles.progressCard,
-          {
-            backgroundColor: colors.card,
-            shadowColor: "#1A1140",
-            marginHorizontal: 16,
-          },
-        ]}
-      >
-        <View style={styles.progressHeader}>
-          <View>
-            <Text style={[styles.progressLabel, { color: colors.foreground }]}>
-              My Progress
-            </Text>
-            <Text style={[styles.progressSub, { color: colors.mutedForeground }]}>
-              {completedCount} of {totalCount} chores done
-            </Text>
-          </View>
-          <View style={[styles.pctBadge, { backgroundColor: healthPct >= 1 ? colors.success + "20" : colors.primary + "15" }]}>
-            <Text style={[styles.pctText, { color: healthPct >= 1 ? colors.success : colors.primary }]}>
-              {Math.round(healthPct * 100)}%
-            </Text>
-          </View>
-        </View>
-        <View style={[styles.progressTrack, { backgroundColor: colors.muted }]}>
-          <View
-            style={[
-              styles.progressFill,
-              {
-                backgroundColor: healthPct >= 1 ? colors.success : colors.primary,
-                width: `${Math.max(healthPct * 100, 2)}%` as `${number}%`,
-              },
-            ]}
-          />
-        </View>
-      </View>
-
-      {/* To Buy card */}
-      {myToBuyItems.length > 0 && (
-        <View
-          style={[
-            styles.toBuyCard,
-            { backgroundColor: colors.card, shadowColor: "#1A1140", marginHorizontal: 16, marginBottom: 12 },
-          ]}
-        >
-          <View style={styles.toBuyHeader}>
-            <View style={[styles.toBuyIconWrap, { backgroundColor: colors.accent + "18" }]}>
-              <Feather name="shopping-bag" size={14} color={colors.accent} />
-            </View>
-            <Text style={[styles.toBuyTitle, { color: colors.foreground }]}>To Buy</Text>
-            <View style={[styles.toBuyCountBadge, { backgroundColor: colors.accent + "15" }]}>
-              <Text style={[styles.toBuyCount, { color: colors.accent }]}>
-                {myToBuyItems.length}
-              </Text>
-            </View>
-          </View>
-          {myToBuyItems.map(({ sectionKey, item }) => (
-            <TouchableOpacity
-              key={`${sectionKey}:${item}`}
-              style={[styles.toBuyRow, { borderTopColor: colors.border }]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setEssentialAssignee(sectionKey, item, null);
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.toBuyCheck, { borderColor: colors.border }]} />
-              <Text style={[styles.toBuyItem, { color: colors.foreground }]} numberOfLines={1}>
-                {item}
-              </Text>
-              <Text style={[styles.toBuySection, { color: colors.mutedForeground }]}>
-                {SECTION_NAMES[sectionKey] ?? sectionKey}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Filter pills */}
-      <View style={styles.filterRow}>
-        {(["all", "today", "done"] as Filter[]).map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[
-              styles.filterBtn,
-              {
-                backgroundColor: filter === f ? colors.primary : colors.card,
-                shadowColor: filter === f ? colors.primary : "transparent",
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: filter === f ? 0.25 : 0,
-                shadowRadius: 6,
-                elevation: filter === f ? 3 : 0,
-              },
-            ]}
-            onPress={() => setFilter(f)}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                {
-                  color: filter === f ? "#fff" : colors.mutedForeground,
-                  fontFamily: filter === f ? "Inter_700Bold" : "Inter_500Medium",
-                },
-              ]}
-            >
-              {f === "all" ? "All" : f === "today" ? "Today" : "Done"}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
@@ -409,7 +458,260 @@ export default function MyChoresScreen() {
           { paddingBottom: 100 + botPad },
         ]}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={!!filtered.length}
+        ListHeaderComponent={
+          <>
+            <View
+              style={[
+                styles.header,
+                { paddingTop: topPad + 16, backgroundColor: colors.background },
+              ]}
+            >
+              <View style={styles.headerTopRow}>
+                <TouchableOpacity
+                  onPress={() => router.push("/settings")}
+                  style={[styles.settingsBtn, { backgroundColor: colors.muted }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="settings" size={20} color={colors.foreground} />
+                </TouchableOpacity>
+                {pointsEnabled && <View
+                  style={[
+                    styles.totalPoints,
+                    { backgroundColor: colors.primary + "18" },
+                  ]}
+                >
+                  <Feather name="star" size={14} color={colors.primary} />
+                  <Text style={[styles.totalPointsText, { color: colors.primary }]}>
+                    {currentUser?.points ?? 0} pts
+                  </Text>
+                </View>}
+              </View>
+              <Text style={[styles.greeting, { color: colors.mutedForeground }]}>
+                Welcome home,
+              </Text>
+              <Text style={[styles.username, { color: colors.foreground }]}>
+                {currentUser?.name ?? "You"} 🏠
+              </Text>
+            </View>
+
+            <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.calendarTopRow}>
+                <TouchableOpacity
+                  style={[styles.calendarNavButton, { backgroundColor: colors.muted }]}
+                  onPress={() => {
+                    if (calendarExpanded) {
+                      setSelectedDate((date) => new Date(date.getFullYear(), date.getMonth() - 1, 1, 12));
+                    } else {
+                      setWeekOffset((value) => value - 1);
+                    }
+                  }}
+                  accessibilityLabel="Previous week"
+                >
+                  <Feather name="chevron-left" size={18} color={colors.foreground} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.calendarMonthButton}
+                  onPress={() => {
+                    setCalendarExpanded((value) => !value);
+                  }}
+                >
+                  <Text style={[styles.calendarMonth, { color: colors.foreground }]}>
+                    {(calendarExpanded ? selectedDate : weekDays[3]).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                  </Text>
+                  <View style={styles.calendarExpandHint}>
+                    <Text style={[styles.calendarTodayHint, { color: colors.mutedForeground }]}>
+                      {calendarExpanded ? "Tap for week" : "Tap for month"}
+                    </Text>
+                    <Feather name={calendarExpanded ? "chevron-up" : "chevron-down"} size={11} color={colors.mutedForeground} />
+                  </View>
+                </TouchableOpacity>
+                <View style={[styles.todoBadge, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "35" }]}>
+                  <Feather name="check-circle" size={16} color={colors.primary} />
+                  <Text style={[styles.todoBadgeText, { color: colors.primary }]}>
+                    {calendarExpanded ? selectedHouseholdOpenCount : selectedOpenCount} to-do
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.calendarNavButton, { backgroundColor: colors.muted }]}
+                  onPress={() => {
+                    if (calendarExpanded) {
+                      setSelectedDate((date) => new Date(date.getFullYear(), date.getMonth() + 1, 1, 12));
+                    } else {
+                      setWeekOffset((value) => value + 1);
+                    }
+                  }}
+                  accessibilityLabel="Next week"
+                >
+                  <Feather name="chevron-right" size={18} color={colors.foreground} />
+                </TouchableOpacity>
+              </View>
+
+              {!calendarExpanded ? (
+                <View style={styles.calendarDays}>
+                  {weekDays.map((date) => {
+                  const selected = isSameDay(date, selectedDate);
+                  const today = isSameDay(date, new Date());
+                  const dayChores = myChores.filter((chore) => isSameDay(chore.dueDate, date));
+                  const hasOpen = dayChores.some((chore) => !chore.completed);
+                  return (
+                    <TouchableOpacity
+                      key={date.toISOString()}
+                      style={[
+                        styles.calendarDay,
+                        selected && { backgroundColor: colors.primary },
+                        !selected && today && { backgroundColor: colors.secondary },
+                      ]}
+                      onPress={() => {
+                        setSelectedDate(date);
+                        setFilter("day");
+                        Haptics.selectionAsync();
+                      }}
+                    >
+                      <Text style={[styles.calendarWeekday, { color: selected ? "#fff" : colors.mutedForeground }]}>
+                        {date.toLocaleDateString("en-US", { weekday: "short" }).slice(0, 2)}
+                      </Text>
+                      <Text style={[styles.calendarDate, { color: selected ? "#fff" : colors.foreground }]}>{date.getDate()}</Text>
+                      <View style={[styles.calendarDot, { backgroundColor: hasOpen ? (selected ? "#fff" : colors.warning) : "transparent" }]} />
+                    </TouchableOpacity>
+                  );
+                  })}
+                </View>
+              ) : (
+                <View style={styles.monthView}>
+                  <View style={styles.monthWeekdays}>
+                    {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
+                      <Text key={`${day}-${index}`} style={[styles.monthWeekday, { color: colors.mutedForeground }]}>{day}</Text>
+                    ))}
+                  </View>
+                  <View style={styles.monthGrid}>
+                    {monthDays.map((date) => {
+                      const selected = isSameDay(date, selectedDate);
+                      const inMonth = date.getMonth() === selectedDate.getMonth();
+                      const dayChores = chores.filter((chore) => isSameDay(chore.dueDate, date));
+                      return (
+                        <TouchableOpacity
+                          key={date.toISOString()}
+                          style={[styles.monthDay, selected && { backgroundColor: colors.primary }]}
+                          onPress={() => {
+                            setSelectedDate(date);
+                            setFilter("day");
+                            Haptics.selectionAsync();
+                          }}
+                        >
+                          <Text style={{
+                            color: selected ? "#fff" : inMonth ? colors.foreground : colors.mutedForeground,
+                            opacity: inMonth || selected ? 1 : 0.45,
+                            fontFamily: selected ? "Inter_700Bold" : "Inter_500Medium",
+                            fontSize: 13,
+                          }}>
+                            {date.getDate()}
+                          </Text>
+                          <View style={styles.monthDots}>
+                            {dayChores.slice(0, 3).map((chore) => {
+                              const owner = roommates.find((roommate) => roommate.id === chore.assignedTo);
+                              return <View key={chore.id} style={[styles.monthDot, { backgroundColor: owner?.color ?? colors.primary }]} />;
+                            })}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <View style={[styles.householdPreview, { borderTopColor: colors.border }]}>
+                    <Text style={[styles.previewTitle, { color: colors.foreground }]}>Household chores</Text>
+                    {selectedHouseholdChores.length === 0 ? (
+                      <Text style={[styles.previewEmpty, { color: colors.mutedForeground }]}>Nothing assigned for this day</Text>
+                    ) : (
+                      selectedHouseholdChores.slice(0, 5).map((chore) => {
+                        const owner = roommates.find((roommate) => roommate.id === chore.assignedTo);
+                        return (
+                          <View key={chore.id} style={styles.previewRow}>
+                            <View style={[styles.previewOwnerDot, { backgroundColor: owner?.color ?? colors.primary }]} />
+                            <Text style={[styles.previewChore, { color: colors.foreground }]} numberOfLines={1}>{chore.title}</Text>
+                            <Text style={[styles.previewOwner, { color: colors.mutedForeground }]} numberOfLines={1}>
+                              {owner?.id === currentUserId ? "You" : owner?.name ?? "Unassigned"}
+                            </Text>
+                            <Feather name={chore.completed ? "check-circle" : "circle"} size={14} color={chore.completed ? colors.success : colors.mutedForeground} />
+                          </View>
+                        );
+                      })
+                    )}
+                    {selectedHouseholdChores.length > 5 && (
+                      <Text style={[styles.previewMore, { color: colors.primary }]}>+{selectedHouseholdChores.length - 5} more</Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              <Text style={[styles.selectedDateLabel, { color: colors.foreground }]}>
+                {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.progressCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.progressHeader}>
+                <Text style={[styles.progressLabel, { color: colors.foreground }]}>
+                  My Progress
+                </Text>
+                <Text style={[styles.progressCount, { color: colors.mutedForeground }]}>
+                  {completedCount}/{totalCount} done
+                </Text>
+              </View>
+              <View style={[styles.progressTrack, { backgroundColor: colors.muted }]}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      backgroundColor: colors.success,
+                      width: `${healthPct * 100}%` as `${number}%`,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+
+            {/* Section title — My Chores (dark brown bordered chip) */}
+            <View style={styles.sectionTitleChip}>
+              <Feather name="check-square" size={14} color={SECTION_TITLE_BROWN} />
+              <Text style={styles.sectionTitleText}>My Chores</Text>
+              <Text style={styles.sectionTitleCount}>
+                · {filtered.length} item{filtered.length !== 1 ? "s" : ""}
+              </Text>
+            </View>
+
+            <View style={styles.filterRow}>
+              {(["all", "today", "done"] as Filter[]).map((f) => (
+                <TouchableOpacity
+                  key={f}
+                  style={[
+                    styles.filterBtn,
+                    {
+                      backgroundColor:
+                        filter === f ? colors.primary : colors.secondary,
+                    },
+                  ]}
+                  onPress={() => setFilter(f)}
+                >
+                  <Text
+                    style={[
+                      styles.filterText,
+                      {
+                        color: filter === f ? "#fff" : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {f === "all" ? "All" : f === "today" ? "Today" : "Done"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        }
         ListEmptyComponent={
           <EmptyState
             icon="check-circle"
@@ -427,24 +729,124 @@ export default function MyChoresScreen() {
             onComplete={completeChore}
             onDelete={deleteChore}
             onAddToCalendar={async () => {
-              const domain = process.env.EXPO_PUBLIC_DOMAIN;
-              const baseUrl = domain ? `https://${domain}` : "";
-              const googleToken = await ensureToken();
-              if (!googleToken) throw new Error("Connect Google Calendar first");
-              const res = await fetch(`${baseUrl}/api/calendar/add-chore`, {
-                method: "POST",
-                headers: await authHeaders({ "X-Google-Access-Token": googleToken }),
-                body: JSON.stringify({
-                  title: item.title,
-                  dueDate: item.dueDate,
-                  category: item.category,
-                  points: item.points,
-                }),
+              // Open Google Calendar's quick-add URL with the event pre-filled.
+              // User taps Save once in Google Calendar; works without OAuth or backend.
+              const due = new Date(item.dueDate);
+              const pad = (n: number) => String(n).padStart(2, "0");
+              const dateStr = `${due.getFullYear()}${pad(due.getMonth() + 1)}${pad(due.getDate())}`;
+              const next = new Date(due);
+              next.setDate(due.getDate() + 1);
+              const nextStr = `${next.getFullYear()}${pad(next.getMonth() + 1)}${pad(next.getDate())}`;
+              const details = [
+                "Homie chore reminder",
+                item.category ? `Category: ${item.category}` : null,
+                pointsEnabled && item.points ? `Points: +${item.points}` : null,
+              ]
+                .filter(Boolean)
+                .join("\n");
+              const params = new URLSearchParams({
+                action: "TEMPLATE",
+                text: `🏠 ${item.title}`,
+                dates: `${dateStr}/${nextStr}`,
+                details,
               });
-              if (!res.ok) throw new Error("Calendar API error");
+              const url = `https://calendar.google.com/calendar/render?${params.toString()}`;
+              const ok = await Linking.canOpenURL(url);
+              if (!ok) throw new Error("Cannot open URL");
+              await Linking.openURL(url);
             }}
           />
         )}
+        ListFooterComponent={
+          <>
+            {myToBuyItems.length > 0 && (
+              <>
+                {/* Section title — To Buy (dark brown bordered chip) */}
+                <View style={styles.sectionTitleChip}>
+                  <Feather name="shopping-bag" size={14} color={SECTION_TITLE_BROWN} />
+                  <Text style={styles.sectionTitleText}>To Buy</Text>
+                  <Text style={styles.sectionTitleCount}>
+                    · {myToBuyItems.length} item{myToBuyItems.length !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.toBuyCard,
+                    { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 12 },
+                  ]}
+                >
+                  {myToBuyItems.map(({ sectionKey, item }, idx) => (
+                    <TouchableOpacity
+                      key={`${sectionKey}:${item}`}
+                      style={[
+                        styles.toBuyRow,
+                        idx > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
+                      ]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setEssentialAssignee(sectionKey, item, null);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.toBuyCheck, { borderColor: colors.border }]} />
+                      <Text style={[styles.toBuyItem, { color: colors.foreground }]} numberOfLines={1}>
+                        {item}
+                      </Text>
+                      <Text style={[styles.toBuySection, { color: colors.mutedForeground }]}>
+                        {SECTION_NAMES[sectionKey] ?? sectionKey}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {myShoppingItems.length > 0 && (
+              <>
+                {/* Section title — Shopping (dark brown bordered chip) */}
+                <View style={styles.sectionTitleChip}>
+                  <Feather name="shopping-cart" size={14} color={SECTION_TITLE_BROWN} />
+                  <Text style={styles.sectionTitleText}>Shopping</Text>
+                  <Text style={styles.sectionTitleCount}>
+                    · {myShoppingItems.length} item{myShoppingItems.length !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.toBuyCard,
+                    { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 12 },
+                  ]}
+                >
+                  {myShoppingItems.map((item, idx) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[
+                        styles.toBuyRow,
+                        idx > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
+                      ]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        toggleShoppingItem(item.id);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.toBuyCheck, { borderColor: colors.border }]} />
+                      <Text style={[styles.toBuyItem, { color: colors.foreground }]} numberOfLines={1}>
+                        {item.name}
+                        {item.quantity ? (
+                          <Text style={{ color: colors.mutedForeground }}> · {item.quantity}</Text>
+                        ) : null}
+                      </Text>
+                      <Text style={[styles.toBuySection, { color: colors.mutedForeground }]} numberOfLines={1}>
+                        {item.listName}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+          </>
+        }
       />
 
       <TouchableOpacity
@@ -454,144 +856,170 @@ export default function MyChoresScreen() {
         <Feather name="plus" size={26} color="#fff" />
       </TouchableOpacity>
 
-      <Modal visible={showModal} transparent animationType="slide">
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setShowModal(false)}
-        />
-        <View
+      <Modal visible={showModal} transparent animationType="none" onRequestClose={closeAddChore}>
+        <Animated.View
           style={[
-            styles.modalSheet,
-            { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 },
+            styles.addChoreContainer,
+            { backgroundColor: colors.background, transform: [{ translateY: addChoreTranslateY }] },
           ]}
         >
+          {/* Header: title + X close button */}
           <View
-            style={[styles.modalHandle, { backgroundColor: colors.muted }]}
-          />
-          <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-            Add Chore
-          </Text>
-
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-            Task Name
-          </Text>
-          <TextInput
+            {...addChoreDragHandlers}
             style={[
-              styles.input,
-              {
-                backgroundColor: colors.muted,
-                color: colors.foreground,
-                borderColor: colors.border,
-              },
+              styles.addChoreHeader,
+              { paddingTop: insets.top + 10, borderBottomColor: colors.border },
             ]}
-            placeholder="e.g. Clean bathroom"
-            placeholderTextColor={colors.mutedForeground}
-            value={newTitle}
-            onChangeText={setNewTitle}
-          />
-
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-            Category
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoryScroll}
           >
-            {CATEGORIES.map((cat) => (
-              <TouchableOpacity
-                key={cat.key}
-                style={[
-                  styles.catChip,
-                  {
-                    backgroundColor:
-                      newCategory === cat.key ? colors.primary : colors.muted,
-                    borderColor:
-                      newCategory === cat.key ? colors.primary : "transparent",
-                  },
-                ]}
-                onPress={() => setNewCategory(cat.key)}
-              >
-                <Feather
-                  name={cat.icon}
-                  size={14}
-                  color={newCategory === cat.key ? "#fff" : colors.mutedForeground}
-                />
-                <Text
-                  style={[
-                    styles.catChipText,
-                    {
-                      color:
-                        newCategory === cat.key ? "#fff" : colors.mutedForeground,
-                    },
-                  ]}
-                >
-                  {cat.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-            Points ({newPoints})
-          </Text>
-          <View style={styles.pointsRow}>
-            {["5", "10", "15", "20", "25", "30"].map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[
-                  styles.pointsChip,
-                  {
-                    backgroundColor:
-                      newPoints === p ? colors.primary : colors.muted,
-                    borderColor:
-                      newPoints === p ? colors.primary : "transparent",
-                  },
-                ]}
-                onPress={() => setNewPoints(p)}
-              >
-                <Text
-                  style={{
-                    color: newPoints === p ? "#fff" : colors.mutedForeground,
-                    fontFamily: "Inter_600SemiBold",
-                    fontSize: 13,
-                  }}
-                >
-                  {p}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border, top: insets.top + 5 }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.addChoreHeaderTitle, { color: colors.foreground }]}>Add Chore</Text>
+              <Text style={[styles.addChoreHeaderSub, { color: colors.mutedForeground }]}>
+                Log something for yourself
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={closeAddChore}
+              style={[styles.addChoreCloseBtn, { backgroundColor: colors.muted }]}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Feather name="x" size={22} color={colors.foreground} />
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={[
-              styles.addBtn,
-              {
-                backgroundColor: newTitle.trim()
-                  ? colors.primary
-                  : colors.muted,
-              },
-            ]}
-            disabled={!newTitle.trim()}
-            onPress={() => {
-              addChore({
-                title: newTitle.trim(),
-                assignedTo: currentUserId,
-                dueDate: daysFromNow(1),
-                completed: false,
-                points: parseInt(newPoints, 10),
-                category: newCategory,
-              });
-              setNewTitle("");
-              setNewCategory("cleaning");
-              setNewPoints("20");
-              setShowModal(false);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            }}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1 }}
           >
-            <Text style={styles.addBtnText}>Add Chore</Text>
-          </TouchableOpacity>
-        </View>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.addChoreBody}
+            >
+              <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Task Name</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border },
+                ]}
+                placeholder="e.g. Clean bathroom"
+                placeholderTextColor={colors.mutedForeground}
+                value={newTitle}
+                onChangeText={setNewTitle}
+                autoFocus
+              />
+
+              <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Category</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.categoryScroll}
+              >
+                {CATEGORIES.map((cat) => {
+                  const selected = newCategory === cat.key;
+                  return (
+                    <TouchableOpacity
+                      key={cat.key}
+                      style={[
+                        styles.catChip,
+                        {
+                          backgroundColor: selected ? colors.primary + "22" : colors.secondary,
+                          borderColor: selected ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => setNewCategory(cat.key)}
+                    >
+                      <Feather
+                        name={cat.icon}
+                        size={14}
+                        color={selected ? colors.primary : colors.mutedForeground}
+                      />
+                      <Text
+                        style={[
+                          styles.catChipText,
+                          { color: selected ? colors.primary : colors.mutedForeground },
+                        ]}
+                      >
+                        {cat.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {pointsEnabled && <><Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+                Points ({newPoints})
+              </Text>
+              <View style={styles.pointsRow}>
+                {["5", "10", "15", "20", "25", "30"].map((p) => {
+                  const selected = newPoints === p;
+                  return (
+                    <TouchableOpacity
+                      key={p}
+                      style={[
+                        styles.pointsChip,
+                        {
+                          backgroundColor: selected ? colors.primary : colors.secondary,
+                          borderColor: selected ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => setNewPoints(p)}
+                    >
+                      <Text
+                        style={{
+                          color: selected ? "#fff" : colors.mutedForeground,
+                          fontFamily: "Inter_600SemiBold",
+                          fontSize: 13,
+                        }}
+                      >
+                        {p}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View></>}
+            </ScrollView>
+
+            {/* Sticky footer — primary action */}
+            <View
+              style={[
+                styles.addChoreFooter,
+                {
+                  backgroundColor: colors.background,
+                  borderTopColor: colors.border,
+                  paddingBottom: Math.max(insets.bottom, 12) + 4,
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.addChoreSubmit,
+                  { backgroundColor: newTitle.trim() ? colors.primary : colors.muted },
+                ]}
+                disabled={!newTitle.trim()}
+                onPress={() => {
+                  addChore({
+                    title: newTitle.trim(),
+                    assignedTo: currentUserId,
+                    dueDate: daysFromNow(1),
+                    completed: false,
+                    points: parseInt(newPoints, 10),
+                    category: newCategory,
+                  });
+                  setNewTitle("");
+                  setNewCategory("cleaning");
+                  setNewPoints("20");
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  closeAddChore();
+                }}
+              >
+                <Text style={[styles.addChoreSubmitText, { color: newTitle.trim() ? "#fff" : colors.mutedForeground }]}>
+                  Add Chore
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </Animated.View>
       </Modal>
     </View>
   );
@@ -607,127 +1035,162 @@ function daysFromNow(days: number): string {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 18,
+    paddingBottom: 16,
   },
-  greeting: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 2 },
-  username: { fontSize: 28, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  settingsBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  greeting: { fontSize: 13, fontFamily: "Inter_400Regular" },
+  username: { fontSize: 30, lineHeight: 36, fontFamily: "Inter_700Bold", marginTop: 2 },
   totalPoints: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 24,
-  },
-  totalPointsText: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 14,
-    color: "#fff",
-  },
-  progressCard: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 20,
-    padding: 16,
-    marginBottom: 12,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 3,
   },
+  totalPointsText: { fontFamily: "Inter_700Bold", fontSize: 14 },
+  progressCard: {
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    marginBottom: 14,
+    shadowColor: "#4A3426",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  calendarCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 14,
+  },
+  calendarTopRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  calendarNavButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calendarMonthButton: { flex: 1 },
+  calendarMonth: { fontFamily: "Inter_700Bold", fontSize: 16 },
+  calendarExpandHint: { flexDirection: "row", alignItems: "center", gap: 2 },
+  calendarTodayHint: { fontFamily: "Inter_400Regular", fontSize: 10, marginTop: 1 },
+  todoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  todoBadgeText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  calendarDays: { flexDirection: "row", gap: 4, marginTop: 12 },
+  calendarDay: {
+    flex: 1,
+    minHeight: 62,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+  },
+  calendarWeekday: { fontFamily: "Inter_500Medium", fontSize: 10, textTransform: "uppercase" },
+  calendarDate: { fontFamily: "Inter_700Bold", fontSize: 18, marginTop: 2 },
+  calendarDot: { width: 5, height: 5, borderRadius: 3, marginTop: 3 },
+  selectedDateLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, marginTop: 11 },
+  monthView: { marginTop: 10 },
+  monthWeekdays: { flexDirection: "row" },
+  monthWeekday: { width: "14.2857%", textAlign: "center", fontFamily: "Inter_600SemiBold", fontSize: 10 },
+  monthGrid: { flexDirection: "row", flexWrap: "wrap", marginTop: 5 },
+  monthDay: { width: "14.2857%", height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  monthDots: { height: 5, flexDirection: "row", alignItems: "center", gap: 2, marginTop: 3 },
+  monthDot: { width: 4, height: 4, borderRadius: 2 },
+  householdPreview: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 10, paddingTop: 10, gap: 7 },
+  previewTitle: { fontFamily: "Inter_700Bold", fontSize: 13 },
+  previewEmpty: { fontFamily: "Inter_400Regular", fontSize: 12, paddingVertical: 4 },
+  previewRow: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24 },
+  previewOwnerDot: { width: 8, height: 8, borderRadius: 4 },
+  previewChore: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 12 },
+  previewOwner: { maxWidth: 72, fontFamily: "Inter_400Regular", fontSize: 11 },
+  previewMore: { fontFamily: "Inter_600SemiBold", fontSize: 11, marginLeft: 16 },
   progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
-  },
-  progressLabel: { fontFamily: "Inter_700Bold", fontSize: 15 },
-  progressSub: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
-  pctBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  pctText: { fontFamily: "Inter_700Bold", fontSize: 14 },
-  progressTrack: {
-    height: 8,
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  progressFill: { height: 8, borderRadius: 4 },
-  toBuyCard: {
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 14,
-    elevation: 3,
-  },
-  toBuyHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
     gap: 8,
+    marginBottom: 8,
   },
-  toBuyIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
+  progressLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, flexShrink: 1, paddingRight: 4 },
+  progressCount: { fontFamily: "Inter_400Regular", fontSize: 13, flexShrink: 0 },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: "hidden",
   },
-  toBuyTitle: { fontFamily: "Inter_700Bold", fontSize: 15, flex: 1 },
-  toBuyCountBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  toBuyCount: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  toBuyRow: {
+  progressFill: { height: 6, borderRadius: 3 },
+  sectionTitleChip: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: SECTION_TITLE_BROWN,
+    borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 10,
+    paddingVertical: 13,
+    marginTop: 16,
+    marginBottom: 12,
   },
-  toBuyCheck: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 1.5,
+  sectionTitleText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 15,
+    color: SECTION_TITLE_BROWN,
+    flexShrink: 0,
+    paddingRight: 4,
   },
-  toBuyItem: { fontFamily: "Inter_500Medium", fontSize: 14, flex: 1 },
-  toBuySection: { fontFamily: "Inter_400Regular", fontSize: 11 },
+  sectionTitleCount: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    color: SECTION_TITLE_BROWN,
+    opacity: 0.7,
+    marginLeft: "auto",
+    textAlign: "right",
+  },
   filterRow: {
     flexDirection: "row",
     paddingHorizontal: 16,
     gap: 8,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   filterBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
   },
-  filterText: { fontSize: 13 },
-  listContent: { paddingHorizontal: 16, gap: 10 },
+  filterText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  listContent: { paddingHorizontal: 16, gap: 12 },
   choreRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 13,
-    paddingRight: 14,
-    paddingLeft: 11,
-    borderRadius: 16,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
     gap: 10,
-    shadowColor: "#1A1140",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
   },
   checkBox: {
     width: 22,
@@ -738,78 +1201,94 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   categoryIcon: {
-    width: 32,
-    height: 32,
+    width: 30,
+    height: 30,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   choreInfo: { flex: 1 },
-  choreTitle: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
-  choreMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
+  choreTitle: { fontFamily: "Inter_500Medium", fontSize: 15 },
+  choreMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
   dueDateText: { fontFamily: "Inter_400Regular", fontSize: 12 },
   pointsBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   pointsText: { fontFamily: "Inter_700Bold", fontSize: 12 },
   fab: {
     position: "absolute",
     right: 20,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  calBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
+  // ── Full-screen Add Chore modal (matches New IOU) ──
+  addChoreContainer: { flex: 1, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden" },
+  addChoreHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  addChoreHeaderTitle: { fontFamily: "Inter_700Bold", fontSize: 26 },
+  addChoreHeaderSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
+  addChoreCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 4,
   },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(26,17,64,0.45)" },
-  modalSheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingTop: 10,
+  sheetHandle: {
+    position: "absolute",
+    left: "50%",
+    marginLeft: -20,
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+  },
+  addChoreBody: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 28,
     gap: 4,
   },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 18,
+  addChoreFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  modalTitle: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 22,
-    marginBottom: 14,
-    letterSpacing: -0.4,
+  addChoreSubmit: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 22,
   },
+  addChoreSubmitText: { fontFamily: "Inter_700Bold", fontSize: 16 },
   fieldLabel: {
     fontFamily: "Inter_500Medium",
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginTop: 12,
-    marginBottom: 8,
+    fontSize: 13,
+    marginTop: 8,
+    marginBottom: 6,
   },
   input: {
-    borderRadius: 14,
+    borderRadius: 10,
     borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 15,
     fontFamily: "Inter_400Regular",
   },
@@ -818,24 +1297,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
-    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
     borderWidth: 1,
     marginRight: 8,
   },
-  catChipText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  catChipText: { fontFamily: "Inter_500Medium", fontSize: 12 },
   pointsRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: 8 },
   pointsChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
     borderWidth: 1,
   },
   addBtn: {
-    marginTop: 14,
-    borderRadius: 16,
-    paddingVertical: 15,
+    marginTop: 12,
+    borderRadius: 12,
+    paddingVertical: 14,
     alignItems: "center",
   },
   addBtnText: {
@@ -843,4 +1322,54 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     fontSize: 16,
   },
+  calBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
+  },
+  toBuyCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: "hidden",
+    shadowColor: "#4A3426",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  toBuyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  toBuyIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toBuyTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, flex: 1 },
+  toBuyCount: { fontFamily: "Inter_400Regular", fontSize: 12 },
+  toBuyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    gap: 10,
+  },
+  toBuyCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+  },
+  toBuyItem: { fontFamily: "Inter_500Medium", fontSize: 14, flex: 1 },
+  toBuySection: { fontFamily: "Inter_400Regular", fontSize: 11 },
 });
