@@ -5,6 +5,7 @@ import Animated, {
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
+  withSequence,
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
@@ -14,31 +15,35 @@ import { BrandMark } from "@/components/BrandMark";
 
 export function HouseLoader() {
   const colors = useTheme();
-  const rotation = useSharedValue(0);
-  const pulse = useSharedValue(0);
+  const pulse = useSharedValue(1);
+  const opacity = useSharedValue(0.78);
 
   useEffect(() => {
-    rotation.value = withRepeat(
-      withTiming(360, { duration: 6500, easing: Easing.linear }),
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1.06, { duration: 850, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 850, easing: Easing.inOut(Easing.ease) }),
+      ),
       -1,
       false,
     );
-    pulse.value = withRepeat(
-      withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.sin) }),
+    opacity.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 850, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.78, { duration: 850, easing: Easing.inOut(Easing.ease) }),
+      ),
       -1,
-      true,
+      false,
     );
     return () => {
-      cancelAnimation(rotation);
       cancelAnimation(pulse);
+      cancelAnimation(opacity);
     };
-  }, [pulse, rotation]);
+  }, [opacity, pulse]);
 
-  const orbitStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
   const pulseStyle = useAnimatedStyle(() => ({
-    transform: [{ scaleX: 0.96 + pulse.value * 0.08 }, { scaleY: 1.04 - pulse.value * 0.08 }],
+    opacity: opacity.value,
+    transform: [{ scale: pulse.value }],
   }));
 
   return (
@@ -47,13 +52,9 @@ export function HouseLoader() {
       accessibilityLabel="Loading your household"
       style={[styles.screen, { backgroundColor: colors.background }]}
     >
-      <View style={[styles.halo, { backgroundColor: colors.primary + "12" }]}>
-        <Animated.View style={orbitStyle}>
-          <Animated.View style={pulseStyle}>
-            <BrandMark size={132} color={colors.primary} />
-          </Animated.View>
-        </Animated.View>
-      </View>
+      <Animated.View style={pulseStyle}>
+        <BrandMark size={132} color={colors.primary} />
+      </Animated.View>
     </View>
   );
 }
@@ -61,13 +62,6 @@ export function HouseLoader() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  halo: {
-    width: 190,
-    height: 190,
-    borderRadius: 95,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -44,8 +44,6 @@ const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feathe
 
 type Filter = "all" | "today" | "done" | "day";
 
-// Dark birchwood brown used for the bordered section-title chips on My Home.
-const SECTION_TITLE_BROWN = "#6B4226";
 // Lighter tan brown revealed behind a chore row while it slides out on complete.
 const COMPLETE_REVEAL_BROWN = "#A87C50";
 
@@ -675,11 +673,10 @@ export default function MyChoresScreen() {
               </View>
             </View>
 
-            {/* Section title — My Chores (dark brown bordered chip) */}
-            <View style={styles.sectionTitleChip}>
-              <Feather name="check-square" size={14} color={SECTION_TITLE_BROWN} />
-              <Text style={styles.sectionTitleText}>My Chores</Text>
-              <Text style={styles.sectionTitleCount}>
+            <View style={[styles.sectionTitleRow, { borderBottomColor: colors.primary }]}>
+              <Feather name="check-square" size={15} color={colors.primary} />
+              <Text style={[styles.sectionTitleText, { color: colors.foreground }]}>My Chores</Text>
+              <Text style={[styles.sectionTitleCount, { color: colors.mutedForeground }]}>
                 · {filtered.length} item{filtered.length !== 1 ? "s" : ""}
               </Text>
             </View>
@@ -761,11 +758,10 @@ export default function MyChoresScreen() {
           <>
             {myToBuyItems.length > 0 && (
               <>
-                {/* Section title — To Buy (dark brown bordered chip) */}
-                <View style={styles.sectionTitleChip}>
-                  <Feather name="shopping-bag" size={14} color={SECTION_TITLE_BROWN} />
-                  <Text style={styles.sectionTitleText}>To Buy</Text>
-                  <Text style={styles.sectionTitleCount}>
+                <View style={[styles.sectionTitleRow, { borderBottomColor: colors.primary }]}>
+                  <Feather name="shopping-bag" size={15} color={colors.primary} />
+                  <Text style={[styles.sectionTitleText, { color: colors.foreground }]}>To Buy</Text>
+                  <Text style={[styles.sectionTitleCount, { color: colors.mutedForeground }]}>
                     · {myToBuyItems.length} item{myToBuyItems.length !== 1 ? "s" : ""}
                   </Text>
                 </View>
@@ -803,11 +799,10 @@ export default function MyChoresScreen() {
 
             {myShoppingItems.length > 0 && (
               <>
-                {/* Section title — Shopping (dark brown bordered chip) */}
-                <View style={styles.sectionTitleChip}>
-                  <Feather name="shopping-cart" size={14} color={SECTION_TITLE_BROWN} />
-                  <Text style={styles.sectionTitleText}>Shopping</Text>
-                  <Text style={styles.sectionTitleCount}>
+                <View style={[styles.sectionTitleRow, { borderBottomColor: colors.primary }]}>
+                  <Feather name="shopping-cart" size={15} color={colors.primary} />
+                  <Text style={[styles.sectionTitleText, { color: colors.foreground }]}>Shopping</Text>
+                  <Text style={[styles.sectionTitleCount, { color: colors.mutedForeground }]}>
                     · {myShoppingItems.length} item{myShoppingItems.length !== 1 ? "s" : ""}
                   </Text>
                 </View>
@@ -1137,30 +1132,25 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   progressFill: { height: 6, borderRadius: 3 },
-  sectionTitleChip: {
+  sectionTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    borderWidth: 1,
-    borderColor: SECTION_TITLE_BROWN,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    borderBottomWidth: 2,
+    paddingHorizontal: 2,
+    paddingBottom: 9,
     marginTop: 16,
     marginBottom: 12,
   },
   sectionTitleText: {
     fontFamily: "Inter_700Bold",
     fontSize: 15,
-    color: SECTION_TITLE_BROWN,
     flexShrink: 0,
     paddingRight: 4,
   },
   sectionTitleCount: {
     fontFamily: "Inter_500Medium",
     fontSize: 12,
-    color: SECTION_TITLE_BROWN,
-    opacity: 0.7,
     marginLeft: "auto",
     textAlign: "right",
   },
