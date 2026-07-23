@@ -14,66 +14,12 @@ import {
   View,
 } from "react-native";
 
-import { HOUSING_TYPES, HousingType } from "@/constants/amenities";
+import { BATHROOM_CHORES, BATHROOM_ITEMS, HOUSING_TYPES, KITCHEN_AMENITIES, HousingType } from "@/constants/amenities";
 import { useAuth } from "@/context/AuthContext";
 import { useHousehold } from "@/context/HouseholdContext";
 import { supabase } from "@/lib/supabase";
 
 const TOTAL_STEPS = 4;
-const ITEM_SECTIONS = [
-  {
-    key: "kitchen",
-    title: "Kitchen",
-    items: [
-      { key: "mini_fridge", label: "Mini fridge" },
-      { key: "trash_can", label: "Trash can" },
-      { key: "microwave", label: "Microwave" },
-      { key: "kettle", label: "Kettle" },
-      { key: "floor", label: "Floor" },
-      { key: "coffee_machine", label: "Coffee machine" },
-    ],
-  },
-  {
-    key: "bathroom",
-    title: "Bathroom",
-    items: [
-      { key: "bathroom_sink", label: "Bathroom sink" },
-      { key: "mirror", label: "Mirror" },
-      { key: "shower", label: "Shower" },
-      { key: "toilet", label: "Toilet" },
-      { key: "bath_mat", label: "Bath mat" },
-      { key: "floor", label: "Floor" },
-      { key: "trash_can", label: "Trash can" },
-    ],
-  },
-  {
-    key: "living_space",
-    title: "Living Space",
-    items: [
-      { key: "trash_can", label: "Trash can" },
-      { key: "vacuum", label: "Vacuum" },
-      { key: "laundry_basket", label: "Laundry basket" },
-    ],
-  },
-  {
-    key: "other",
-    title: "Other",
-    items: [
-      { key: "floor", label: "Floor" },
-      { key: "trash_can", label: "Trash can" },
-    ],
-  },
-] as const;
-const SUGGESTED_CHORES = [
-  { key: "take_out_trash", label: "Take out trash" },
-  { key: "vacuum_floors", label: "Vacuum floors" },
-  { key: "clean_microwave", label: "Clean microwave" },
-  { key: "do_laundry", label: "Do laundry" },
-  { key: "clean_bathroom", label: "Clean bathroom" },
-  { key: "mop_floors", label: "Mop floors" },
-  { key: "do_dishes", label: "Do the dishes" },
-  { key: "tidy_living_space", label: "Tidy living space" },
-];
 
 export default function CreateHousehold() {
   const { user } = useAuth();
@@ -89,12 +35,9 @@ export default function CreateHousehold() {
   );
   const [householdName, setHouseholdName] = useState("");
   const [housingType, setHousingType] = useState<HousingType>("traditional");
-  const [itemSel, setItemSel] = useState<Set<string>>(new Set());
-  const [customItems, setCustomItems] = useState<Record<string, string[]>>({});
-  const [customItemDrafts, setCustomItemDrafts] = useState<Record<string, string>>({});
-  const [choreSel, setChoreSel] = useState<Set<string>>(new Set());
-  const [customChores, setCustomChores] = useState<string[]>([]);
-  const [customChoreDraft, setCustomChoreDraft] = useState("");
+  const [kitchenSel, setKitchenSel] = useState<Set<string>>(new Set());
+  const [bathroomItemSel, setBathroomItemSel] = useState<Set<string>>(new Set());
+  const [bathroomChoreSel, setBathroomChoreSel] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   // ── Navigation helpers ──────────────────────────────────────────────────
@@ -123,25 +66,6 @@ export default function CreateHousehold() {
     const next = new Set(set);
     next.has(key) ? next.delete(key) : next.add(key);
     return next;
-  }
-
-  function itemSelectionKey(section: string, item: string) {
-    return `${section}:${item}`;
-  }
-
-  function addCustomItem(section: string) {
-    const name = (customItemDrafts[section] ?? "").trim();
-    if (!name || (customItems[section] ?? []).includes(name)) return;
-    setCustomItems((current) => ({ ...current, [section]: [...(current[section] ?? []), name] }));
-    setCustomItemDrafts((current) => ({ ...current, [section]: "" }));
-    setItemSel((current) => new Set(current).add(itemSelectionKey(section, name)));
-  }
-
-  function addCustomChore() {
-    const name = customChoreDraft.trim();
-    if (!name || customChores.includes(name)) return;
-    setCustomChores((current) => [...current, name]);
-    setCustomChoreDraft("");
   }
 
   // ── Submit ──────────────────────────────────────────────────────────────
@@ -215,16 +139,9 @@ export default function CreateHousehold() {
 
       // 3. Insert selected amenities (direct fetch)
       const amenities = [
-        ...[...itemSel].map((selection) => {
-          const separator = selection.indexOf(":");
-          return {
-            household_id: h.id,
-            category: selection.slice(0, separator),
-            name: selection.slice(separator + 1),
-          };
-        }),
-        ...[...choreSel].map((name) => ({ household_id: h.id, category: "chore", name })),
-        ...customChores.map((name) => ({ household_id: h.id, category: "chore", name })),
+        ...[...kitchenSel].map((k) => ({ household_id: h.id, category: "kitchen", name: k })),
+        ...[...bathroomItemSel].map((k) => ({ household_id: h.id, category: "bathroom_item", name: k })),
+        ...[...bathroomChoreSel].map((k) => ({ household_id: h.id, category: "bathroom_chore", name: k })),
       ];
       if (amenities.length > 0) {
         await fetch(`${supabaseUrl}/rest/v1/household_amenities`, {
@@ -348,95 +265,74 @@ export default function CreateHousehold() {
             </View>
           )}
 
-          {/* ── Step 2: Shared-space items ── */}
+          {/* ── Step 2: Kitchen amenities ── */}
           {step === 2 && (
             <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>What's in your shared space?</Text>
+              <Text style={styles.stepTitle}>What's in your kitchen?</Text>
               <Text style={styles.stepSub}>
-                Select everything you have, or add an item to any section.
+                Select everything you share. This builds your chore list.
               </Text>
-              {ITEM_SECTIONS.map((section) => (
-                <View key={section.key} style={styles.itemSection}>
-                  <Text style={styles.sectionLabel}>{section.title}</Text>
-                  <View style={styles.chips}>
-                    {[...section.items, ...(customItems[section.key] ?? []).map((name) => ({ key: name, label: name }))].map((item) => {
-                      const selectionKey = itemSelectionKey(section.key, item.key);
-                      const selected = itemSel.has(selectionKey);
-                      return (
-                        <Pressable
-                          key={selectionKey}
-                          style={[styles.chip, selected && styles.chipSelected]}
-                          onPress={() => setItemSel(toggle(itemSel, selectionKey))}
-                        >
-                          <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                            {item.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <View style={styles.addRow}>
-                    <TextInput
-                      style={styles.addInput}
-                      placeholder={`Add an item to ${section.title}`}
-                      placeholderTextColor="#B0A090"
-                      value={customItemDrafts[section.key] ?? ""}
-                      onChangeText={(value) => setCustomItemDrafts((current) => ({ ...current, [section.key]: value }))}
-                      onSubmitEditing={() => addCustomItem(section.key)}
-                      returnKeyType="done"
-                    />
-                    <Pressable style={styles.addButton} onPress={() => addCustomItem(section.key)}>
-                      <Text style={styles.addButtonText}>＋</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* ── Step 3: Additional chores ── */}
-          {step === 3 && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>Which chores should we add?</Text>
-              <Text style={styles.stepSub}>Choose common chores and add anything unique to your household.</Text>
               <View style={styles.chips}>
-                {SUGGESTED_CHORES.map((chore) => (
+                {KITCHEN_AMENITIES.map((a) => (
                   <Pressable
-                    key={chore.key}
-                    style={[styles.chip, choreSel.has(chore.key) && styles.chipSelected]}
-                    onPress={() => setChoreSel(toggle(choreSel, chore.key))}
+                    key={a.key}
+                    style={[styles.chip, kitchenSel.has(a.key) && styles.chipSelected]}
+                    onPress={() => setKitchenSel(toggle(kitchenSel, a.key))}
                   >
-                    <Text style={[styles.chipText, choreSel.has(chore.key) && styles.chipTextSelected]}>
-                      {chore.label}
+                    <Text style={[styles.chipText, kitchenSel.has(a.key) && styles.chipTextSelected]}>
+                      {a.label}
                     </Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.sectionLabel}>Add a custom chore</Text>
-              <View style={styles.addRow}>
-                <TextInput
-                  style={styles.addInput}
-                  placeholder="e.g. Water the plants"
-                  placeholderTextColor="#B0A090"
-                  value={customChoreDraft}
-                  onChangeText={setCustomChoreDraft}
-                  onSubmitEditing={addCustomChore}
-                  returnKeyType="done"
-                />
-                <Pressable style={styles.addButton} onPress={addCustomChore}>
-                  <Text style={styles.addButtonText}>＋</Text>
-                </Pressable>
+            </View>
+          )}
+
+          {/* ── Step 3: Bathroom (suite/apartment only) ── */}
+          {step === 3 && housingType !== "traditional" && (
+            <View style={styles.stepContent}>
+              <Text style={styles.stepTitle}>Tell us about your bathroom</Text>
+              <Text style={styles.stepSub}>What fixtures do you have, and what needs cleaning?</Text>
+
+              <Text style={styles.sectionLabel}>Fixtures</Text>
+              <View style={styles.chips}>
+                {BATHROOM_ITEMS.map((a) => (
+                  <Pressable
+                    key={a.key}
+                    style={[styles.chip, bathroomItemSel.has(a.key) && styles.chipSelected]}
+                    onPress={() => setBathroomItemSel(toggle(bathroomItemSel, a.key))}
+                  >
+                    <Text style={[styles.chipText, bathroomItemSel.has(a.key) && styles.chipTextSelected]}>
+                      {a.label}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
-              {customChores.map((chore) => (
-                <Pressable
-                  key={chore}
-                  style={styles.customItem}
-                  onPress={() => setCustomChores((current) => current.filter((item) => item !== chore))}
-                >
-                  <Text style={styles.customItemText}>✓ {chore}</Text>
-                  <Text style={styles.removeText}>Remove</Text>
-                </Pressable>
-              ))}
+
+              <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Regular chores</Text>
+              <View style={styles.chips}>
+                {BATHROOM_CHORES.map((c) => (
+                  <Pressable
+                    key={c.key}
+                    style={[styles.chip, bathroomChoreSel.has(c.key) && styles.chipSelected]}
+                    onPress={() => setBathroomChoreSel(toggle(bathroomChoreSel, c.key))}
+                  >
+                    <Text style={[styles.chipText, bathroomChoreSel.has(c.key) && styles.chipTextSelected]}>
+                      {c.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Final step placeholder for traditional (no bathroom step) */}
+          {step === 3 && housingType === "traditional" && (
+            <View style={styles.stepContent}>
+              <Text style={styles.stepTitle}>You're all set!</Text>
+              <Text style={styles.stepSub}>
+                Your household is ready. Tap "Create" to get started — share the invite code with your roommates so they can join.
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -559,12 +455,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#4A3728",
   },
-  itemSection: {
-    gap: 10,
-    paddingBottom: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EADFD4",
-  },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
     paddingHorizontal: 14,
@@ -581,41 +471,6 @@ const styles = StyleSheet.create({
     color: "#4A3728",
   },
   chipTextSelected: { color: "#FFF" },
-  addRow: {
-    height: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  addInput: {
-    flex: 1,
-    height: 48,
-    borderWidth: 1.5,
-    borderColor: "#E2D5C8",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    color: "#1A120B",
-    backgroundColor: "#FFF",
-  },
-  addButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#8D5524",
-  },
-  addButtonText: { color: "#FFF", fontFamily: "Inter_600SemiBold", fontSize: 22 },
-  customItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-  },
-  customItemText: { fontFamily: "Inter_500Medium", fontSize: 14, color: "#4A3728" },
-  removeText: { fontFamily: "Inter_500Medium", fontSize: 12, color: "#A45B45" },
   footer: { padding: 24, paddingBottom: 36 },
   btn: {
     height: 52,
