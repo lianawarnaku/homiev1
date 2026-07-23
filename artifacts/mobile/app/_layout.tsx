@@ -17,6 +17,10 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LaunchScreen } from "@/components/LaunchScreen";
 import { AppProvider } from "@/context/AppContext";
 import { setBaseUrl } from "@workspace/api-client-react";
+import {
+  installGlobalRuntimeDiagnostics,
+  reportRuntimeError,
+} from "@/lib/runtimeDiagnostics";
 
 setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
 
@@ -36,6 +40,10 @@ export default function RootLayout() {
     Inter_600SemiBold: BarlowCondensed_600SemiBold,
     Inter_700Bold: BarlowCondensed_700Bold,
   });
+
+  useEffect(() => {
+    return installGlobalRuntimeDiagnostics();
+  }, []);
 
   useEffect(() => {
     // Hide splash as soon as fonts are ready OR after a short timeout (web fallback)
@@ -66,7 +74,11 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
+              <ErrorBoundary
+                onError={(error, componentStack) =>
+                  reportRuntimeError("React render", error, { componentStack })
+                }
+              >
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <AppProvider>
@@ -83,6 +95,8 @@ export default function RootLayout() {
                   <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                   <Stack.Screen name="settings" options={{ headerShown: false, presentation: "card" }} />
                   <Stack.Screen name="planning" options={{ headerShown: false, presentation: "card" }} />
+                  <Stack.Screen name="task-difficulty" options={{ headerShown: false, presentation: "card" }} />
+                  <Stack.Screen name="alerts" options={{ headerShown: false, presentation: "card" }} />
                   <Stack.Screen name="+not-found" />
                 </Stack>
               </AuthGate>

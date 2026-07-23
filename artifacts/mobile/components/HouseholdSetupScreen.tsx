@@ -10,6 +10,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { type HousingType, useAppContext } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { supabase } from "@/lib/supabase";
+import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import { error as hapticError } from "@/lib/haptics";
 
 const COLORS = ["#7B563B", "#A66A3F", "#C58B57", "#7D8B6A", "#B36A6A", "#8C6D80"];
@@ -79,6 +80,7 @@ export function HouseholdSetupScreen() {
       await joinHousehold(inviteCode, displayName, color);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
+      reportRuntimeError("join household", e);
       hapticError();
       setError(e && typeof e === "object" && "message" in e && typeof e.message === "string" ? e.message : "We couldn't connect you to that household.");
     } finally { setLoading(false); }
@@ -93,6 +95,7 @@ export function HouseholdSetupScreen() {
       await createHousehold(householdName, displayName, color, createInviteCode);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
+      reportRuntimeError("create household", e);
       hapticError();
       setError(e && typeof e === "object" && "message" in e && typeof e.message === "string" ? e.message : "We couldn't create your household.");
     } finally { setLoading(false); }
@@ -118,7 +121,7 @@ export function HouseholdSetupScreen() {
     <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 18, paddingBottom: insets.bottom + 28 }]} keyboardShouldPersistTaps="handled">
         {mode === "create" && <Progress step={step} colors={colors} />}
-        <View style={styles.brand}><BrandMark size={58} /></View>
+        <View style={styles.brand}><BrandMark size={58} color={colors.primary} /></View>
         <Text style={[styles.eyebrow, { color: colors.primary }]}>{mode === "create" ? `CREATE YOUR HOME · STEP ${step} OF 4` : "JOIN YOUR HOME"}</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>
           {mode === "join" ? "Join your roommates" : step === 1 ? "Start your household" : step === 2 ? "What kind of home is it?" : step === 3 ? "What's in your space?" : "Which chores should we add?"}
@@ -219,7 +222,21 @@ export function HouseholdSetupScreen() {
             </Pressable>
           </View>
         </View>
-        <Pressable onPress={() => supabase.auth.signOut()} style={styles.signOut}><Text style={[styles.signOutText, { color: colors.mutedForeground }]}>Signed in with the wrong account? Sign out</Text></Pressable>
+        <Pressable
+          onPress={async () => {
+            try {
+              const { error: signOutError } = await supabase.auth.signOut();
+              if (signOutError) {
+                reportSupabaseError("sign out from household setup", signOutError);
+                setError(signOutError.message);
+              }
+            } catch (signOutError) {
+              reportRuntimeError("sign out from household setup", signOutError);
+              setError("We couldn't sign you out. Please try again.");
+            }
+          }}
+          style={styles.signOut}
+        ><Text style={[styles.signOutText, { color: colors.mutedForeground }]}>Signed in with the wrong account? Sign out</Text></Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );

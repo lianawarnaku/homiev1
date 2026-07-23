@@ -28,6 +28,7 @@ import { useTheme } from "@/constants/colors";
 import { error as hapticError } from "@/lib/haptics";
 import { BrandMark } from "./BrandMark";
 import { supabase } from "@/lib/supabase";
+import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 
 type Mode = "signin" | "signup";
 
@@ -64,6 +65,7 @@ export function SignInScreen() {
           password,
         });
         if (signInError) {
+          reportSupabaseError("sign in", signInError);
           setError(signInError.message);
           hapticError();
           return;
@@ -76,6 +78,7 @@ export function SignInScreen() {
           password,
         });
         if (signUpError) {
+          reportSupabaseError("sign up", signUpError);
           setError(signUpError.message);
           hapticError();
           return;
@@ -91,6 +94,7 @@ export function SignInScreen() {
         }
       }
     } catch (e) {
+      reportRuntimeError(mode === "signin" ? "sign in" : "sign up", e);
       setError(e instanceof Error ? e.message : "Something went wrong.");
       hapticError();
     } finally {
@@ -114,7 +118,7 @@ export function SignInScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.logoWrap}>
-          <BrandMark size={86} />
+          <BrandMark size={86} color={colors.primary} />
         </View>
         <Text style={[styles.title, { color: colors.foreground }]}>Homie</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>

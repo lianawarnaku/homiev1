@@ -1,15 +1,21 @@
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 
-export const ROOMIE_BROWN = "#9B5B22";
+export const ROOMIE_BROWN = "#111111";
 
-export function BrandMark({ size = 180 }: { size?: number }) {
+export function BrandMark({
+  size = 180,
+  color,
+}: {
+  size?: number;
+  color?: string;
+}) {
   return (
     <Svg width={size} height={size} viewBox="0 0 256 256" fill="none">
       <Defs>
         <LinearGradient id="roomieBrown" x1="42" y1="28" x2="218" y2="232">
-          <Stop offset="0" stopColor="#8D4F1C" />
-          <Stop offset="0.55" stopColor="#A56529" />
-          <Stop offset="1" stopColor="#8F501D" />
+          <Stop offset="0" stopColor={color ?? ROOMIE_BROWN} />
+          <Stop offset="0.55" stopColor={color ?? ROOMIE_BROWN} />
+          <Stop offset="1" stopColor={color ?? ROOMIE_BROWN} />
         </LinearGradient>
       </Defs>
       <Path

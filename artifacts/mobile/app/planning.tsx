@@ -16,13 +16,31 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAppContext, type ChoreAssignment, type ChoreCategory, type ChoreChartData, type Roommate } from "@/context/AppContext";
+import { useAppContext, type ChoreAssignment, type ChoreCategory, type ChoreChartData, type GeneratedTask, type Roommate } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { error as hapticError } from "@/lib/haptics";
+import type { ChoreFrequency, ChoreTimeOfDay } from "@/constants/choreRules";
+import type { Difficulty } from "@/lib/itemDifficulty";
+import { generateHouseholdTasks, parseHouseholdAmenities } from "@/lib/taskGenerator";
+import { PreferenceBar } from "@/components/PreferenceBar";
+import { buildBalancedChart } from "@/lib/choreEngine";
+import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
 
 type PlanType = "chore-chart" | "home-checklist" | null;
 type HousingType = "traditional" | "suite" | "apartment" | null;
 
+const PREFERENCE_DIMENSIONS = [
+  {
+    key: "morning",
+    question: "Are you okay with morning tasks?",
+    helper: "e.g. unloading the dishwasher",
+  },
+  {
+    key: "night",
+    question: "Are you okay with night tasks?",
+    helper: "e.g. running the dishwasher",
+  },
+] as const;
 
 // ── Slot metadata (icon + color) for known slot keys; falls back for unknown ──
 const SLOT_VISUAL_DEFAULT = { icon: "check-square" as keyof typeof Feather.glyphMap, color: "#8A7462" };
@@ -685,10 +703,10 @@ function SectionCard({
 export default function PlanningScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, addChore, essentialsAssignees, setEssentialAssignee, setChoreChart, pointsEnabled, householdComplete } = useAppContext();
+  const { roommates, addChore, essentialsAssignees, setEssentialAssignee, pointsEnabled, householdComplete, householdId, homeProfile, customTasks, addCustomTask, deleteCustomTask, memberPreferences, setMemberPreference, currentUserId, proposeChart } = useAppContext();
 
   const [selectedType, setSelectedType] = useState<PlanType>(null);
-  const [housingType, setHousingType] = useState<HousingType>(null);
+  const [housingType, setHousingType] = useState<HousingType>(homeProfile?.housingType ?? null);
   const [kitchenAmenities, setKitchenAmenities] = useState<Set<string>>(new Set());
   const [bathroomItems, setBathroomItems] = useState<Set<string>>(new Set());
   const [bathroomChores, setBathroomChores] = useState<Set<string>>(new Set());
@@ -706,6 +724,11 @@ export default function PlanningScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [choresAdded, setChoresAdded] = useState(0);
+  const [generatedTasks, setGeneratedTasks] = useState<GeneratedTask[]>([]);
+  const [customTaskTitle, setCustomTaskTitle] = useState("");
+  const [customTaskDifficulty, setCustomTaskDifficulty] = useState<Difficulty>(3);
+  const [customTaskFrequency, setCustomTaskFrequency] = useState<ChoreFrequency>("weekly");
+  const [customTaskTime, setCustomTaskTime] = useState<ChoreTimeOfDay>("any");
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
@@ -980,6 +1003,25 @@ export default function PlanningScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
+      if (selectedType === "chore-chart") {
+        if (!householdId || !homeProfile) {
+          throw new Error("Complete household setup before generating tasks.");
+        }
+        const tasks = await generateHouseholdTasks(
+          householdId,
+          parseHouseholdAmenities(homeProfile.items),
+          homeProfile.housingType,
+          customTasks,
+        );
+        setGeneratedTasks(tasks);
+        await proposeChart(
+          buildBalancedChart(tasks, roommates, memberPreferences, {
+            mode: "preference",
+          }),
+        );
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return;
+      }
       const res = await fetch(`${baseUrl}/api/planning/suggest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -989,24 +1031,42 @@ export default function PlanningScreen() {
           roommates: roommates.map((r) => r.name),
         }),
       });
-      if (!res.ok) throw new Error("Request failed");
+      if (!res.ok) {
+        const responseText = await res.text().catch(() => "");
+        throw new Error(
+          `Planning request failed (${res.status} ${res.statusText}) at ${baseUrl || "the local Expo server"}/api/planning/suggest` +
+          (responseText ? `: ${responseText.slice(0, 180)}` : ""),
+        );
+      }
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `Planning request returned ${contentType || "an unknown content type"} instead of JSON at ` +
+          `${baseUrl || "the local Expo server"}/api/planning/suggest`,
+        );
+      }
       const data = (await res.json()) as { suggestion: string };
-
-      if (selectedType === "chore-chart") {
-        try {
-          const parsed = JSON.parse(data.suggestion) as ChoreChartData;
-          setChoreChartData(parsed);
-          setChoreChart(parsed, new Date().toISOString());
-        } catch {
-          setResult(data.suggestion);
-        }
-      } else {
-        setResult(data.suggestion);
+      if (!data || typeof data.suggestion !== "string") {
+        throw new Error("Planning response did not include a suggestion.");
       }
 
+      setResult(data.suggestion);
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      setError("Unable to generate suggestion. Please try again.");
+    } catch (error) {
+      reportRuntimeError("generate planning suggestion", error, {
+        selectedType,
+        baseUrl: baseUrl || "local Expo origin",
+      });
+      const message =
+        error instanceof Error && error.message.startsWith("Planning request")
+          ? process.env.EXPO_PUBLIC_API_URL || process.env.EXPO_PUBLIC_DOMAIN
+            ? "The planning service could not complete this request. Please try again."
+            : "Planning suggestions need EXPO_PUBLIC_API_URL when running locally."
+          : error instanceof Error
+            ? error.message
+            : "Unable to generate suggestion. Please try again.";
+      setError(message);
       hapticError();
     } finally {
       setLoading(false);
@@ -1510,6 +1570,129 @@ export default function PlanningScreen() {
         </View>
       )}
 
+      {isChoreChart && (
+        <View style={styles.preferenceSection}>
+          <Text style={[styles.sectionLabel, { color: colors.foreground, marginHorizontal: 0 }]}>
+            Your task preferences
+          </Text>
+          <Text style={[styles.preferenceIntro, { color: colors.mutedForeground }]}>
+            These are saved to your member profile and help balance the chart.
+          </Text>
+          {PREFERENCE_DIMENSIONS.map((dimension) => {
+            const preference = memberPreferences.find(
+              (entry) => entry.memberId === currentUserId && entry.key === dimension.key,
+            );
+            return (
+              <PreferenceBar
+                key={dimension.key}
+                label={dimension.key}
+                questionText={dimension.question}
+                helperText={dimension.helper}
+                value={preference?.value ?? 50}
+                onChange={(value) => {
+                  setMemberPreference(dimension.key, value).catch(() => {
+                    setError("Unable to save your task preference.");
+                    hapticError();
+                  });
+                }}
+              />
+            );
+          })}
+        </View>
+      )}
+
+      {isChoreChart && (
+        <View style={[styles.customTaskCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.customTaskHeader}>
+            <View>
+              <Text style={[styles.customTaskTitle, { color: colors.foreground }]}>Custom tasks</Text>
+              <Text style={[styles.customTaskHint, { color: colors.mutedForeground }]}>
+                Difficulty defaults to 3/5 and is required.
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push("/task-difficulty")}>
+              <Text style={[styles.editDifficultyLink, { color: colors.primary }]}>Edit item levels</Text>
+            </TouchableOpacity>
+          </View>
+          {customTasks.map((task) => (
+            <View key={task.id} style={[styles.savedCustomTask, { borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.savedCustomTitle, { color: colors.foreground }]}>{task.title}</Text>
+                <Text style={[styles.savedCustomMeta, { color: colors.mutedForeground }]}>
+                  {task.difficulty}/5 · {task.frequency} · {task.timeOfDay}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => deleteCustomTask(task.id)}>
+                <Feather name="trash-2" size={16} color={colors.destructive} />
+              </TouchableOpacity>
+            </View>
+          ))}
+          <TextInput
+            value={customTaskTitle}
+            onChangeText={setCustomTaskTitle}
+            placeholder="Task name"
+            placeholderTextColor={colors.mutedForeground}
+            style={[styles.customTaskInput, { color: colors.foreground, backgroundColor: colors.muted, borderColor: colors.border }]}
+          />
+          <Text style={[styles.customTaskFieldLabel, { color: colors.mutedForeground }]}>DIFFICULTY</Text>
+          <View style={styles.customTaskOptions}>
+            {([1, 2, 3, 4, 5] as Difficulty[]).map((value) => (
+              <TouchableOpacity
+                key={value}
+                onPress={() => setCustomTaskDifficulty(value)}
+                style={[styles.customTaskChip, {
+                  backgroundColor: value === customTaskDifficulty ? colors.primary : colors.muted,
+                  borderColor: value === customTaskDifficulty ? colors.primary : colors.border,
+                }]}
+              >
+                <Text style={{ color: value === customTaskDifficulty ? colors.primaryForeground : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>{value}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={[styles.customTaskFieldLabel, { color: colors.mutedForeground }]}>FREQUENCY</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.customTaskOptions}>
+            {(["daily", "everyOtherDay", "weekly", "biweekly", "monthly"] as ChoreFrequency[]).map((value) => (
+              <TouchableOpacity key={value} onPress={() => setCustomTaskFrequency(value)} style={[styles.customTextChip, {
+                backgroundColor: value === customTaskFrequency ? colors.primary : colors.muted,
+                borderColor: value === customTaskFrequency ? colors.primary : colors.border,
+              }]}>
+                <Text style={{ color: value === customTaskFrequency ? colors.primaryForeground : colors.mutedForeground, fontFamily: "Inter_600SemiBold", fontSize: 12 }}>{value}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <Text style={[styles.customTaskFieldLabel, { color: colors.mutedForeground }]}>TIME OF DAY</Text>
+          <View style={styles.customTaskOptions}>
+            {(["morning", "night", "any"] as ChoreTimeOfDay[]).map((value) => (
+              <TouchableOpacity key={value} onPress={() => setCustomTaskTime(value)} style={[styles.customTextChip, {
+                backgroundColor: value === customTaskTime ? colors.primary : colors.muted,
+                borderColor: value === customTaskTime ? colors.primary : colors.border,
+              }]}>
+                <Text style={{ color: value === customTaskTime ? colors.primaryForeground : colors.mutedForeground, fontFamily: "Inter_600SemiBold", fontSize: 12 }}>{value}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity
+            disabled={!customTaskTitle.trim()}
+            onPress={() => {
+              if (!customTaskTitle.trim()) return;
+              addCustomTask({
+                item: customTaskTitle.trim(),
+                title: customTaskTitle.trim(),
+                difficulty: customTaskDifficulty,
+                frequency: customTaskFrequency,
+                timeOfDay: customTaskTime,
+              });
+              setCustomTaskTitle("");
+              setCustomTaskDifficulty(3);
+            }}
+            style={[styles.saveCustomTask, { backgroundColor: colors.primary, opacity: customTaskTitle.trim() ? 1 : 0.5 }]}
+          >
+            <Feather name="plus" size={16} color={colors.primaryForeground} />
+            <Text style={[styles.saveCustomTaskText, { color: colors.primaryForeground }]}>Add custom task</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* ── Preferences ── */}
       <Text
         style={[
@@ -1544,6 +1727,25 @@ export default function PlanningScreen() {
           <Text style={[styles.errorText, { color: colors.destructive }]}>{error}</Text>
         </View>
       ) : null}
+
+      {generatedTasks.length > 0 && (
+        <View style={[styles.generatedTaskCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.customTaskTitle, { color: colors.foreground }]}>
+            Generated Tasks ({generatedTasks.length})
+          </Text>
+          {generatedTasks.map((task) => (
+            <View key={task.id} style={[styles.generatedTaskRow, { borderTopColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.savedCustomTitle, { color: colors.foreground }]}>{task.title}</Text>
+                <Text style={[styles.savedCustomMeta, { color: colors.mutedForeground }]}>
+                  {task.item} · {task.frequency} · {task.timeOfDay}
+                </Text>
+              </View>
+              <Text style={[styles.generatedDifficulty, { color: colors.primary }]}>{task.difficulty}/5</Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* ── Chore chart: category-section tiles ── */}
       {choreChartData ? (
@@ -1853,6 +2055,26 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
     marginBottom: 12,
   },
+  customTaskCard: { marginHorizontal: 16, marginTop: 14, borderWidth: 1, borderRadius: 18, padding: 14, gap: 10 },
+  preferenceSection: { marginHorizontal: 16, marginTop: 14, gap: 10 },
+  preferenceIntro: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: -7 },
+  customTaskHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  customTaskTitle: { fontFamily: "Inter_700Bold", fontSize: 18 },
+  customTaskHint: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  editDifficultyLink: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  savedCustomTask: { borderWidth: 1, borderRadius: 12, padding: 10, flexDirection: "row", alignItems: "center" },
+  savedCustomTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  savedCustomMeta: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  customTaskInput: { height: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontFamily: "Inter_500Medium", fontSize: 15 },
+  customTaskFieldLabel: { fontFamily: "Inter_700Bold", fontSize: 11, letterSpacing: 1, marginTop: 2 },
+  customTaskOptions: { flexDirection: "row", gap: 7 },
+  customTaskChip: { flex: 1, height: 36, borderWidth: 1, borderRadius: 9, alignItems: "center", justifyContent: "center" },
+  customTextChip: { minHeight: 36, borderWidth: 1, borderRadius: 9, paddingHorizontal: 11, alignItems: "center", justifyContent: "center" },
+  saveCustomTask: { height: 46, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
+  saveCustomTaskText: { fontFamily: "Inter_700Bold", fontSize: 14 },
+  generatedTaskCard: { marginHorizontal: 16, marginTop: 12, borderWidth: 1, borderRadius: 18, padding: 14 },
+  generatedTaskRow: { minHeight: 56, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", paddingVertical: 9 },
+  generatedDifficulty: { fontFamily: "Inter_700Bold", fontSize: 15 },
 
   // ── Generate button ──
   generateBtn: {

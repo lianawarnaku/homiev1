@@ -10,6 +10,7 @@ import { type Session } from "@supabase/supabase-js";
 import { useEffect, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
+import { reportSupabaseError } from "@/lib/runtimeDiagnostics";
 
 export function useSupabaseSession(): { session: Session | null; loading: boolean } {
   const [session, setSession] = useState<Session | null>(null);
@@ -18,10 +19,17 @@ export function useSupabaseSession(): { session: Session | null; loading: boolea
   useEffect(() => {
     // Kick off the initial session lookup. AsyncStorage read is quick but
     // async, so we hold `loading` true until it resolves.
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
+    let active = true;
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (error) reportSupabaseError("restore auth session", error);
+        if (!active) return;
+        setSession(data.session);
+      })
+      .catch((error) => reportSupabaseError("restore auth session", error))
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
     const {
       data: { subscription },
@@ -30,6 +38,7 @@ export function useSupabaseSession(): { session: Session | null; loading: boolea
     });
 
     return () => {
+      active = false;
       subscription.unsubscribe();
     };
   }, []);

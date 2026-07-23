@@ -1,32 +1,32 @@
 import { useAppContext } from "@/context/AppContext";
 
-const blue = {
-  // TODO: Fine-tune the blue scheme hex values.
-  text: "#1F2937",
-  tint: "#4F7FF7",
-  background: "#F4F7FF",
-  foreground: "#1F2937",
-  card: "#FFFFFF",
-  cardForeground: "#1F2937",
-  primary: "#4F7FF7",
+const mono = {
+  // TODO: Fine-tune the monochrome scheme hex values.
+  text: "#111111",
+  tint: "#111111",
+  background: "#FFFFFF",
+  foreground: "#111111",
+  card: "#FAFAFA",
+  cardForeground: "#111111",
+  primary: "#111111",
   primaryForeground: "#FFFFFF",
-  secondary: "#E8EEFF",
-  secondaryForeground: "#3159B7",
-  muted: "#E9EEF8",
-  mutedForeground: "#667085",
-  accent: "#7599F8",
+  secondary: "#F3F4F6",
+  secondaryForeground: "#111111",
+  muted: "#F3F4F6",
+  mutedForeground: "#6B7280",
+  accent: "#374151",
   accentForeground: "#FFFFFF",
-  destructive: "#DC4C4C",
+  destructive: "#EF4444",
   destructiveForeground: "#FFFFFF",
-  success: "#4F9D69",
-  warning: "#D99A32",
-  border: "#D7DEEC",
-  input: "#D7DEEC",
+  success: "#22C55E",
+  warning: "#F59E0B",
+  border: "#E5E7EB",
+  input: "#E5E7EB",
   radius: 22,
 } as const;
 
 type ThemeTokens = {
-  [K in keyof typeof blue]: K extends "radius" ? number : string;
+  [K in keyof typeof mono]: K extends "radius" ? number : string;
 };
 
 const brown: ThemeTokens = {
@@ -62,10 +62,17 @@ const blueWhite: ThemeTokens = {
   border: "#D1D5DB", input: "#D1D5DB", radius: 22,
 };
 
-export const colorSchemes = { blue, brown, pinkWhite, blueWhite } as const;
+export const colorSchemes = { mono, brown, pinkWhite, blueWhite } as const;
 export type ColorScheme = keyof typeof colorSchemes;
+
+export function normalizeColorScheme(value: unknown): ColorScheme {
+  if (value === "blue") return "mono";
+  return typeof value === "string" && value in colorSchemes
+    ? value as ColorScheme
+    : "mono";
+}
 
 export function useTheme(): ThemeTokens {
   const { colorScheme } = useAppContext();
-  return colorSchemes[colorScheme];
+  return colorSchemes[colorScheme] ?? colorSchemes.mono;
 }

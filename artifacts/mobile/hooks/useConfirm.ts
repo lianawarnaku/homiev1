@@ -1,4 +1,4 @@
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
 import { useAppContext } from "@/context/AppContext";
 
 type ConfirmOpts = {
@@ -21,6 +21,17 @@ export function useConfirm() {
       return;
     }
     const { confirmText = "OK", destructive = false } = opts;
+    if (Platform.OS === "web") {
+      const browserConfirm = (
+        globalThis as typeof globalThis & {
+          confirm?: (prompt?: string) => boolean;
+        }
+      ).confirm;
+      if (browserConfirm?.(`${title}\n\n${message}`)) {
+        onConfirm();
+      }
+      return;
+    }
     Alert.alert(title, message, [
       { text: "Cancel", style: "cancel" },
       {
@@ -40,6 +51,15 @@ export function useConfirm() {
 
   function info(id: string, title: string, message: string) {
     if (suppressedAlerts[id]) return;
+    if (Platform.OS === "web") {
+      const browserAlert = (
+        globalThis as typeof globalThis & {
+          alert?: (message?: string) => void;
+        }
+      ).alert;
+      browserAlert?.(`${title}\n\n${message}`);
+      return;
+    }
     Alert.alert(title, message, [
       { text: "Got it" },
       {

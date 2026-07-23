@@ -26,9 +26,9 @@ function Block({ x, y }: { x: number; y: number }) {
 function BrownGradient() {
   return (
     <LinearGradient id="brown" x1="42" y1="28" x2="218" y2="232">
-      <Stop offset="0" stopColor="#8D4F1C" />
-      <Stop offset="0.55" stopColor="#A56529" />
-      <Stop offset="1" stopColor="#8F501D" />
+      <Stop offset="0" stopColor="#111111" />
+      <Stop offset="0.55" stopColor="#111111" />
+      <Stop offset="1" stopColor="#111111" />
     </LinearGradient>
   );
 }
@@ -91,11 +91,11 @@ export function LaunchScreen({ onFinish }: { onFinish: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#FAF6F0", alignItems: "center", justifyContent: "center", paddingHorizontal: 28 },
+  screen: { flex: 1, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", paddingHorizontal: 28 },
   content: { alignItems: "center", marginTop: -30 },
   markStage: { width: MARK_SIZE, height: MARK_SIZE, position: "relative" },
   piece: { ...StyleSheet.absoluteFillObject },
   copy: { alignItems: "center", marginTop: 28 },
-  wordmark: { color: "#96571F", fontFamily: "Inter_700Bold", fontSize: 52, letterSpacing: -2.1 },
-  tagline: { color: "#5F432D", fontFamily: "Inter_400Regular", fontSize: 18, marginTop: 10 },
+  wordmark: { color: "#111111", fontFamily: "Inter_700Bold", fontSize: 52, letterSpacing: -2.1 },
+  tagline: { color: "#6B7280", fontFamily: "Inter_400Regular", fontSize: 18, marginTop: 10 },
 });

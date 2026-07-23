@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { RoommateAvatar } from "@/components/RoommateAvatar";
+import { HeaderActions } from "@/components/HeaderActions";
 import { useAppContext } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 
@@ -69,9 +70,12 @@ export default function LeaderboardScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={[styles.header, { paddingTop: topPad + 16 }]}>
-        <View>
-          <Text style={[styles.title, { color: colors.foreground }]}>Leaderboard</Text>
-          <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Household progress and points</Text>
+        <View style={styles.headerTopRow}>
+          <View>
+            <Text style={[styles.title, { color: colors.foreground }]}>Leaderboard</Text>
+            <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Household progress and points</Text>
+          </View>
+          <HeaderActions />
         </View>
         <View style={styles.periodToggle}>
           {(["weekly", "alltime"] as Period[]).map((p) => (
@@ -388,6 +392,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
     gap: 12,
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
   },
   title: { fontFamily: "Inter_700Bold", fontSize: 30, lineHeight: 36 },
   subtitle: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },

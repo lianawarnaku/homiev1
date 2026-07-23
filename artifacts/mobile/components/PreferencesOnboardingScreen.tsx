@@ -23,7 +23,7 @@ export function PreferencesOnboardingScreen() {
           paddingBottom: insets.bottom + 28,
         }}
       >
-        <View style={styles.brand}><BrandMark size={58} /></View>
+        <View style={styles.brand}><BrandMark size={58} color={colors.primary} /></View>
         <Text style={[styles.eyebrow, { color: colors.primary }]}>ONE LAST STEP</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>Make Homie yours</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>

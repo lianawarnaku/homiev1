@@ -23,7 +23,10 @@ const COMPLETE_REVEAL_BROWN = "#A87C50";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { AssignedLoadNotice } from "@/components/AssignedLoadNotice";
+import { HeaderActions } from "@/components/HeaderActions";
 import { HomePlant } from "@/components/HomePlant";
+import { PendingApprovalBanner } from "@/components/PendingApprovalBanner";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext, type ChoreAssignment, type ChoreCategory } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
@@ -456,18 +459,24 @@ export default function GroupChoresScreen() {
             Group Chores
           </Text>
         </View>
-        <View
-          style={[
-            styles.anonBadge,
-            { backgroundColor: colors.secondary, borderColor: colors.border },
-          ]}
-        >
-          <Feather name="eye-off" size={11} color={colors.mutedForeground} />
-          <Text style={[styles.anonText, { color: colors.mutedForeground }]}>
-            Nudges are anonymous
-          </Text>
+        <View style={styles.headerButtons}>
+          <View
+            style={[
+              styles.anonBadge,
+              { backgroundColor: colors.secondary, borderColor: colors.border },
+            ]}
+          >
+            <Feather name="eye-off" size={11} color={colors.mutedForeground} />
+            <Text style={[styles.anonText, { color: colors.mutedForeground }]}>
+              Nudges are anonymous
+            </Text>
+          </View>
+          <HeaderActions />
         </View>
       </View>
+
+      <PendingApprovalBanner />
+      <AssignedLoadNotice />
 
       {viewMode === "calendar" ? (
         (() => {
@@ -1291,7 +1300,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "flex-start",
     justifyContent: "space-between",
   },
   headerSub: { fontFamily: "Inter_400Regular", fontSize: 13 },
@@ -1306,6 +1315,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   anonText: { fontFamily: "Inter_400Regular", fontSize: 11 },
+  headerButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
 
   // Plant card
   plantCard: {

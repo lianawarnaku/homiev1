@@ -24,6 +24,9 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { AssignedLoadNotice } from "@/components/AssignedLoadNotice";
+import { HeaderActions } from "@/components/HeaderActions";
+import { PendingApprovalBanner } from "@/components/PendingApprovalBanner";
 import { type ChoreCategory, useAppContext } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { success as hapticSuccess } from "@/lib/haptics";
@@ -467,13 +470,6 @@ export default function MyChoresScreen() {
               ]}
             >
               <View style={styles.headerTopRow}>
-                <TouchableOpacity
-                  onPress={() => router.push("/settings")}
-                  style={[styles.settingsBtn, { backgroundColor: colors.muted }]}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Feather name="settings" size={20} color={colors.foreground} />
-                </TouchableOpacity>
                 {pointsEnabled && <View
                   style={[
                     styles.totalPoints,
@@ -485,6 +481,7 @@ export default function MyChoresScreen() {
                     {currentUser?.points ?? 0} pts
                   </Text>
                 </View>}
+                <HeaderActions />
               </View>
               <Text style={[styles.greeting, { color: colors.mutedForeground }]}>
                 Welcome home,
@@ -493,6 +490,9 @@ export default function MyChoresScreen() {
                 {currentUser?.name ?? "You"} 🏠
               </Text>
             </View>
+
+            <PendingApprovalBanner />
+            <AssignedLoadNotice />
 
             <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.calendarTopRow}>
@@ -1043,13 +1043,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 12,
-  },
-  settingsBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
   },
   greeting: { fontSize: 13, fontFamily: "Inter_400Regular" },
   username: { fontSize: 30, lineHeight: 36, fontFamily: "Inter_700Bold", marginTop: 2 },

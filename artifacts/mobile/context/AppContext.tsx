@@ -11,7 +11,10 @@ import React, {
 
 import { useSupabaseSession } from "@/hooks/useSupabaseSession";
 import { supabase } from "@/lib/supabase";
-import type { ColorScheme } from "@/constants/colors";
+import { normalizeColorScheme, type ColorScheme } from "@/constants/colors";
+import type { ItemCategory } from "@/constants/itemDifficulty";
+import type { Difficulty } from "@/lib/itemDifficulty";
+import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 
 export type RoommateStatus = "home" | "away" | "asleep" | "unknown";
 
@@ -156,7 +159,95 @@ export interface HomeProfile {
   additionalChores: string[];
 }
 
+export interface GeneratedTask {
+  id: string;
+  itemCategory: ItemCategory;
+  item: string;
+  title: string;
+  frequency: "daily" | "everyOtherDay" | "weekly" | "biweekly" | "monthly";
+  timeOfDay: "morning" | "night" | "any";
+  keepTogetherGroup?: string;
+  difficulty: Difficulty;
+}
+
+export interface CustomTask {
+  id: string;
+  item: string;
+  title: string;
+  frequency: GeneratedTask["frequency"];
+  timeOfDay: GeneratedTask["timeOfDay"];
+  difficulty: Difficulty;
+  keepTogetherGroup?: string;
+}
+
+export interface MemberPreference {
+  id?: string;
+  householdId: string;
+  memberId: string;
+  key: string;
+  value: number;
+}
+
+export interface Assignment {
+  memberId: string;
+  taskIds: string[];
+  totalLoad: number;
+}
+
+export interface MemberLoad {
+  memberId: string;
+  totalLoad: number;
+}
+
+export interface ProposedChart {
+  id: string;
+  householdId: string;
+  createdBy: string;
+  status: "pending" | "approved" | "cancelled";
+  payload: {
+    assignments: Assignment[];
+    memberLoads?: MemberLoad[];
+    generatedTasks?: GeneratedTask[];
+    customTasks?: CustomTask[];
+  };
+  createdAt: string;
+}
+
+export interface ChartApproval {
+  id: string;
+  proposedChartId: string;
+  memberId: string;
+  approved: boolean;
+  approvedAt: string;
+}
+
+export interface ItemDifficulty {
+  id?: string;
+  householdId: string;
+  category: ItemCategory;
+  item: string;
+  difficulty: Difficulty;
+}
+
 interface AppContextType {
+  itemDifficulties: ItemDifficulty[];
+  setItemDifficulty: (category: ItemCategory, item: string, difficulty: Difficulty) => Promise<void>;
+  resetItemDifficulties: () => Promise<void>;
+  memberPreferences: MemberPreference[];
+  setMemberPreference: (key: string, value: number) => Promise<void>;
+  currentProposedChart: ProposedChart | null;
+  setCurrentProposedChart: (chart: ProposedChart | null) => Promise<void>;
+  liveChart: Assignment[] | null;
+  setLiveChart: (assignments: Assignment[] | null) => void;
+  customTasks: CustomTask[];
+  addCustomTask: (task: Omit<CustomTask, "id">) => void;
+  deleteCustomTask: (id: string) => void;
+  chartApprovals: ChartApproval[];
+  proposeChart: (payload: ProposedChart["payload"]) => Promise<void>;
+  approveProposedChart: () => Promise<void>;
+  forceApproveProposedChart: () => Promise<void>;
+  restartChartProcess: () => Promise<void>;
+  isHost: boolean;
   preferencesLoaded: boolean;
   preferencesOnboardingPending: boolean;
   finishPreferencesOnboarding: () => Promise<void>;
@@ -175,6 +266,8 @@ interface AppContextType {
   createHousehold: (householdName: string, displayName: string, color: string, inviteCode: string) => Promise<void>;
   joinHousehold: (inviteCode: string, displayName: string, color: string) => Promise<void>;
   deleteHousehold: () => Promise<void>;
+  removeRoommate: (roommateId: string) => Promise<void>;
+  deleteOwnAccount: () => Promise<void>;
   currentUserId: string;
   setCurrentUser: (id: string) => void;
   roommates: Roommate[];
@@ -481,6 +574,8 @@ interface SharedHouseholdState {
   choreChart: ChoreChartData | null;
   choreChartStartedAt: string | null;
   homeProfile: HomeProfile | null;
+  liveChart: Assignment[] | null;
+  customTasks: CustomTask[];
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -506,22 +601,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [choreChart, setChoreChartState] = useState<ChoreChartData | null>(null);
   const [choreChartStartedAt, setChoreChartStartedAtState] = useState<string | null>(null);
   const [homeProfile, setHomeProfileState] = useState<HomeProfile | null>(null);
+  const [liveChart, setLiveChartState] = useState<Assignment[] | null>(null);
+  const [customTasks, setCustomTasks] = useState<CustomTask[]>([]);
+  const [itemDifficulties, setItemDifficulties] = useState<ItemDifficulty[]>([]);
+  const [memberPreferences, setMemberPreferences] = useState<MemberPreference[]>([]);
+  const [currentProposedChart, setCurrentProposedChartState] = useState<ProposedChart | null>(null);
+  const [chartApprovals, setChartApprovals] = useState<ChartApproval[]>([]);
+  const [currentMemberRole, setCurrentMemberRole] = useState<"owner" | "member">("member");
+  const isHost = currentMemberRole === "owner";
   const [currentUserId, setCurrentUserIdState] = useState<string>(CURRENT_USER_ID);
   const [pendingIouDraft, setPendingIouDraftState] = useState<PendingIouDraft | null>(null);
-  const [colorScheme, setColorScheme] = useState<ColorScheme>("blue");
+  const [colorScheme, setColorScheme] = useState<ColorScheme>("mono");
   const [pointsEnabled, setPointsEnabled] = useState(true);
   const [plantEnabled, setPlantEnabled] = useState(true);
-  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [localPreferencesLoaded, setLocalPreferencesLoaded] = useState(false);
+  const [householdPreferencesReady, setHouseholdPreferencesReady] = useState(false);
   const [preferencesOnboardingPending, setPreferencesOnboardingPending] = useState(false);
-  const [householdComplete, setHouseholdComplete] = useState(false);
+  const [householdComplete, setHouseholdCompleteState] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
   const applyingRemoteRef = useRef(false);
+  const applyingRemotePreferencesRef = useRef(false);
+  const preferencesLoaded =
+    localPreferencesLoaded && (!householdId || householdPreferencesReady);
 
   useEffect(() => {
-    AsyncStorage.getItem(PREFERENCES_KEY).then((raw) => {
-      if (raw) {
-        try {
+    AsyncStorage.getItem(PREFERENCES_KEY)
+      .then((raw) => {
+        if (raw) {
+          try {
           const preferences = JSON.parse(raw) as Partial<{
             colorScheme: ColorScheme;
             pointsEnabled: boolean;
@@ -529,8 +637,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             onboardingPending: boolean;
             householdComplete: boolean;
           }>;
-          if (preferences.colorScheme && ["blue", "brown", "pinkWhite", "blueWhite"].includes(preferences.colorScheme)) {
-            setColorScheme(preferences.colorScheme);
+          if (preferences.colorScheme) {
+            setColorScheme(normalizeColorScheme(preferences.colorScheme));
           }
           if (typeof preferences.pointsEnabled === "boolean") setPointsEnabled(preferences.pointsEnabled);
           if (typeof preferences.plantEnabled === "boolean") setPlantEnabled(preferences.plantEnabled);
@@ -538,29 +646,188 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             setPreferencesOnboardingPending(preferences.onboardingPending);
           }
           if (typeof preferences.householdComplete === "boolean") {
-            setHouseholdComplete(preferences.householdComplete);
+            setHouseholdCompleteState(preferences.householdComplete);
           }
-        } catch {}
-      }
-      setPreferencesLoaded(true);
-    });
+          } catch (error) {
+            reportRuntimeError("parse cached user preferences", error);
+          }
+        }
+      })
+      .catch((error) => {
+        reportRuntimeError("hydrate cached user preferences", error);
+      })
+      .finally(() => setLocalPreferencesLoaded(true));
   }, []);
 
   useEffect(() => {
-    if (!preferencesLoaded) return;
+    if (!localPreferencesLoaded) return;
     AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify({
-      colorScheme,
-      pointsEnabled,
-      plantEnabled,
       onboardingPending: preferencesOnboardingPending,
-      householdComplete,
-    }));
-  }, [colorScheme, pointsEnabled, plantEnabled, preferencesLoaded, preferencesOnboardingPending, householdComplete]);
+    })).catch((error) => {
+      reportRuntimeError("cache onboarding preference", error);
+    });
+  }, [localPreferencesLoaded, preferencesOnboardingPending]);
 
   const finishPreferencesOnboarding = useCallback(async () => {
     await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({ onboardingPending: false }));
     setPreferencesOnboardingPending(false);
   }, []);
+
+  // Household-wide preferences use their own realtime row. The first member
+  // to connect creates it from defaults (or legacy local values), after which
+  // Supabase is authoritative for every roommate.
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!localPreferencesLoaded || !userId || !householdId) {
+      setHouseholdPreferencesReady(false);
+      return;
+    }
+
+    let active = true;
+    setHouseholdPreferencesReady(false);
+    const channel = supabase.channel(`household-preferences:${householdId}`);
+
+    const applyPreferences = (row: {
+      color_scheme?: string;
+      points_enabled?: boolean;
+      plant_enabled?: boolean;
+      household_complete?: boolean;
+    }) => {
+      applyingRemotePreferencesRef.current = true;
+      if (row.color_scheme) {
+        setColorScheme(normalizeColorScheme(row.color_scheme));
+      }
+      if (typeof row.points_enabled === "boolean") setPointsEnabled(row.points_enabled);
+      if (typeof row.plant_enabled === "boolean") setPlantEnabled(row.plant_enabled);
+      if (typeof row.household_complete === "boolean") {
+        setHouseholdCompleteState(row.household_complete);
+      }
+    };
+
+    async function connectPreferences() {
+      const { data, error } = await supabase
+        .from("household_preferences")
+        .select("color_scheme, points_enabled, plant_enabled, household_complete")
+        .eq("household_id", householdId)
+        .maybeSingle();
+
+      if (!active) return;
+      if (error) {
+        reportSupabaseError("load household preferences", error, { householdId });
+        console.warn("Homie preferences sync could not start:", error.message);
+        return;
+      }
+
+      if (data) {
+        applyPreferences(data);
+      } else {
+        const { error: createError } = await supabase.from("household_preferences").insert({
+          household_id: householdId,
+          color_scheme: colorScheme,
+          points_enabled: pointsEnabled,
+          plant_enabled: plantEnabled,
+          household_complete: householdComplete,
+          updated_by: userId,
+          updated_at: new Date().toISOString(),
+        });
+        if (createError) {
+          reportSupabaseError("create household preferences", createError, { householdId });
+          // Another member may have won the first-row race; load that row.
+          if (createError.code === "23505") {
+            const { data: existing, error: reloadError } = await supabase
+              .from("household_preferences")
+              .select("color_scheme, points_enabled, plant_enabled, household_complete")
+              .eq("household_id", householdId)
+              .maybeSingle();
+            if (reloadError) {
+              reportSupabaseError("reload household preferences", reloadError, { householdId });
+            }
+            if (existing) applyPreferences(existing);
+          } else {
+            console.warn("Homie preferences could not be created:", createError.message);
+            return;
+          }
+        }
+      }
+
+      if (!active) return;
+      setHouseholdPreferencesReady(true);
+      channel
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "household_preferences",
+            filter: `household_id=eq.${householdId}`,
+          },
+          (payload) => {
+            const row = payload.new as {
+              color_scheme?: string;
+              points_enabled?: boolean;
+              plant_enabled?: boolean;
+              household_complete?: boolean;
+              updated_by?: string;
+            };
+            if (row.updated_by === userId) return;
+            applyPreferences(row);
+          },
+        )
+        .subscribe((status, error) => {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            reportSupabaseError(
+              "subscribe to household preferences",
+              error ?? new Error(status),
+              { householdId, status },
+            );
+          }
+        });
+    }
+
+    connectPreferences().catch((error) => {
+      reportRuntimeError("connect household preferences", error, { householdId });
+    });
+    return () => {
+      active = false;
+      setHouseholdPreferencesReady(false);
+      supabase.removeChannel(channel);
+    };
+  }, [householdId, localPreferencesLoaded, session?.user.id]);
+
+  // Coalesce preference changes and ignore realtime echoes.
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!householdPreferencesReady || !userId || !householdId) return;
+    if (applyingRemotePreferencesRef.current) {
+      applyingRemotePreferencesRef.current = false;
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      const { error } = await supabase.from("household_preferences").upsert({
+        household_id: householdId,
+        color_scheme: colorScheme,
+        points_enabled: pointsEnabled,
+        plant_enabled: plantEnabled,
+        household_complete: householdComplete,
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) {
+        reportSupabaseError("save household preferences", error, { householdId });
+        console.warn("Homie preference could not sync:", error.message);
+      }
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [
+    colorScheme,
+    householdComplete,
+    householdId,
+    householdPreferencesReady,
+    plantEnabled,
+    pointsEnabled,
+    session?.user.id,
+  ]);
 
   useEffect(() => {
     const userId = session?.user.id;
@@ -576,29 +843,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const { data: membership, error } = await supabase
         .from("household_members")
-        .select("household_id, display_name, color")
+        .select("household_id, display_name, color, role")
         .eq("user_id", userId)
         .maybeSingle();
       if (!active) return;
       if (error || !membership) {
+        if (error) {
+          reportSupabaseError("load current household membership", error, { userId });
+        }
         setHouseholdId(null);
         setHouseholdName(null);
         setInviteCode(null);
         setHouseholdLoading(false);
         return;
       }
-      const { data: household } = await supabase
+      const { data: household, error: householdError } = await supabase
         .from("households")
         .select("name, invite_code")
         .eq("id", membership.household_id)
         .single();
+      if (householdError) {
+        reportSupabaseError("load current household", householdError, {
+          householdId: membership.household_id,
+        });
+        if (active) {
+          setHouseholdId(null);
+          setHouseholdName(null);
+          setInviteCode(null);
+          setHouseholdLoading(false);
+        }
+        return;
+      }
       if (!active) return;
       setCurrentUserIdState(userId);
+      setCurrentMemberRole(membership.role === "owner" ? "owner" : "member");
       setHouseholdId(membership.household_id);
       setHouseholdName(household?.name ?? "My household");
       setInviteCode(household?.invite_code ?? null);
       setHouseholdLoading(false);
-    })();
+    })().catch((error) => {
+      reportRuntimeError("load current household", error, { userId });
+      if (active) {
+        setHouseholdId(null);
+        setHouseholdName(null);
+        setInviteCode(null);
+        setHouseholdLoading(false);
+      }
+    });
     return () => { active = false; };
   }, [session?.user.id, membershipVersion]);
 
@@ -607,13 +898,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       household_name: name.trim(), member_name: displayName.trim(), member_color: color,
       requested_invite_code: code,
     });
-    if (error) throw error;
-    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({
-      onboardingPending: true,
-      householdComplete: false,
-    }));
+    if (error) {
+      reportSupabaseError("create household", error);
+      throw error;
+    }
+    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({ onboardingPending: true }));
     setPreferencesOnboardingPending(true);
-    setHouseholdComplete(false);
+    setHouseholdCompleteState(false);
     const userId = session?.user.id;
     if (userId) {
       setRoommates([{ id: userId, name: displayName.trim(), color, points: 0, weeklyPoints: 0 }]);
@@ -627,27 +918,60 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.rpc("join_household", {
       code: code.trim(), member_name: displayName.trim(), member_color: color,
     });
-    if (error) throw error;
-    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({
-      onboardingPending: true,
-      householdComplete: false,
-    }));
+    if (error) {
+      reportSupabaseError("join household", error);
+      throw error;
+    }
+    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({ onboardingPending: true }));
     setPreferencesOnboardingPending(true);
-    setHouseholdComplete(false);
     if (session?.user.id) setCurrentUserIdState(session.user.id);
     setMembershipVersion((value) => value + 1);
   }, [session?.user.id]);
 
   const deleteHousehold = useCallback(async () => {
     if (!householdId) throw new Error("No household is selected.");
-    const { error } = await supabase.rpc("delete_household", {
-      target_household_id: householdId,
-    });
-    if (error) throw error;
+    if (!isHost) {
+      throw new Error("Only the household host can delete this household.");
+    }
+    const { data, error, count, status, statusText } = await supabase
+      .from("households")
+      .delete({ count: "exact" })
+      .eq("id", householdId)
+      .select("id")
+      .maybeSingle();
+    if (error || !data || count !== 1) {
+      const failure = {
+        status,
+        statusText,
+        code: error?.code ?? "RLS_DELETE_REJECTED",
+        message:
+          error?.message ??
+          "The household was not deleted. Only the household host has permission.",
+        details:
+          error?.details ??
+          `Expected one deleted household row, received ${count ?? 0}.`,
+        hint:
+          error?.hint ??
+          "Confirm you are signed in as the household creator and try again.",
+        count,
+      };
+      console.error("Supabase household delete failed", failure);
+      throw new Error(failure.message);
+    }
+
+    await AsyncStorage.removeItem(STORAGE_KEY);
+    await AsyncStorage.mergeItem(
+      PREFERENCES_KEY,
+      JSON.stringify({ onboardingPending: false, householdComplete: false }),
+    );
     setHouseholdId(null);
     setHouseholdName(null);
     setInviteCode(null);
+    setCurrentMemberRole("member");
     setCloudReady(false);
+    setHouseholdPreferencesReady(false);
+    setPreferencesOnboardingPending(false);
+    setHouseholdCompleteState(false);
     setRoommates([]);
     setChores([]);
     setExpenses([]);
@@ -655,19 +979,78 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setShoppingItems([]);
     setBorrowItems([]);
     setNudges([]);
+    setSuppressedAlerts({});
     setEssentialsAssignees({});
     setRoommateStatusesState({});
     setSleepStartedAtState({});
     setHomeLocationState(null);
     setChoreChartState(null);
     setChoreChartStartedAtState(null);
+    setHomeProfileState(null);
+    setLiveChartState(null);
+    setCustomTasks([]);
+    setItemDifficulties([]);
+    setMemberPreferences([]);
+    setCurrentProposedChartState(null);
+    setChartApprovals([]);
+    setPendingIouDraftState(null);
     setMembershipVersion((value) => value + 1);
-  }, [householdId]);
+  }, [householdId, isHost]);
+
+  const removeRoommate = useCallback(async (roommateId: string) => {
+    if (!householdId) throw new Error("No household is selected.");
+    if (!isHost) throw new Error("Only the household host can remove a roommate.");
+    if (roommateId === currentUserId) throw new Error("You cannot remove yourself.");
+    const { error } = await supabase.rpc("remove_household_member", {
+      target_household_id: householdId,
+      target_user_id: roommateId,
+    });
+    if (error) {
+      reportSupabaseError("remove household member", error, {
+        householdId,
+        roommateId,
+      });
+      throw error;
+    }
+    setRoommates((current) => current.filter((roommate) => roommate.id !== roommateId));
+    setChores((current) => current.filter((chore) => chore.assignedTo !== roommateId));
+    setMemberPreferences((current) => current.filter((entry) => entry.memberId !== roommateId));
+    setCurrentProposedChartState(null);
+    setChartApprovals([]);
+  }, [currentUserId, householdId, isHost]);
+
+  const deleteOwnAccount = useCallback(async () => {
+    const { error } = await supabase.rpc("delete_own_account");
+    if (error) {
+      reportSupabaseError("delete own account", error);
+      throw error;
+    }
+    await AsyncStorage.removeItem(STORAGE_KEY);
+    await AsyncStorage.removeItem(PREFERENCES_KEY);
+    await supabase.auth.signOut({ scope: "local" });
+    setHouseholdId(null);
+    setHouseholdName(null);
+    setInviteCode(null);
+    setRoommates([]);
+    setChores([]);
+    setExpenses([]);
+    setShoppingLists([]);
+    setShoppingItems([]);
+    setBorrowItems([]);
+    setNudges([]);
+    setLiveChartState(null);
+    setCustomTasks([]);
+    setItemDifficulties([]);
+    setMemberPreferences([]);
+    setCurrentProposedChartState(null);
+    setChartApprovals([]);
+  }, []);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
-      if (raw) {
-        try {
+    AsyncStorage.getItem(STORAGE_KEY)
+      .then((raw) => {
+        if (raw) {
+          try {
           const data = JSON.parse(raw);
           if (data.roommates) setRoommates(data.roommates);
           if (data.chores) setChores(data.chores);
@@ -687,10 +1070,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (data.currentUserId && typeof data.currentUserId === "string") {
             setCurrentUserIdState(data.currentUserId);
           }
-        } catch {}
-      }
-      setLoaded(true);
-    });
+          } catch (error) {
+            reportRuntimeError("parse cached household state", error);
+          }
+        }
+      })
+      .catch((error) => {
+        reportRuntimeError("hydrate cached household state", error);
+      })
+      .finally(() => setLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -698,7 +1086,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId })
-    );
+    ).catch((error) => {
+      reportRuntimeError("cache household state", error);
+    });
   }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId]);
 
   const sharedState = useMemo<SharedHouseholdState>(() => ({
@@ -716,7 +1106,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     choreChart,
     choreChartStartedAt,
     homeProfile,
-  }), [roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile]);
+    liveChart,
+    customTasks,
+  }), [roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
 
   const latestSharedStateRef = useRef(sharedState);
   latestSharedStateRef.current = sharedState;
@@ -738,6 +1130,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if ("choreChart" in next) setChoreChartState(next.choreChart ?? null);
     if ("choreChartStartedAt" in next) setChoreChartStartedAtState(next.choreChartStartedAt ?? null);
     if ("homeProfile" in next) setHomeProfileState(next.homeProfile ?? null);
+    if ("liveChart" in next) setLiveChartState(next.liveChart ?? null);
+    if (Array.isArray(next.customTasks)) setCustomTasks(next.customTasks);
   }, []);
 
   // Load the shared household document and subscribe to other devices.
@@ -760,6 +1154,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (!active) return;
       if (error) {
+        reportSupabaseError("load shared household state", error, { householdId });
         console.warn("Roomie cloud sync could not start:", error.message);
         return;
       }
@@ -767,10 +1162,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (data?.state) {
         applyingRemoteRef.current = true;
         const remote = data.state as Partial<SharedHouseholdState>;
-        const { data: members } = await supabase
+        const { data: members, error: membersError } = await supabase
           .from("household_members")
           .select("user_id, display_name, color")
           .eq("household_id", householdId);
+        if (membersError) {
+          reportSupabaseError("load household members", membersError, { householdId });
+          return;
+        }
         const existing = remote.roommates ?? [];
         const memberIds = new Set((members ?? []).map((member) => member.user_id));
         const hasNewMembers = (members ?? []).some((member) => !existing.some((roommate) => roommate.id === member.user_id));
@@ -797,6 +1196,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           updated_at: new Date().toISOString(),
         });
         if (createError) {
+          reportSupabaseError("create shared household state", createError, { householdId });
           console.warn("Roomie household could not be created:", createError.message);
           return;
         }
@@ -820,10 +1220,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             applySharedState(row.state);
           }
         )
-        .subscribe();
+        .subscribe((status, error) => {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            reportSupabaseError(
+              "subscribe to shared household state",
+              error ?? new Error(status),
+              { householdId, status },
+            );
+          }
+        });
     }
 
-    connect();
+    connect().catch((error) => {
+      reportRuntimeError("connect shared household state", error, { householdId });
+    });
     return () => {
       active = false;
       setCloudReady(false);
@@ -848,10 +1258,148 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updated_by: userId,
         updated_at: new Date().toISOString(),
       });
-      if (error) console.warn("Roomie change could not sync:", error.message);
+      if (error) {
+        reportSupabaseError("save shared household state", error, { householdId });
+        console.warn("Roomie change could not sync:", error.message);
+      }
     }, 220);
     return () => clearTimeout(timer);
   }, [cloudReady, householdId, loaded, session?.user.id, sharedState]);
+
+  // Load deterministic-chart configuration and keep it live across roommates.
+  useEffect(() => {
+    if (!householdId || !session?.user.id) {
+      setItemDifficulties([]);
+      setMemberPreferences([]);
+      setCurrentProposedChartState(null);
+      setChartApprovals([]);
+      return;
+    }
+    let active = true;
+    const channel = supabase.channel(`chore-foundation:${householdId}`);
+
+    const refresh = async () => {
+      const [difficultyResult, preferenceResult, chartResult] = await Promise.all([
+        supabase.from("item_difficulty").select("id, household_id, category, item, difficulty").eq("household_id", householdId),
+        supabase.from("member_task_preferences").select("id, household_id, member_id, key, value").eq("household_id", householdId),
+        supabase.from("proposed_charts").select("id, household_id, created_by, status, payload, created_at").eq("household_id", householdId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      if (!active) return;
+      if (difficultyResult.error) {
+        reportSupabaseError("load item difficulties", difficultyResult.error, { householdId });
+      }
+      if (preferenceResult.error) {
+        reportSupabaseError("load member task preferences", preferenceResult.error, { householdId });
+      }
+      if (chartResult.error) {
+        reportSupabaseError("load proposed chart", chartResult.error, { householdId });
+      }
+      setItemDifficulties((difficultyResult.data ?? []).map((row) => ({
+        id: row.id,
+        householdId: row.household_id,
+        category: row.category as ItemCategory,
+        item: row.item,
+        difficulty: row.difficulty as Difficulty,
+      })));
+      setMemberPreferences((preferenceResult.data ?? []).map((row) => ({
+        id: row.id,
+        householdId: row.household_id,
+        memberId: row.member_id,
+        key: row.key,
+        value: row.value,
+      })));
+      const row = chartResult.data;
+      const chart = row ? {
+        id: row.id,
+        householdId: row.household_id,
+        createdBy: row.created_by,
+        status: row.status as ProposedChart["status"],
+        payload: row.payload as ProposedChart["payload"],
+        createdAt: row.created_at,
+      } as ProposedChart : null;
+      setCurrentProposedChartState(chart);
+      if (chart) {
+        const { data: approvalRows, error: approvalsError } = await supabase
+          .from("proposed_chart_approvals")
+          .select("id, proposed_chart_id, member_id, approved, approved_at")
+          .eq("proposed_chart_id", chart.id);
+        if (approvalsError) {
+          reportSupabaseError("load proposed chart approvals", approvalsError, {
+            householdId,
+            chartId: chart.id,
+          });
+        }
+        if (!active) return;
+        setChartApprovals((approvalRows ?? []).map((approval) => ({
+          id: approval.id,
+          proposedChartId: approval.proposed_chart_id,
+          memberId: approval.member_id,
+          approved: approval.approved,
+          approvedAt: approval.approved_at,
+        })));
+      } else {
+        setChartApprovals([]);
+      }
+
+      if (chart?.status === "approved") {
+        setLiveChartState(chart.payload.assignments);
+        const generated = chart.payload.generatedTasks ?? [];
+        const ownerByTask = new Map<string, string>();
+        chart.payload.assignments.forEach((assignment) => {
+          assignment.taskIds.forEach((taskId) => ownerByTask.set(taskId, assignment.memberId));
+        });
+        setChores((current) => {
+          const existingIds = new Set(current.map((chore) => chore.id));
+          const additions: Chore[] = generated.flatMap((task) => {
+            const id = `chart:${chart.id}:${task.id}`;
+            const assignedTo = ownerByTask.get(task.id);
+            if (!assignedTo || existingIds.has(id)) return [];
+            return [{
+              id,
+              title: task.title,
+              assignedTo,
+              dueDate: daysFromNow(7),
+              completed: false,
+              points: task.difficulty * 5,
+              category: task.itemCategory === "living" ? "cleaning" : task.itemCategory === "other" ? "other" : task.itemCategory,
+              recurring: task.frequency === "daily" ? "daily" : task.frequency === "monthly" ? "monthly" : "weekly",
+            }];
+          });
+          return additions.length ? [...current, ...additions] : current;
+        });
+      }
+    };
+
+    refresh().catch((error) => {
+      reportRuntimeError("refresh deterministic chart state", error, { householdId });
+    });
+    for (const table of ["item_difficulty", "member_task_preferences", "proposed_charts", "proposed_chart_approvals"] as const) {
+      channel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table, filter: `household_id=eq.${householdId}` },
+        () => {
+          refresh().catch((error) => {
+            reportRuntimeError("refresh deterministic chart state", error, {
+              householdId,
+              table,
+            });
+          });
+        },
+      );
+    }
+    channel.subscribe((status, error) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        reportSupabaseError("subscribe to deterministic chart state", error ?? new Error(status), {
+          householdId,
+          status,
+        });
+      }
+    });
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [householdId, session?.user.id]);
 
   const addChore = useCallback((chore: Omit<Chore, "id">) => {
     setChores((prev) => [...prev, { ...chore, id: makeId() }]);
@@ -1196,6 +1744,192 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const setLiveChart = useCallback((assignments: Assignment[] | null) => {
+    setLiveChartState(assignments);
+  }, []);
+
+  const addCustomTask = useCallback((task: Omit<CustomTask, "id">) => {
+    setCustomTasks((current) => [...current, { ...task, id: makeId() }]);
+  }, []);
+
+  const deleteCustomTask = useCallback((id: string) => {
+    setCustomTasks((current) => current.filter((task) => task.id !== id));
+  }, []);
+
+  const setHouseholdComplete = useCallback((complete: boolean) => {
+    setHouseholdCompleteState(complete);
+  }, []);
+
+  useEffect(() => {
+    if (!householdComplete || !householdId) return;
+    Promise.resolve(
+      supabase.rpc("seed_item_difficulty", { target_household_id: householdId }),
+    ).then(
+      ({ error }) => {
+        if (error) {
+          reportSupabaseError("seed item difficulties", error, { householdId });
+          console.warn("Item difficulties could not be seeded:", error.message);
+        }
+      },
+    ).catch((error) => {
+      reportRuntimeError("seed item difficulties", error, { householdId });
+    });
+  }, [householdComplete, householdId]);
+
+  const setItemDifficulty = useCallback(async (
+    category: ItemCategory,
+    item: string,
+    difficulty: Difficulty,
+  ) => {
+    if (!householdId) throw new Error("No household is selected.");
+    const { error } = await supabase.from("item_difficulty").upsert(
+      { household_id: householdId, category, item, difficulty },
+      { onConflict: "household_id,category,item" },
+    );
+    if (error) {
+      reportSupabaseError("save item difficulty", error, { householdId, category, item });
+      throw error;
+    }
+    setItemDifficulties((current) => {
+      const next = current.filter((entry) => !(entry.category === category && entry.item === item));
+      return [...next, { householdId, category, item, difficulty }];
+    });
+  }, [householdId]);
+
+  const resetItemDifficulties = useCallback(async () => {
+    if (!householdId) throw new Error("No household is selected.");
+    const { error: deleteError } = await supabase
+      .from("item_difficulty")
+      .delete()
+      .eq("household_id", householdId);
+    if (deleteError) {
+      reportSupabaseError("clear item difficulties", deleteError, { householdId });
+      throw deleteError;
+    }
+    const { error: seedError } = await supabase.rpc("seed_item_difficulty", {
+      target_household_id: householdId,
+    });
+    if (seedError) {
+      reportSupabaseError("reset item difficulties", seedError, { householdId });
+      throw seedError;
+    }
+  }, [householdId]);
+
+  const setMemberPreference = useCallback(async (key: string, value: number) => {
+    const memberId = session?.user.id;
+    if (!householdId || !memberId) throw new Error("No household member is selected.");
+    const normalizedValue = Math.max(0, Math.min(100, Math.round(value)));
+    const { error } = await supabase.from("member_task_preferences").upsert(
+      {
+        household_id: householdId,
+        member_id: memberId,
+        key,
+        value: normalizedValue,
+      },
+      { onConflict: "household_id,member_id,key" },
+    );
+    if (error) {
+      reportSupabaseError("save member task preference", error, {
+        householdId,
+        memberId,
+        key,
+      });
+      throw error;
+    }
+    setMemberPreferences((current) => [
+      ...current.filter((entry) => !(entry.memberId === memberId && entry.key === key)),
+      { householdId, memberId, key, value: normalizedValue },
+    ]);
+  }, [householdId, session?.user.id]);
+
+  const setCurrentProposedChart = useCallback(async (chart: ProposedChart | null) => {
+    if (!householdId) throw new Error("No household is selected.");
+    if (!chart) {
+      if (currentProposedChart) {
+        const { error } = await supabase
+          .from("proposed_charts")
+          .update({ status: "cancelled" })
+          .eq("id", currentProposedChart.id);
+        if (error) {
+          reportSupabaseError("cancel proposed chart", error, {
+            householdId,
+            chartId: currentProposedChart.id,
+          });
+          throw error;
+        }
+      }
+      setCurrentProposedChartState(null);
+      return;
+    }
+    const { error } = await supabase.from("proposed_charts").upsert({
+      id: chart.id,
+      household_id: householdId,
+      created_by: chart.createdBy,
+      status: chart.status,
+      payload: chart.payload,
+      created_at: chart.createdAt,
+    });
+    if (error) {
+      reportSupabaseError("save proposed chart", error, {
+        householdId,
+        chartId: chart.id,
+      });
+      throw error;
+    }
+    setCurrentProposedChartState(chart);
+  }, [currentProposedChart, householdId]);
+
+  const proposeChart = useCallback(async (payload: ProposedChart["payload"]) => {
+    if (!householdId) throw new Error("No household is selected.");
+    const { error } = await supabase.rpc("replace_proposed_chart", {
+      target_household_id: householdId,
+      chart_payload: payload,
+    });
+    if (error) {
+      reportSupabaseError("replace proposed chart", error, { householdId });
+      throw error;
+    }
+  }, [householdId]);
+
+  const approveProposedChart = useCallback(async () => {
+    if (!currentProposedChart || currentProposedChart.status !== "pending") return;
+    const { error } = await supabase.rpc("approve_proposed_chart", {
+      target_chart_id: currentProposedChart.id,
+    });
+    if (error) {
+      reportSupabaseError("approve proposed chart", error, {
+        chartId: currentProposedChart.id,
+      });
+      throw error;
+    }
+  }, [currentProposedChart]);
+
+  const forceApproveProposedChart = useCallback(async () => {
+    if (!currentProposedChart || currentProposedChart.status !== "pending") return;
+    const { error } = await supabase.rpc("force_approve_proposed_chart", {
+      target_chart_id: currentProposedChart.id,
+    });
+    if (error) {
+      reportSupabaseError("force approve proposed chart", error, {
+        chartId: currentProposedChart.id,
+      });
+      throw error;
+    }
+  }, [currentProposedChart]);
+
+  const restartChartProcess = useCallback(async () => {
+    if (!householdId) return;
+    const { error } = await supabase.rpc("cancel_proposed_charts", {
+      target_household_id: householdId,
+    });
+    if (error) {
+      reportSupabaseError("restart chart process", error, { householdId });
+      throw error;
+    }
+    setCurrentProposedChartState(null);
+    setChartApprovals([]);
+  }, [householdId]);
+
   const setCurrentUser = useCallback((id: string) => {
     setCurrentUserIdState(id);
   }, []);
@@ -1248,6 +1982,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider
       value={{
+        itemDifficulties,
+        setItemDifficulty,
+        resetItemDifficulties,
+        memberPreferences,
+        setMemberPreference,
+        currentProposedChart,
+        setCurrentProposedChart,
+        liveChart,
+        setLiveChart,
+        customTasks,
+        addCustomTask,
+        deleteCustomTask,
+        chartApprovals,
+        proposeChart,
+        approveProposedChart,
+        forceApproveProposedChart,
+        restartChartProcess,
+        isHost,
         preferencesLoaded,
         preferencesOnboardingPending,
         finishPreferencesOnboarding,
@@ -1266,6 +2018,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         createHousehold,
         joinHousehold,
         deleteHousehold,
+        removeRoommate,
+        deleteOwnAccount,
         currentUserId,
         setCurrentUser,
         roommates,

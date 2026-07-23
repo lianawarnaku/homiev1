@@ -29,6 +29,7 @@ const SCREEN_HEIGHT = Dimensions.get("window").height;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useTheme } from "@/constants/colors";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -433,12 +434,15 @@ export default function ExpensesScreen() {
           <Text style={[styles.title, { color: colors.foreground }]}>Expenses</Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Shared costs and repayments</Text>
         </View>
-        <TouchableOpacity
-          style={[styles.addHeaderBtn, { backgroundColor: colors.primary }]}
-          onPress={() => { resetModal(); setShowExpenseModal(true); }}
-        >
-          <Feather name="plus" size={20} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={[styles.addHeaderBtn, { backgroundColor: colors.primary }]}
+            onPress={() => { resetModal(); setShowExpenseModal(true); }}
+          >
+            <Feather name="plus" size={20} color="#fff" />
+          </TouchableOpacity>
+          <HeaderActions />
+        </View>
       </View>
 
       <>
@@ -1464,7 +1468,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingBottom: 16,
@@ -1478,6 +1482,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
   balanceRow: {
     flexDirection: "column",
     marginHorizontal: 16,

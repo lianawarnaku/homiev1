@@ -12,15 +12,22 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useTheme } from "@/constants/colors";
+import { colorSchemes } from "@/constants/colors";
 
 export type ErrorFallbackProps = {
   error: Error;
+  componentStack?: string | null;
   resetError: () => void;
 };
 
-export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
-  const colors = useTheme();
+export function ErrorFallback({
+  error,
+  componentStack,
+  resetError,
+}: ErrorFallbackProps) {
+  // This fallback sits above AppProvider and must not consume AppContext:
+  // provider failures are one of the errors it is responsible for rendering.
+  const colors = colorSchemes.mono;
   const insets = useSafeAreaInsets();
 
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -38,6 +45,9 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
     let details = `Error: ${error.message}\n\n`;
     if (error.stack) {
       details += `Stack Trace:\n${error.stack}`;
+    }
+    if (componentStack) {
+      details += `\n\nComponent Stack:\n${componentStack}`;
     }
     return details;
   };
@@ -74,8 +84,24 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
         </Text>
 
         <Text style={[styles.message, { color: colors.mutedForeground }]}>
-          Please reload the app to continue.
+          {error.message || "Please reload the app to continue."}
         </Text>
+
+        {__DEV__ && componentStack ? (
+          <ScrollView
+            style={[styles.inlineDetails, { backgroundColor: colors.card }]}
+          >
+            <Text
+              selectable
+              style={[
+                styles.errorText,
+                { color: colors.foreground, fontFamily: monoFont },
+              ]}
+            >
+              {componentStack}
+            </Text>
+          </ScrollView>
+        ) : null}
 
         <Pressable
           onPress={handleRestart}
@@ -197,6 +223,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "center",
     lineHeight: 24,
+  },
+  inlineDetails: {
+    width: "100%",
+    maxHeight: 180,
+    borderRadius: 8,
+    padding: 12,
   },
   topButton: {
     position: "absolute",

@@ -7,7 +7,7 @@ import { useAppContext } from "@/context/AppContext";
 import { SmoothPressable } from "@/components/SmoothPressable";
 
 const SCHEME_LABELS: Record<ColorScheme, string> = {
-  blue: "Blue",
+  mono: "Black & White",
   brown: "Brown",
   pinkWhite: "Pink + White",
   blueWhite: "Blue + White",

@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext, type BorrowItem } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
@@ -168,12 +169,15 @@ export default function BorrowScreen() {
             Never forget what you borrowed
           </Text>
         </View>
-        <TouchableOpacity
-          style={[styles.addBtn, { backgroundColor: colors.primary }]}
-          onPress={() => setShowModal(true)}
-        >
-          <Feather name="plus" size={20} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={[styles.addBtn, { backgroundColor: colors.primary }]}
+            onPress={() => setShowModal(true)}
+          >
+            <Feather name="plus" size={20} color="#fff" />
+          </TouchableOpacity>
+          <HeaderActions />
+        </View>
       </View>
 
       {overdue.length > 0 ? (
@@ -585,7 +589,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingBottom: 16,
@@ -599,6 +603,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
   overdueAlert: {
     flexDirection: "row",
     alignItems: "center",

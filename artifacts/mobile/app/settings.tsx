@@ -25,8 +25,10 @@ import { useTheme } from "@/constants/colors";
 import { UserPreferencesPanel } from "@/components/UserPreferencesPanel";
 import { HouseholdCompletionControl } from "@/components/HouseholdCompletionControl";
 import { useSupabaseSession } from "@/hooks/useSupabaseSession";
+import { useConfirm } from "@/hooks/useConfirm";
 import { supabase } from "@/lib/supabase";
 import { error as hapticError } from "@/lib/haptics";
+import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import {
   findRoommateIdByEmail,
   getStoredEmail,
@@ -81,20 +83,32 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const {
     roommates, currentUserId, updateRoommate, setCurrentUser, householdName,
-    inviteCode, deleteHousehold,
+    inviteCode, deleteHousehold, restartChartProcess, currentProposedChart,
+    isHost, removeRoommate, deleteOwnAccount,
   } = useAppContext();
+  const { confirm } = useConfirm();
   const me = roommates.find((r) => r.id === currentUserId);
   // Supabase session is guaranteed non-null here — AuthGate would have rendered
   // the sign-in screen instead of Settings otherwise.
   const { session } = useSupabaseSession();
   const [signingOut, setSigningOut] = useState(false);
   const [deletingHousehold, setDeletingHousehold] = useState(false);
+  const [restartingChart, setRestartingChart] = useState(false);
+  const [removingRoommateId, setRemovingRoommateId] = useState<string | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        reportSupabaseError("sign out from settings", error);
+        Alert.alert("Unable to sign out", error.message);
+      }
       // AuthGate reacts to onAuthStateChange and swaps back to SignInScreen —
       // this component will unmount, so no need to reset state locally.
+    } catch (error) {
+      reportRuntimeError("sign out from settings", error);
+      Alert.alert("Unable to sign out", "Please check your connection and try again.");
     } finally {
       setSigningOut(false);
     }
@@ -114,6 +128,7 @@ export default function SettingsScreen() {
             try {
               await deleteHousehold();
               await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              router.replace("/");
             } catch (error) {
               hapticError();
               const message =
@@ -127,6 +142,90 @@ export default function SettingsScreen() {
           },
         },
       ]
+    );
+  };
+
+  const confirmRestartChart = () => {
+    Alert.alert(
+      "Restart chore planning?",
+      "This cancels the current pending proposal and lets your household generate a fresh chart.",
+      [
+        { text: "Keep proposal", style: "cancel" },
+        {
+          text: "Restart",
+          style: "destructive",
+          onPress: async () => {
+            setRestartingChart(true);
+            try {
+              await restartChartProcess();
+              router.push("/planning");
+            } catch {
+              hapticError();
+              Alert.alert("Could not restart", "Please check your connection and try again.");
+            } finally {
+              setRestartingChart(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const confirmRemoveRoommate = (roommateId: string, roommateName: string) => {
+    confirm(
+      `remove-roommate-${roommateId}`,
+      `Remove ${roommateName}?`,
+      `${roommateName} will lose access to this household and its shared data. Their Supabase account will remain active, so they can join or create another household.`,
+      () => {
+        void (async () => {
+          setRemovingRoommateId(roommateId);
+          try {
+            await removeRoommate(roommateId);
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch (error) {
+            hapticError();
+            const message =
+              error && typeof error === "object" && "message" in error && typeof error.message === "string"
+                ? error.message
+                : "The roommate could not be removed.";
+            Alert.alert("Unable to remove roommate", message);
+          } finally {
+            setRemovingRoommateId(null);
+          }
+        })();
+      },
+      { confirmText: "Remove roommate", destructive: true }
+    );
+  };
+
+  const confirmDeleteOwnAccount = () => {
+    confirm(
+      "delete-own-account",
+      "Delete your account permanently?",
+      "This erases your Supabase login and removes you from Homie. You can later create a brand-new account with the same email. A host must remove all other roommates first.",
+      () => {
+        void (async () => {
+          setDeletingAccount(true);
+          try {
+            await deleteOwnAccount();
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            router.replace("/");
+          } catch (error) {
+            hapticError();
+            const rawMessage =
+              error && typeof error === "object" && "message" in error && typeof error.message === "string"
+                ? error.message
+                : "";
+            const message = rawMessage.includes("Remove all other roommates")
+              ? "As the host, remove every other roommate before deleting your account."
+              : rawMessage || "Your account could not be deleted.";
+            Alert.alert("Unable to delete account", message);
+          } finally {
+            setDeletingAccount(false);
+          }
+        })();
+      },
+      { confirmText: "Delete my account", destructive: true }
     );
   };
 
@@ -165,12 +264,24 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    getStoredUsername(currentUserId).then((u) => {
-      if (!cancelled) setCurrentUsername(u);
-    });
-    getStoredEmail(currentUserId).then((e) => {
-      if (!cancelled) setCurrentEmail(e);
-    });
+    Promise.all([
+      getStoredUsername(currentUserId),
+      getStoredEmail(currentUserId),
+    ])
+      .then(([username, email]) => {
+        if (cancelled) return;
+        setCurrentUsername(username);
+        setCurrentEmail(email);
+      })
+      .catch((error) => {
+        reportRuntimeError("load local profile credentials", error, {
+          currentUserId,
+        });
+        if (!cancelled) {
+          setCurrentUsername(null);
+          setCurrentEmail(null);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -467,6 +578,22 @@ export default function SettingsScreen() {
                 {signingOut ? "Signing out…" : "Sign out"}
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.outlineDangerBtn,
+                { borderColor: colors.destructive, opacity: deletingAccount ? 0.6 : 1 },
+              ]}
+              onPress={confirmDeleteOwnAccount}
+              disabled={deletingAccount}
+            >
+              <Feather name="user-x" size={14} color={colors.destructive} />
+              <Text style={[styles.outlineDangerBtnText, { color: colors.destructive }]}>
+                {deletingAccount ? "Deleting account…" : "Delete my account"}
+              </Text>
+            </TouchableOpacity>
+            <Text style={[styles.accountHint, { color: colors.mutedForeground }]}>
+              Permanently deletes your login. This is separate from leaving or removing someone from a household.
+            </Text>
           </View>
 
           {/* Profile section */}
@@ -503,6 +630,47 @@ export default function SettingsScreen() {
             <Text style={[styles.accountHint, { color: colors.mutedForeground }]}>
               Share this code with roommates. Each person signs into their own account before joining.
             </Text>
+            {isHost && roommates.some((roommate) => roommate.id !== currentUserId) ? (
+              <View style={[styles.memberManagement, { borderTopColor: colors.border }]}>
+                <Text style={[styles.memberManagementTitle, { color: colors.foreground }]}>
+                  HOUSEHOLD MEMBERS
+                </Text>
+                <Text style={[styles.memberManagementHint, { color: colors.mutedForeground }]}>
+                  Removing someone only revokes household access. It does not delete their account.
+                </Text>
+                {roommates
+                  .filter((roommate) => roommate.id !== currentUserId)
+                  .map((roommate) => (
+                    <View key={roommate.id} style={styles.memberManagementRow}>
+                      <RoommateAvatar
+                        name={roommate.name}
+                        color={roommate.color}
+                        size={36}
+                        imageUri={roommate.avatarUri}
+                      />
+                      <Text style={[styles.memberManagementName, { color: colors.foreground }]}>
+                        {roommate.name}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => confirmRemoveRoommate(roommate.id, roommate.name)}
+                        disabled={removingRoommateId !== null}
+                        style={[
+                          styles.memberRemoveBtn,
+                          {
+                            borderColor: colors.destructive,
+                            opacity: removingRoommateId !== null ? 0.55 : 1,
+                          },
+                        ]}
+                      >
+                        <Feather name="user-minus" size={13} color={colors.destructive} />
+                        <Text style={[styles.memberRemoveText, { color: colors.destructive }]}>
+                          {removingRoommateId === roommate.id ? "Removing…" : "Remove"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+              </View>
+            ) : null}
             <TouchableOpacity
               disabled={deletingHousehold}
               onPress={confirmDeleteHousehold}
@@ -597,6 +765,19 @@ export default function SettingsScreen() {
           <HouseholdCompletionControl />
           <TouchableOpacity
             style={[styles.linkRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => router.push("/task-difficulty")}
+          >
+            <View style={[styles.linkIcon, { backgroundColor: colors.accent + "18" }]}>
+              <Text style={styles.linkEmoji}>⚖️</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.linkTitle, { color: colors.foreground }]}>TASK DIFFICULTY</Text>
+              <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>Review and edit shared difficulty levels</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.linkRow, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => router.push("/planning")}
           >
             <View style={[styles.linkIcon, { backgroundColor: colors.primary + "18" }]}>
@@ -606,6 +787,31 @@ export default function SettingsScreen() {
               <Text style={[styles.linkTitle, { color: colors.foreground }]}>CHORE PLANNING</Text>
               <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
                 Build a chore chart or generate a home checklist
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.linkRow,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                opacity: restartingChart ? 0.6 : 1,
+              },
+            ]}
+            onPress={confirmRestartChart}
+            disabled={restartingChart}
+          >
+            <View style={[styles.linkIcon, { backgroundColor: colors.warning + "18" }]}>
+              <Feather name="rotate-ccw" size={18} color={colors.warning} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.linkTitle, { color: colors.foreground }]}>RESTART CHART PROCESS</Text>
+              <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
+                {currentProposedChart?.status === "pending"
+                  ? "Cancel the pending proposal and generate a new one"
+                  : "Return to planning and generate a fresh proposal"}
               </Text>
             </View>
             <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
@@ -1008,11 +1214,62 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 13,
   },
+  outlineDangerBtn: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  outlineDangerBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+  },
   accountHint: {
     fontFamily: "Inter_400Regular",
     fontSize: 11,
     lineHeight: 15,
     textAlign: "center",
+  },
+  memberManagement: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 14,
+    gap: 10,
+  },
+  memberManagementTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 12,
+    letterSpacing: 1.1,
+  },
+  memberManagementHint: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  memberManagementRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  memberManagementName: {
+    flex: 1,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+  },
+  memberRemoveBtn: {
+    minHeight: 36,
+    borderWidth: 1,
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  memberRemoveText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
   },
 
   // ── Auth modal ──

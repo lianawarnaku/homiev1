@@ -3,8 +3,10 @@
 // hashed with SHA-256 + a per-account salt before being persisted, so even
 // if a Keychain entry is exfiltrated the plaintext password isn't there.
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
 // SecureStore keys may contain only alphanumeric characters, `.`, `-`, and
 // `_`. The old `homie:auth:` prefix used colons and crashed as soon as a
@@ -36,13 +38,30 @@ function keyFor(roommateId: string): string {
   return `${KEY_PREFIX}${safeId}`;
 }
 
+// expo-secure-store is native-only in this runtime. Web uses AsyncStorage for
+// this legacy local-account layer; Supabase remains the real cloud identity.
+const credentialStorage = {
+  getItem: (key: string) =>
+    Platform.OS === "web"
+      ? AsyncStorage.getItem(key)
+      : SecureStore.getItemAsync(key),
+  setItem: (key: string, value: string) =>
+    Platform.OS === "web"
+      ? AsyncStorage.setItem(key, value)
+      : SecureStore.setItemAsync(key, value),
+  removeItem: (key: string) =>
+    Platform.OS === "web"
+      ? AsyncStorage.removeItem(key)
+      : SecureStore.deleteItemAsync(key),
+};
+
 export async function hasCredentials(roommateId: string): Promise<boolean> {
-  const raw = await SecureStore.getItemAsync(keyFor(roommateId));
+  const raw = await credentialStorage.getItem(keyFor(roommateId));
   return !!raw;
 }
 
 async function getCredential(roommateId: string): Promise<StoredCredential | null> {
-  const raw = await SecureStore.getItemAsync(keyFor(roommateId));
+  const raw = await credentialStorage.getItem(keyFor(roommateId));
   if (!raw) return null;
   try {
     return JSON.parse(raw) as StoredCredential;
@@ -71,7 +90,7 @@ export async function setupCredentials(
   const salt = bytesToHex(saltBytes);
   const passwordHash = await hashPassword(password, salt);
   const cred: StoredCredential = { username, email, salt, passwordHash };
-  await SecureStore.setItemAsync(keyFor(roommateId), JSON.stringify(cred));
+  await credentialStorage.setItem(keyFor(roommateId), JSON.stringify(cred));
 }
 
 export async function verifyCredentials(
@@ -97,7 +116,7 @@ export async function updatePassword(
   const saltBytes = await Crypto.getRandomBytesAsync(16);
   const salt = bytesToHex(saltBytes);
   const passwordHash = await hashPassword(newPassword, salt);
-  await SecureStore.setItemAsync(
+  await credentialStorage.setItem(
     keyFor(roommateId),
     JSON.stringify({ ...cred, salt, passwordHash } satisfies StoredCredential)
   );
@@ -119,5 +138,5 @@ export async function findRoommateIdByEmail(
 }
 
 export async function clearCredentials(roommateId: string): Promise<void> {
-  await SecureStore.deleteItemAsync(keyFor(roommateId));
+  await credentialStorage.removeItem(keyFor(roommateId));
 }

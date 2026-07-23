@@ -24,6 +24,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext, type PendingIouDraft, type ShoppingItem, type ShoppingList } from "@/context/AppContext";
 
@@ -279,12 +280,15 @@ export default function ShoppingScreen() {
           <Text style={[styles.title, { color: colors.foreground }]}>Shopping</Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Shared lists for the household</Text>
         </View>
-        <TouchableOpacity
-          style={[styles.addHeaderBtn, { backgroundColor: colors.primary }]}
-          onPress={() => setShowNewListModal(true)}
-        >
-          <Feather name="plus" size={20} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={[styles.addHeaderBtn, { backgroundColor: colors.primary }]}
+            onPress={() => setShowNewListModal(true)}
+          >
+            <Feather name="plus" size={20} color="#fff" />
+          </TouchableOpacity>
+          <HeaderActions />
+        </View>
       </View>
 
       {/* Summary chip */}
@@ -906,7 +910,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingBottom: 16,
@@ -920,6 +924,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
   summaryRow: { flexDirection: "row" },
   summaryChip: {
     flexDirection: "row",
