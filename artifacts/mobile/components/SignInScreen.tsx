@@ -2,11 +2,10 @@
 // no Supabase session. Toggles between two modes:
 //   - "signin" → supabase.auth.signInWithPassword
 //   - "signup" → supabase.auth.signUp
-// If your Supabase project has "Confirm email" enabled (default), a fresh
-// signUp will succeed but the user won't be logged in until they click the
-// confirmation link. During development you can disable this in
-// Supabase dashboard → Authentication → Providers → Email → uncheck
-// "Confirm email".
+// SweetMate's Supabase project auto-confirms new email/password accounts, so
+// signUp normally returns a session and AuthGate opens the app immediately.
+// The confirmation fallback remains only for legacy accounts created before
+// auto-confirm was enabled.
 
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -96,13 +95,14 @@ export function SignInScreen() {
           return;
         }
         if (data.session) {
-          // Email confirmation is OFF — user is signed in immediately.
+          // Auto-confirm is enabled — the new user is signed in immediately.
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } else {
-          // Email confirmation is ON — Supabase sent a link. Wait for click.
+          // Defensive fallback for a legacy/unconfirmed account or a remote
+          // configuration mismatch.
           setConfirmationEmail(email.trim());
           setInfo(
-            "Check your email for a confirmation link. After confirming, return to SweetMate and sign in."
+            "Your account was created, but SweetMate could not start your session. Try signing in, or resend the confirmation for this account."
           );
         }
       }
