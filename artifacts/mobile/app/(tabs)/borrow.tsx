@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext, type BorrowItem } from "@/context/AppContext";
@@ -47,6 +48,7 @@ function formatDue(dueDate: string) {
 export default function BorrowScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const { scrollBottomPadding } = useFloatingActionMetrics();
   const {
     borrowItems,
     roommates,
@@ -170,12 +172,6 @@ export default function BorrowScreen() {
           </Text>
         </View>
         <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={[styles.addBtn, { backgroundColor: colors.primary }]}
-            onPress={() => setShowModal(true)}
-          >
-            <Feather name="plus" size={20} color="#fff" />
-          </TouchableOpacity>
           <HeaderActions />
         </View>
       </View>
@@ -208,7 +204,7 @@ export default function BorrowScreen() {
         keyExtractor={(b) => b.id}
         contentContainerStyle={[
           styles.list,
-          { paddingBottom: 90 + botPad },
+          { paddingBottom: Math.max(scrollBottomPadding, 90 + botPad) },
         ]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
@@ -440,6 +436,11 @@ export default function BorrowScreen() {
             </>
           );
         }}
+      />
+
+      <FloatingActionButton
+        accessibilityLabel="Add borrowed item"
+        onPress={() => setShowModal(true)}
       />
 
       <Modal visible={showModal} transparent animationType="slide">

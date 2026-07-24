@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Dimensions,
   KeyboardAvoidingView,
@@ -30,7 +31,7 @@ import { PendingApprovalBanner } from "@/components/PendingApprovalBanner";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext, type ChoreAssignment, type ChoreCategory } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
-import { success as hapticSuccess } from "@/lib/haptics";
+import { error as hapticError, success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 
@@ -168,6 +169,14 @@ export default function GroupChoresScreen() {
   const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
   const [viewMode] = useState<"activity" | "calendar">("activity");
   const [monthOffset, setMonthOffset] = useState(0);
+
+  useEffect(() => {
+    setNudgedChores(new Set(
+      nudges
+        .filter((nudge) => !nudge.seen)
+        .map((nudge) => `${nudge.toRoommateId}-${nudge.choreId}`)
+    ));
+  }, [nudges]);
 
   // ── Add-chore-to-any-roommate modal state ──
   const [showAddChoreModal, setShowAddChoreModal] = useState(false);
@@ -416,13 +425,19 @@ export default function GroupChoresScreen() {
   ) => {
     const key = `${roommateId}-${choreId}`;
     if (nudgedChores.has(key)) {
-      removeNudge(roommateId, choreId);
-      setNudgedChores((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void removeNudge(roommateId, choreId)
+        .then(() => {
+          setNudgedChores((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        })
+        .catch(() => {
+          hapticError();
+          Alert.alert("Couldn’t remove nudge", "Please check your connection and try again.");
+        });
       return;
     }
     confirm(
@@ -430,10 +445,16 @@ export default function GroupChoresScreen() {
       "Send Anonymous Nudge",
       `Remind about "${choreName}"?`,
       () => {
-        sendNudge(roommateId, choreId);
-        setNudgedChores((prev) => new Set([...prev, key]));
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        info("nudge_sent", "Nudge sent!", "Your roommate got an anonymous reminder.");
+        void sendNudge(roommateId, choreId)
+          .then(() => {
+            setNudgedChores((prev) => new Set([...prev, key]));
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            info("nudge_sent", "Nudge sent!", "Your roommate got an anonymous reminder.");
+          })
+          .catch(() => {
+            hapticError();
+            Alert.alert("Couldn’t send nudge", "Please check your connection and try again.");
+          });
       },
       { confirmText: "Nudge 👋" }
     );

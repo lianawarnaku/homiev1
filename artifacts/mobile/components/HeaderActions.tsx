@@ -9,8 +9,10 @@ import { useAppContext } from "@/context/AppContext";
 
 export function HeaderActions() {
   const colors = useTheme();
-  const { currentProposedChart } = useAppContext();
-  const hasPendingAlert = currentProposedChart?.status === "pending";
+  const { currentProposedChart, currentUserId, nudges } = useAppContext();
+  const hasPendingAlert =
+    currentProposedChart?.status === "pending" ||
+    nudges.some((nudge) => nudge.toRoommateId === currentUserId && !nudge.seen);
 
   return (
     <View style={styles.cluster}>

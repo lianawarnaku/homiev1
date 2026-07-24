@@ -15,15 +15,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  NestableDraggableFlatList,
-  NestableScrollContainer,
-  ScaleDecorator,
-  type RenderItemParams,
-} from "react-native-draggable-flatlist";
+import type { RenderItemParams } from "react-native-draggable-flatlist";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
+import {
+  DraggableListCompat,
+  DraggableScrollContainerCompat,
+  ScaleDecoratorCompat,
+} from "@/components/DraggableListCompat";
 import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext, type PendingIouDraft, type ShoppingItem, type ShoppingList } from "@/context/AppContext";
@@ -42,6 +43,7 @@ import { useConfirm } from "@/hooks/useConfirm";
 export default function ShoppingScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const { scrollBottomPadding } = useFloatingActionMetrics();
   const {
     roommates,
     shoppingLists,
@@ -281,12 +283,6 @@ export default function ShoppingScreen() {
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Shared lists for the household</Text>
         </View>
         <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={[styles.addHeaderBtn, { backgroundColor: colors.primary }]}
-            onPress={() => setShowNewListModal(true)}
-          >
-            <Feather name="plus" size={20} color="#fff" />
-          </TouchableOpacity>
           <HeaderActions />
         </View>
       </View>
@@ -305,7 +301,7 @@ export default function ShoppingScreen() {
 
       {/* Shopping lists */}
       {shoppingLists.length === 0 ? (
-        <View style={{ paddingHorizontal: 16, paddingTop: 40 }}>
+        <View style={{ paddingHorizontal: 16, paddingTop: 40, paddingBottom: scrollBottomPadding }}>
           <EmptyState
             icon="shopping-cart"
             title="No lists yet"
@@ -313,14 +309,14 @@ export default function ShoppingScreen() {
           />
         </View>
       ) : (
-        <NestableScrollContainer
+        <DraggableScrollContainerCompat
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.listContent,
-            { paddingBottom: 90 + botPad },
+            { paddingBottom: Math.max(scrollBottomPadding, 90 + botPad) },
           ]}
         >
-        <NestableDraggableFlatList
+        <DraggableListCompat
           data={shoppingLists}
           keyExtractor={(l) => l.id}
           onDragEnd={handleDragEnd}
@@ -333,7 +329,7 @@ export default function ShoppingScreen() {
               ? roommates.find((r) => r.id === list.assignedTo)
               : null;
             return (
-              <ScaleDecorator>
+              <ScaleDecoratorCompat>
                 <View
                   style={[
                     styles.listSection,
@@ -358,7 +354,7 @@ export default function ShoppingScreen() {
                       size={18}
                       color={colors.mutedForeground}
                     />
-                    <Text style={[styles.listName, { color: colors.foreground }]}>
+                    <Text style={[styles.listName, { color: colors.foreground }]} numberOfLines={1}>
                       {list.name}
                     </Text>
                   <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
@@ -435,7 +431,7 @@ export default function ShoppingScreen() {
                         No items yet — tap + to add
                       </Text>
                     ) : (
-                      <NestableDraggableFlatList
+                      <DraggableListCompat
                         data={items}
                         keyExtractor={(item) => item.id}
                         onDragEnd={({ data }) => handleItemDragEnd(list.id, data)}
@@ -455,7 +451,7 @@ export default function ShoppingScreen() {
                                 : itemAssignees[0].name
                               : `${itemAssignees.length} people`;
                           return (
-                            <ScaleDecorator>
+                            <ScaleDecoratorCompat>
                               <TouchableOpacity
                                 activeOpacity={1}
                                 onLongPress={drag}
@@ -540,7 +536,7 @@ export default function ShoppingScreen() {
                                   <Feather name="x" size={15} color={colors.mutedForeground} />
                                 </TouchableOpacity>
                               </TouchableOpacity>
-                            </ScaleDecorator>
+                            </ScaleDecoratorCompat>
                           );
                         }}
                       />
@@ -548,12 +544,17 @@ export default function ShoppingScreen() {
                   </View>
                 )}
                 </View>
-              </ScaleDecorator>
+              </ScaleDecoratorCompat>
             );
           }}
         />
-        </NestableScrollContainer>
+        </DraggableScrollContainerCompat>
       )}
+
+      <FloatingActionButton
+        accessibilityLabel="Add shopping list"
+        onPress={() => setShowNewListModal(true)}
+      />
 
       {/* ── Assignee Picker Modal ── */}
       <Modal

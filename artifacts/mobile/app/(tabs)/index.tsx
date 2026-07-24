@@ -25,6 +25,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
 import { AssignedLoadNotice } from "@/components/AssignedLoadNotice";
+import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
 import { PendingApprovalBanner } from "@/components/PendingApprovalBanner";
 import { type ChoreCategory, useAppContext } from "@/context/AppContext";
@@ -325,6 +326,7 @@ function ChoreRow({ chore, onComplete, onDelete, onAddToCalendar }: ChoreRowProp
 export default function MyChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const { scrollBottomPadding } = useFloatingActionMetrics();
   const { currentUserId, chores, roommates, completeChore, deleteChore, addChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled } =
     useAppContext();
 
@@ -456,7 +458,7 @@ export default function MyChoresScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.listContent,
-          { paddingBottom: 100 + botPad },
+          { paddingBottom: Math.max(scrollBottomPadding, 100 + botPad) },
         ]}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
@@ -844,12 +846,10 @@ export default function MyChoresScreen() {
         }
       />
 
-      <TouchableOpacity
-        style={[styles.fab, { backgroundColor: colors.primary, bottom: 90 + botPad }]}
+      <FloatingActionButton
+        accessibilityLabel="Add chore"
         onPress={() => setShowModal(true)}
-      >
-        <Feather name="plus" size={26} color="#fff" />
-      </TouchableOpacity>
+      />
 
       <Modal visible={showModal} transparent animationType="none" onRequestClose={closeAddChore}>
         <Animated.View

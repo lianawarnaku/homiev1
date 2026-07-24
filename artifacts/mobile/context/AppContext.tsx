@@ -135,6 +135,7 @@ export interface Nudge {
   toRoommateId: string;
   choreId: string;
   sentAt: string;
+  seen: boolean;
 }
 
 export type ChoreAssignment = Record<string, string>;
@@ -303,8 +304,9 @@ interface AppContextType {
   updateBorrowItem: (id: string, updates: Partial<Omit<BorrowItem, "id">>) => void;
   returnBorrowItem: (id: string) => void;
   deleteBorrowItem: (id: string) => void;
-  sendNudge: (toRoommateId: string, choreId: string) => void;
-  removeNudge: (toRoommateId: string, choreId: string) => void;
+  sendNudge: (toRoommateId: string, choreId: string) => Promise<void>;
+  removeNudge: (toRoommateId: string, choreId: string) => Promise<void>;
+  acknowledgeNudge: (nudgeId: string) => Promise<void>;
   getRoommateById: (id: string) => Roommate | undefined;
   updateRoommate: (id: string, patch: Partial<Pick<Roommate, "name" | "color" | "avatarUri">>) => void;
   getChoresByRoommate: (id: string) => Chore[];
@@ -566,7 +568,6 @@ interface SharedHouseholdState {
   shoppingLists: ShoppingList[];
   shoppingItems: ShoppingItem[];
   borrowItems: BorrowItem[];
-  nudges: Nudge[];
   essentialsAssignees: Record<string, Record<string, string>>;
   roommateStatuses: Record<string, RoommateStatus>;
   sleepStartedAt: Record<string, number>;
@@ -1098,7 +1099,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     shoppingLists,
     shoppingItems,
     borrowItems,
-    nudges,
     essentialsAssignees,
     roommateStatuses,
     sleepStartedAt,
@@ -1108,7 +1108,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     homeProfile,
     liveChart,
     customTasks,
-  }), [roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
+  }), [roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
 
   const latestSharedStateRef = useRef(sharedState);
   latestSharedStateRef.current = sharedState;
@@ -1122,7 +1122,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (Array.isArray(next.shoppingLists)) setShoppingLists(next.shoppingLists);
     if (Array.isArray(next.shoppingItems)) setShoppingItems(next.shoppingItems);
     if (Array.isArray(next.borrowItems)) setBorrowItems(next.borrowItems);
-    if (Array.isArray(next.nudges)) setNudges(next.nudges);
     if (next.essentialsAssignees) setEssentialsAssignees(next.essentialsAssignees);
     if (next.roommateStatuses) setRoommateStatusesState(next.roommateStatuses);
     if (next.sleepStartedAt) setSleepStartedAtState(next.sleepStartedAt);
@@ -1265,6 +1264,90 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }, 220);
     return () => clearTimeout(timer);
   }, [cloudReady, householdId, loaded, session?.user.id, sharedState]);
+
+  // Nudges live in their own table so acknowledgement is per row and updates
+  // immediately on every signed-in device. Never select sent_by: received
+  // reminders are deliberately anonymous in the client.
+  useEffect(() => {
+    if (!householdId || !session?.user.id) {
+      setNudges([]);
+      return;
+    }
+    let active = true;
+    const channel = supabase.channel(`nudges:${householdId}`);
+
+    const refreshNudges = async () => {
+      const { data, error } = await supabase
+        .from("nudges")
+        .select("id, to_member_id, chore_id, sent_at, seen")
+        .eq("household_id", householdId)
+        .order("sent_at", { ascending: false });
+      if (!active) return;
+      if (error) {
+        // Allow the app to remain usable while the additive `seen` migration
+        // is being rolled out. The fallback can be removed after every
+        // environment has 202607240001.
+        if (error.code === "42703") {
+          const legacyResult = await supabase
+            .from("nudges")
+            .select("id, to_member_id, chore_id, sent_at")
+            .eq("household_id", householdId)
+            .order("sent_at", { ascending: false });
+          if (!active) return;
+          if (legacyResult.error) {
+            reportSupabaseError("load legacy household nudges", legacyResult.error, { householdId });
+            return;
+          }
+          setNudges((legacyResult.data ?? []).map((row) => ({
+            id: row.id,
+            toRoommateId: row.to_member_id,
+            choreId: row.chore_id,
+            sentAt: row.sent_at,
+            seen: false,
+          })));
+          return;
+        }
+        reportSupabaseError("load household nudges", error, { householdId });
+        return;
+      }
+      setNudges((data ?? []).map((row) => ({
+        id: row.id,
+        toRoommateId: row.to_member_id,
+        choreId: row.chore_id,
+        sentAt: row.sent_at,
+        seen: row.seen,
+      })));
+    };
+
+    void refreshNudges();
+    channel
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "nudges",
+          filter: `household_id=eq.${householdId}`,
+        },
+        () => {
+          void refreshNudges();
+        }
+      )
+      .subscribe((status, error) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          reportSupabaseError(
+            "subscribe to household nudges",
+            error ?? new Error(status),
+            { householdId, status },
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [householdId, session?.user.id]);
 
   // Load deterministic-chart configuration and keep it live across roommates.
   useEffect(() => {
@@ -1675,12 +1758,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const sendNudge = useCallback((toRoommateId: string, choreId: string) => {
-    setNudges((prev) => [
-      ...prev,
-      { id: makeId(), toRoommateId, choreId, sentAt: new Date().toISOString() },
-    ]);
-  }, []);
+  const sendNudge = useCallback(async (toRoommateId: string, choreId: string) => {
+    if (!householdId || !session?.user.id) {
+      throw new Error("Your household is still loading.");
+    }
+    const { error } = await supabase.from("nudges").insert({
+      household_id: householdId,
+      to_member_id: toRoommateId,
+      chore_id: choreId,
+      sent_by: session.user.id,
+    });
+    if (error) {
+      reportSupabaseError("send anonymous nudge", error, {
+        householdId,
+        choreId,
+        recipientId: toRoommateId,
+      });
+      throw error;
+    }
+  }, [householdId, session?.user.id]);
 
   const suppressAlert = useCallback((id: string) => {
     setSuppressedAlerts((prev) => ({ ...prev, [id]: true }));
@@ -1938,11 +2034,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPendingIouDraftState(draft);
   }, []);
 
-  const removeNudge = useCallback((toRoommateId: string, choreId: string) => {
-    setNudges((prev) =>
-      prev.filter((n) => !(n.toRoommateId === toRoommateId && n.choreId === choreId))
+  const removeNudge = useCallback(async (toRoommateId: string, choreId: string) => {
+    if (!householdId) throw new Error("Your household is still loading.");
+    const { error } = await supabase
+      .from("nudges")
+      .delete()
+      .eq("household_id", householdId)
+      .eq("to_member_id", toRoommateId)
+      .eq("chore_id", choreId)
+      .eq("seen", false);
+    if (error) {
+      reportSupabaseError("remove anonymous nudge", error, {
+        householdId,
+        choreId,
+        recipientId: toRoommateId,
+      });
+      throw error;
+    }
+    setNudges((current) =>
+      current.filter((nudge) => !(nudge.toRoommateId === toRoommateId && nudge.choreId === choreId))
     );
-  }, []);
+  }, [householdId]);
+
+  const acknowledgeNudge = useCallback(async (nudgeId: string) => {
+    if (!householdId || !session?.user.id) {
+      throw new Error("Your household is still loading.");
+    }
+    const { error } = await supabase
+      .from("nudges")
+      .update({ seen: true })
+      .eq("id", nudgeId)
+      .eq("household_id", householdId)
+      .eq("to_member_id", session.user.id);
+    if (error) {
+      reportSupabaseError("acknowledge received nudge", error, {
+        householdId,
+        nudgeId,
+      });
+      throw error;
+    }
+    setNudges((current) =>
+      current.map((nudge) => nudge.id === nudgeId ? { ...nudge, seen: true } : nudge)
+    );
+  }, [householdId, session?.user.id]);
 
   const getRoommateById = useCallback(
     (id: string) => roommates.find((r) => r.id === id),
@@ -2057,6 +2191,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteBorrowItem,
         sendNudge,
         removeNudge,
+        acknowledgeNudge,
         getRoommateById,
         updateRoommate,
         getChoresByRoommate,

@@ -11,8 +11,16 @@ import { SmoothPressable } from "@/components/SmoothPressable";
 
 function ScrollableTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const colors = useTheme();
+  const { pointsEnabled } = useAppContext();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
+  // Expo Router auto-registers every route file, even when its Tabs.Screen
+  // configuration is conditionally omitted. Remove the route from the array
+  // we actually render so it creates neither a button nor a flex slot.
+  const visibleRoutes = state.routes.filter(
+    (route) => pointsEnabled || route.name !== "leaderboard"
+  );
+  const focusedRouteKey = state.routes[state.index]?.key;
 
   return (
     <View
@@ -27,9 +35,9 @@ function ScrollableTabBar({ state, descriptors, navigation }: BottomTabBarProps)
       <BlurView intensity={52} tint="light" style={StyleSheet.absoluteFill} />
       <View style={[StyleSheet.absoluteFill, styles.translucentTint]} />
       <View style={styles.tabBarContent}>
-        {state.routes.map((route, index) => {
+        {visibleRoutes.map((route) => {
           const { options } = descriptors[route.key];
-          const focused = state.index === index;
+          const focused = focusedRouteKey === route.key;
           const color = focused ? colors.primary : colors.mutedForeground;
           const label =
             typeof options.tabBarLabel === "string"

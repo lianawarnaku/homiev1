@@ -29,6 +29,7 @@ const SCREEN_HEIGHT = Dimensions.get("window").height;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useTheme } from "@/constants/colors";
@@ -77,6 +78,7 @@ function buildEvenSplits(
 export default function ExpensesScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const { scrollBottomPadding } = useFloatingActionMetrics();
   const {
     roommates,
     expenses,
@@ -435,12 +437,6 @@ export default function ExpensesScreen() {
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Shared costs and repayments</Text>
         </View>
         <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={[styles.addHeaderBtn, { backgroundColor: colors.primary }]}
-            onPress={() => { resetModal(); setShowExpenseModal(true); }}
-          >
-            <Feather name="plus" size={20} color="#fff" />
-          </TouchableOpacity>
           <HeaderActions />
         </View>
       </View>
@@ -532,7 +528,7 @@ export default function ExpensesScreen() {
             }}
             contentContainerStyle={[
               styles.listContent,
-              { paddingBottom: 90 + botPad },
+              { paddingBottom: Math.max(scrollBottomPadding, 90 + botPad) },
             ]}
             showsVerticalScrollIndicator={false}
             onScroll={expenseScrollHandler}
@@ -911,6 +907,14 @@ export default function ExpensesScreen() {
             );
           })()}
         </>
+
+      <FloatingActionButton
+        accessibilityLabel="Add expense"
+        onPress={() => {
+          resetModal();
+          setShowExpenseModal(true);
+        }}
+      />
 
       {/* ── New IOU Modal (full-screen; custom spring slide-up, X-button close) ── */}
       <Modal visible={showExpenseModal} transparent animationType="none" onRequestClose={closeIou}>
