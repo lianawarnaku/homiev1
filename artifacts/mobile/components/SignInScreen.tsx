@@ -31,6 +31,7 @@ import { supabase } from "@/lib/supabase";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 
 type Mode = "signin" | "signup";
+const EMAIL_CONFIRMATION_URL = "https://homie-application.com/auth/confirm";
 
 function isValidEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -45,6 +46,7 @@ export function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
 
   const submit = async () => {
     setError(null);
@@ -66,7 +68,14 @@ export function SignInScreen() {
         });
         if (signInError) {
           reportSupabaseError("sign in", signInError);
-          setError(signInError.message);
+          setError(
+            signInError.message.toLowerCase().includes("email not confirmed")
+              ? "Please confirm your email before signing in. You can resend the confirmation below."
+              : signInError.message,
+          );
+          if (signInError.message.toLowerCase().includes("email not confirmed")) {
+            setConfirmationEmail(email.trim());
+          }
           hapticError();
           return;
         }
@@ -76,6 +85,9 @@ export function SignInScreen() {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: email.trim(),
           password,
+          options: {
+            emailRedirectTo: EMAIL_CONFIRMATION_URL,
+          },
         });
         if (signUpError) {
           reportSupabaseError("sign up", signUpError);
@@ -88,14 +100,45 @@ export function SignInScreen() {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } else {
           // Email confirmation is ON — Supabase sent a link. Wait for click.
+          setConfirmationEmail(email.trim());
           setInfo(
-            "Check your email for a confirmation link. You'll be signed in after clicking it."
+            "Check your email for a confirmation link. After confirming, return to Homie and sign in."
           );
         }
       }
     } catch (e) {
       reportRuntimeError(mode === "signin" ? "sign in" : "sign up", e);
       setError(e instanceof Error ? e.message : "Something went wrong.");
+      hapticError();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendConfirmation = async () => {
+    const resendEmail = confirmationEmail ?? email.trim();
+    if (!isValidEmail(resendEmail) || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email: resendEmail,
+        options: {
+          emailRedirectTo: EMAIL_CONFIRMATION_URL,
+        },
+      });
+      if (resendError) {
+        reportSupabaseError("resend confirmation email", resendError);
+        setError(resendError.message);
+        hapticError();
+        return;
+      }
+      setInfo("A fresh confirmation link is on its way. Check your inbox and spam folder.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      reportRuntimeError("resend confirmation email", e);
+      setError(e instanceof Error ? e.message : "Could not resend the confirmation email.");
       hapticError();
     } finally {
       setLoading(false);
@@ -178,6 +221,18 @@ export function SignInScreen() {
               <Text style={[styles.bannerText, { color: colors.destructive }]}>{error}</Text>
             </View>
           ) : null}
+          {confirmationEmail ? (
+            <TouchableOpacity
+              onPress={resendConfirmation}
+              disabled={loading}
+              style={styles.resendButton}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.resendText, { color: colors.primary }]}>
+                Resend confirmation email
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           {info ? (
             <View style={[styles.banner, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "44" }]}>
               <Feather name="mail" size={14} color={colors.primary} />
@@ -209,6 +264,7 @@ export function SignInScreen() {
               setMode(mode === "signin" ? "signup" : "signin");
               setError(null);
               setInfo(null);
+              setConfirmationEmail(null);
             }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -277,6 +333,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     flex: 1,
     lineHeight: 18,
+  },
+  resendButton: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  resendText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
   },
   submit: {
     marginTop: 20,
