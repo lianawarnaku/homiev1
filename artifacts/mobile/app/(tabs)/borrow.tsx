@@ -165,7 +165,7 @@ export default function BorrowScreen() {
       >
         <View>
           <Text style={[styles.title, { color: colors.foreground }]}>
-            Borrowing Buddy
+            Borrowing
           </Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
             Never forget what you borrowed

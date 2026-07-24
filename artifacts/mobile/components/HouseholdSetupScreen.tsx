@@ -127,7 +127,7 @@ export function HouseholdSetupScreen() {
           {mode === "join" ? "Join your roommates" : step === 1 ? "Start your household" : step === 2 ? "What kind of home is it?" : step === 3 ? "What's in your space?" : "Which chores should we add?"}
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          {mode === "join" ? "Enter the invite code a roommate shared with you." : step === 1 ? "Set up your private household and invite your roommates." : step === 2 ? "This helps Roomie suggest chores that fit your actual space." : step === 3 ? "Select everything your household shares. You can change this later." : "Pick suggested chores or add your own. This step is optional."}
+          {mode === "join" ? "Enter the invite code a roommate shared with you." : step === 1 ? "Set up your private household and invite your roommates." : step === 2 ? "This helps Homie suggest chores that fit your actual space." : step === 3 ? "Select everything your household shares. You can change this later." : "Pick suggested chores or add your own. This step is optional."}
         </Text>
 
         {step === 1 && (

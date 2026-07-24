@@ -1154,7 +1154,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!active) return;
       if (error) {
         reportSupabaseError("load shared household state", error, { householdId });
-        console.warn("Roomie cloud sync could not start:", error.message);
+        console.warn("Homie cloud sync could not start:", error.message);
         return;
       }
 
@@ -1196,7 +1196,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
         if (createError) {
           reportSupabaseError("create shared household state", createError, { householdId });
-          console.warn("Roomie household could not be created:", createError.message);
+          console.warn("Homie household could not be created:", createError.message);
           return;
         }
       }
@@ -1259,7 +1259,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       if (error) {
         reportSupabaseError("save shared household state", error, { householdId });
-        console.warn("Roomie change could not sync:", error.message);
+        console.warn("Homie change could not sync:", error.message);
       }
     }, 220);
     return () => clearTimeout(timer);

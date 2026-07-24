@@ -509,7 +509,7 @@ export default function SettingsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: topPad + 12, borderBottomColor: colors.border }]}>
         <View style={styles.iconBtn} />
-        <Text style={[styles.title, { color: colors.foreground }]}>ROOMIE SETTINGS</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>HOMIE SETTINGS</Text>
         <TouchableOpacity
           onPress={() => router.back()}
           style={[styles.iconBtn, { backgroundColor: colors.muted }]}
@@ -532,7 +532,7 @@ export default function SettingsScreen() {
           <View style={[styles.settingsIntro, { borderBottomColor: colors.border }]}>
             <Text style={styles.settingsIntroEmoji}>⚙️</Text>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.settingsIntroTitle, { color: colors.foreground }]}>MAKE ROOMIE YOURS</Text>
+              <Text style={[styles.settingsIntroTitle, { color: colors.foreground }]}>MAKE HOMIE YOURS</Text>
               <Text style={[styles.settingsIntroSub, { color: colors.mutedForeground }]}>Profile, household tools, and account access</Text>
             </View>
           </View>
@@ -599,7 +599,13 @@ export default function SettingsScreen() {
           {/* Profile section */}
           {/* Account section — login / switch / logout */}
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>🏠  YOUR HOUSEHOLD</Text>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.card,
+              styles.householdCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
             <View style={styles.accountRow}>
               <RoommateAvatar
                 name={me?.name ?? "?"}
@@ -620,16 +626,18 @@ export default function SettingsScreen() {
                 color={colors.success}
               />
             </View>
-            <TouchableOpacity disabled={!inviteCode} onPress={() => inviteCode && Clipboard.setStringAsync(inviteCode)} style={[styles.input, { backgroundColor: colors.muted, borderColor: colors.border, justifyContent: "center", flexDirection: "row", alignItems: "center" }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.accountUsername, { color: colors.mutedForeground }]}>INVITE CODE</Text>
-                <Text style={[styles.accountName, { color: colors.foreground, letterSpacing: 2 }]}>{inviteCode ?? "Unavailable"}</Text>
-              </View>
-              <Feather name="copy" size={19} color={colors.primary} />
-            </TouchableOpacity>
-            <Text style={[styles.accountHint, { color: colors.mutedForeground }]}>
-              Share this code with roommates. Each person signs into their own account before joining.
-            </Text>
+            <View style={styles.householdTileGroup}>
+              <TouchableOpacity disabled={!inviteCode} onPress={() => inviteCode && Clipboard.setStringAsync(inviteCode)} style={[styles.input, { backgroundColor: colors.muted, borderColor: colors.border, justifyContent: "center", flexDirection: "row", alignItems: "center" }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.accountUsername, { color: colors.mutedForeground }]}>INVITE CODE</Text>
+                  <Text style={[styles.accountName, { color: colors.foreground, letterSpacing: 2 }]}>{inviteCode ?? "Unavailable"}</Text>
+                </View>
+                <Feather name="copy" size={19} color={colors.primary} />
+              </TouchableOpacity>
+              <Text style={[styles.accountHint, { color: colors.mutedForeground }]}>
+                Share this code with roommates. Each person signs into their own account before joining.
+              </Text>
+            </View>
             {isHost && roommates.some((roommate) => roommate.id !== currentUserId) ? (
               <View style={[styles.memberManagement, { borderTopColor: colors.border }]}>
                 <Text style={[styles.memberManagementTitle, { color: colors.foreground }]}>
@@ -1095,6 +1103,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 14,
     elevation: 2,
+  },
+  householdCard: {
+    gap: 18,
+  },
+  householdTileGroup: {
+    gap: 8,
   },
   settingsIntro: {
     marginHorizontal: 20,

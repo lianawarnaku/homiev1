@@ -83,7 +83,7 @@ export function LaunchScreen({ onFinish }: { onFinish: () => void }) {
 
         <Animated.View style={[styles.copy, { opacity: copyOpacity, transform: [{ translateY: copyY }] }]}>
           <Text style={styles.wordmark}>Homie</Text>
-          <Text style={styles.tagline}>The home for your roomies</Text>
+          <Text style={styles.tagline}>The home for your homies</Text>
         </Animated.View>
       </View>
     </View>
