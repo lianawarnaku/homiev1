@@ -22,7 +22,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
-import { useAppContext, type BorrowItem } from "@/context/AppContext";
+import { useAppContextSelector, type BorrowItem } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { useConfirm } from "@/hooks/useConfirm";
 
@@ -57,7 +57,15 @@ export default function BorrowScreen() {
     updateBorrowItem,
     returnBorrowItem,
     deleteBorrowItem,
-  } = useAppContext();
+  } = useAppContextSelector((context) => ({
+    borrowItems: context.borrowItems,
+    roommates: context.roommates,
+    currentUserId: context.currentUserId,
+    addBorrowItem: context.addBorrowItem,
+    updateBorrowItem: context.updateBorrowItem,
+    returnBorrowItem: context.returnBorrowItem,
+    deleteBorrowItem: context.deleteBorrowItem,
+  }));
 
   const { confirm } = useConfirm();
   const [showModal, setShowModal] = useState(false);

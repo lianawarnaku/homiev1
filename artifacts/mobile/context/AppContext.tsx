@@ -4,14 +4,20 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { InteractionManager } from "react-native";
 
 import { supabase } from "@/lib/supabase";
-import { normalizeColorScheme, type ColorScheme } from "@/constants/colors";
+import {
+  normalizeColorScheme,
+  type ColorScheme,
+} from "@/constants/themeTokens";
 import type { ItemCategory } from "@/constants/itemDifficulty";
 import type { Difficulty } from "@/lib/itemDifficulty";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
@@ -252,6 +258,9 @@ interface AppContextType {
   preferencesLoaded: boolean;
   preferencesOnboardingPending: boolean;
   finishPreferencesOnboarding: () => Promise<void>;
+  quickGuideOpen: boolean;
+  openQuickGuide: () => void;
+  dismissQuickGuide: () => void;
   householdComplete: boolean;
   setHouseholdComplete: (complete: boolean) => void;
   colorScheme: ColorScheme;
@@ -330,6 +339,52 @@ interface AppContextType {
 const ASLEEP_AUTO_REVERT_MS = 9 * 60 * 60 * 1000;
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+interface AppContextStore {
+  getSnapshot: () => AppContextType;
+  setSnapshot: (value: AppContextType) => void;
+  subscribe: (listener: () => void) => () => void;
+}
+
+const AppContextStoreContext = createContext<AppContextStore | undefined>(
+  undefined,
+);
+
+function createAppContextStore(initialValue: AppContextType): AppContextStore {
+  let snapshot = initialValue;
+  const listeners = new Set<() => void>();
+  return {
+    getSnapshot: () => snapshot,
+    setSnapshot: (value) => {
+      if (Object.is(snapshot, value)) return;
+      snapshot = value;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+function shallowEqualSelection<T>(left: T, right: T): boolean {
+  if (Object.is(left, right)) return true;
+  if (
+    !left ||
+    !right ||
+    typeof left !== "object" ||
+    typeof right !== "object" ||
+    Array.isArray(left) ||
+    Array.isArray(right)
+  ) {
+    return false;
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const keys = Object.keys(leftRecord);
+  if (keys.length !== Object.keys(rightRecord).length) return false;
+  return keys.every((key) => Object.is(leftRecord[key], rightRecord[key]));
+}
 
 const CURRENT_USER_ID = "current";
 
@@ -561,6 +616,7 @@ const INITIAL_BORROWS: BorrowItem[] = [
 
 const STORAGE_KEY = "homebase_data_v7";
 const PREFERENCES_KEY = "homie_user_preferences_v1";
+const QUICK_GUIDE_VERSION = 1;
 interface SharedHouseholdState {
   roommates: Roommate[];
   chores: Chore[];
@@ -623,6 +679,8 @@ export function AppProvider({
   const [localPreferencesLoaded, setLocalPreferencesLoaded] = useState(false);
   const [householdPreferencesReady, setHouseholdPreferencesReady] = useState(false);
   const [preferencesOnboardingPending, setPreferencesOnboardingPending] = useState(false);
+  const [quickGuideVersions, setQuickGuideVersions] = useState<Record<string, number>>({});
+  const [quickGuideOpen, setQuickGuideOpen] = useState(false);
   const [householdComplete, setHouseholdCompleteState] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
@@ -641,6 +699,7 @@ export function AppProvider({
             pointsEnabled: boolean;
             plantEnabled: boolean;
             onboardingPending: boolean;
+            quickGuideVersions: Record<string, number>;
             householdComplete: boolean;
           }>;
           if (preferences.colorScheme) {
@@ -650,6 +709,12 @@ export function AppProvider({
           if (typeof preferences.plantEnabled === "boolean") setPlantEnabled(preferences.plantEnabled);
           if (typeof preferences.onboardingPending === "boolean") {
             setPreferencesOnboardingPending(preferences.onboardingPending);
+          }
+          if (
+            preferences.quickGuideVersions &&
+            typeof preferences.quickGuideVersions === "object"
+          ) {
+            setQuickGuideVersions(preferences.quickGuideVersions);
           }
           if (typeof preferences.householdComplete === "boolean") {
             setHouseholdCompleteState(preferences.householdComplete);
@@ -667,17 +732,66 @@ export function AppProvider({
 
   useEffect(() => {
     if (!localPreferencesLoaded) return;
-    AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify({
-      onboardingPending: preferencesOnboardingPending,
-    })).catch((error) => {
-      reportRuntimeError("cache onboarding preference", error);
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({
+        onboardingPending: preferencesOnboardingPending,
+      })).catch((error) => {
+        reportRuntimeError("cache onboarding preference", error);
+      });
     });
+    return () => interaction.cancel();
   }, [localPreferencesLoaded, preferencesOnboardingPending]);
 
   const finishPreferencesOnboarding = useCallback(async () => {
     await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({ onboardingPending: false }));
     setPreferencesOnboardingPending(false);
   }, []);
+
+  const currentGuideUserId = session?.user.id;
+  const currentGuideVersion = currentGuideUserId
+    ? quickGuideVersions[currentGuideUserId] ?? 0
+    : QUICK_GUIDE_VERSION;
+
+  useEffect(() => {
+    if (
+      localPreferencesLoaded &&
+      householdId &&
+      !preferencesOnboardingPending &&
+      currentGuideVersion < QUICK_GUIDE_VERSION
+    ) {
+      setQuickGuideOpen(true);
+    }
+  }, [
+    currentGuideVersion,
+    householdId,
+    localPreferencesLoaded,
+    preferencesOnboardingPending,
+  ]);
+
+  const openQuickGuide = useCallback(() => {
+    setQuickGuideOpen(true);
+  }, []);
+
+  const dismissQuickGuide = useCallback(() => {
+    setQuickGuideOpen(false);
+    if (!currentGuideUserId) return;
+
+    setQuickGuideVersions((current) => {
+      const next = {
+        ...current,
+        [currentGuideUserId]: QUICK_GUIDE_VERSION,
+      };
+      InteractionManager.runAfterInteractions(() => {
+        AsyncStorage.mergeItem(
+          PREFERENCES_KEY,
+          JSON.stringify({ quickGuideVersions: next }),
+        ).catch((error) => {
+          reportRuntimeError("cache Quick guide completion", error);
+        });
+      });
+      return next;
+    });
+  }, [currentGuideUserId]);
 
   // Household-wide preferences use their own realtime row. The first member
   // to connect creates it from defaults (or legacy local values), after which
@@ -809,22 +923,28 @@ export function AppProvider({
       return;
     }
 
-    const timer = setTimeout(async () => {
-      const { error } = await supabase.from("household_preferences").upsert({
-        household_id: householdId,
-        color_scheme: colorScheme,
-        points_enabled: pointsEnabled,
-        plant_enabled: plantEnabled,
-        household_complete: householdComplete,
-        updated_by: userId,
-        updated_at: new Date().toISOString(),
+    let interaction: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+    const timer = setTimeout(() => {
+      interaction = InteractionManager.runAfterInteractions(async () => {
+        const { error } = await supabase.from("household_preferences").upsert({
+          household_id: householdId,
+          color_scheme: colorScheme,
+          points_enabled: pointsEnabled,
+          plant_enabled: plantEnabled,
+          household_complete: householdComplete,
+          updated_by: userId,
+          updated_at: new Date().toISOString(),
+        });
+        if (error) {
+          reportSupabaseError("save household preferences", error, { householdId });
+          console.warn("SweetMate preference could not sync:", error.message);
+        }
       });
-      if (error) {
-        reportSupabaseError("save household preferences", error, { householdId });
-        console.warn("SweetMate preference could not sync:", error.message);
-      }
     }, 220);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      interaction?.cancel();
+    };
   }, [
     colorScheme,
     householdComplete,
@@ -1092,15 +1212,21 @@ export function AppProvider({
     // Coalesce rapid mutations and move the full-state serialization off the
     // interaction frame. This is especially important when a user completes
     // a chore and immediately switches tabs.
+    let interaction: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
     const timer = setTimeout(() => {
-      AsyncStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId })
-      ).catch((error) => {
-        reportRuntimeError("cache household state", error);
+      interaction = InteractionManager.runAfterInteractions(() => {
+        AsyncStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId })
+        ).catch((error) => {
+          reportRuntimeError("cache household state", error);
+        });
       });
     }, 120);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      interaction?.cancel();
+    };
   }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId]);
 
   const sharedState = useMemo<SharedHouseholdState>(() => ({
@@ -1260,20 +1386,26 @@ export function AppProvider({
       return;
     }
 
-    const timer = setTimeout(async () => {
-      const { error } = await supabase.from("household_states").upsert({
-        household_key: householdId,
-        household_id: householdId,
-        state: latestSharedStateRef.current,
-        updated_by: userId,
-        updated_at: new Date().toISOString(),
+    let interaction: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+    const timer = setTimeout(() => {
+      interaction = InteractionManager.runAfterInteractions(async () => {
+        const { error } = await supabase.from("household_states").upsert({
+          household_key: householdId,
+          household_id: householdId,
+          state: latestSharedStateRef.current,
+          updated_by: userId,
+          updated_at: new Date().toISOString(),
+        });
+        if (error) {
+          reportSupabaseError("save shared household state", error, { householdId });
+          console.warn("SweetMate change could not sync:", error.message);
+        }
       });
-      if (error) {
-        reportSupabaseError("save shared household state", error, { householdId });
-        console.warn("SweetMate change could not sync:", error.message);
-      }
     }, 220);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      interaction?.cancel();
+    };
   }, [cloudReady, householdId, loaded, session?.user.id, sharedState]);
 
   // Nudges live in their own table so acknowledgement is per row and updates
@@ -2150,6 +2282,9 @@ export function AppProvider({
     preferencesLoaded,
     preferencesOnboardingPending,
     finishPreferencesOnboarding,
+    quickGuideOpen,
+    openQuickGuide,
+    dismissQuickGuide,
     householdComplete,
     setHouseholdComplete,
     colorScheme,
@@ -2230,7 +2365,8 @@ export function AppProvider({
     addCustomTask, deleteCustomTask, chartApprovals, proposeChart,
     approveProposedChart, forceApproveProposedChart, restartChartProcess,
     isHost, preferencesLoaded, preferencesOnboardingPending,
-    finishPreferencesOnboarding, householdComplete, setHouseholdComplete,
+    finishPreferencesOnboarding, quickGuideOpen, openQuickGuide,
+    dismissQuickGuide, householdComplete, setHouseholdComplete,
     colorScheme, pointsEnabled, plantEnabled, householdId, householdName,
     inviteCode, householdLoading, createHousehold, joinHousehold,
     deleteHousehold, removeRoommate, deleteOwnAccount, currentUserId,
@@ -2249,10 +2385,21 @@ export function AppProvider({
     choreChart, choreChartStartedAt, setChoreChart, homeProfile,
   ]);
 
+  const selectorStoreRef = useRef<AppContextStore | null>(null);
+  if (!selectorStoreRef.current) {
+    selectorStoreRef.current = createAppContextStore(contextValue);
+  }
+  const selectorStore = selectorStoreRef.current;
+  useLayoutEffect(() => {
+    selectorStore.setSnapshot(contextValue);
+  }, [contextValue, selectorStore]);
+
   return (
-    <AppContext.Provider value={contextValue}>
-      {children}
-    </AppContext.Provider>
+    <AppContextStoreContext.Provider value={selectorStore}>
+      <AppContext.Provider value={contextValue}>
+        {children}
+      </AppContext.Provider>
+    </AppContextStoreContext.Provider>
   );
 }
 
@@ -2260,4 +2407,36 @@ export function useAppContext(): AppContextType {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error("useAppContext must be used within AppProvider");
   return ctx;
+}
+
+/**
+ * Subscribe to only the context fields a component actually consumes.
+ * This keeps an expense edit from rerendering Shopping/Borrowing, and keeps
+ * theme-only changes from rebuilding domain selectors. AppContext remains the
+ * single state owner; this is a selective subscription layer, not a new store.
+ */
+export function useAppContextSelector<T>(
+  selector: (context: AppContextType) => T,
+): T {
+  const store = useContext(AppContextStoreContext);
+  if (!store) {
+    throw new Error("useAppContextSelector must be used within AppProvider");
+  }
+  const selectorRef = useRef(selector);
+  selectorRef.current = selector;
+  const hasSelectionRef = useRef(false);
+  const selectionRef = useRef<T>(undefined);
+  const getSelection = useCallback(() => {
+    const next = selectorRef.current(store.getSnapshot());
+    if (
+      hasSelectionRef.current &&
+      shallowEqualSelection(selectionRef.current, next)
+    ) {
+      return selectionRef.current as T;
+    }
+    hasSelectionRef.current = true;
+    selectionRef.current = next;
+    return next;
+  }, [store]);
+  return useSyncExternalStore(store.subscribe, getSelection, getSelection);
 }

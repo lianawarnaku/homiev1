@@ -27,7 +27,12 @@ import {
 } from "@/components/DraggableListCompat";
 import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
-import { useAppContext, type PendingIouDraft, type ShoppingItem, type ShoppingList } from "@/context/AppContext";
+import {
+  useAppContextSelector,
+  type PendingIouDraft,
+  type ShoppingItem,
+  type ShoppingList,
+} from "@/context/AppContext";
 
 // Normalize the possibly-legacy `assignedTo` field on a shopping item to an
 // array. Old data may have stored a single string; new data uses string[].
@@ -61,7 +66,24 @@ export default function ShoppingScreen() {
     updateShoppingItemPrice,
     setPendingIouDraft,
     currentUserId,
-  } = useAppContext();
+  } = useAppContextSelector((context) => ({
+    roommates: context.roommates,
+    shoppingLists: context.shoppingLists,
+    shoppingItems: context.shoppingItems,
+    addShoppingList: context.addShoppingList,
+    deleteShoppingList: context.deleteShoppingList,
+    reorderShoppingLists: context.reorderShoppingLists,
+    pinShoppingList: context.pinShoppingList,
+    addShoppingItem: context.addShoppingItem,
+    toggleShoppingItem: context.toggleShoppingItem,
+    deleteShoppingItem: context.deleteShoppingItem,
+    reorderShoppingItems: context.reorderShoppingItems,
+    assignShoppingList: context.assignShoppingList,
+    assignShoppingItem: context.assignShoppingItem,
+    updateShoppingItemPrice: context.updateShoppingItemPrice,
+    setPendingIouDraft: context.setPendingIouDraft,
+    currentUserId: context.currentUserId,
+  }));
 
   const { confirm } = useConfirm();
   const topPad = Platform.OS === "web" ? 67 : insets.top;

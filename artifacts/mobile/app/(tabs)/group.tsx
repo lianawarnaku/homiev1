@@ -29,7 +29,11 @@ import { HeaderActions } from "@/components/HeaderActions";
 import { HomePlant } from "@/components/HomePlant";
 import { PendingApprovalBanner } from "@/components/PendingApprovalBanner";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
-import { useAppContext, type ChoreAssignment, type ChoreCategory } from "@/context/AppContext";
+import {
+  useAppContextSelector,
+  type ChoreAssignment,
+  type ChoreCategory,
+} from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { error as hapticError, success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -162,7 +166,24 @@ const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
 export default function GroupChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, choreChart, choreChartStartedAt, addChore, pointsEnabled, plantEnabled } = useAppContext();
+  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, choreChart, choreChartStartedAt, addChore, pointsEnabled, plantEnabled } =
+    useAppContextSelector((context) => ({
+      roommates: context.roommates,
+      chores: context.chores,
+      currentUserId: context.currentUserId,
+      completeChore: context.completeChore,
+      pickUpChore: context.pickUpChore,
+      sendNudge: context.sendNudge,
+      removeNudge: context.removeNudge,
+      nudges: context.nudges,
+      roommateStatuses: context.roommateStatuses,
+      setRoommateStatus: context.setRoommateStatus,
+      choreChart: context.choreChart,
+      choreChartStartedAt: context.choreChartStartedAt,
+      addChore: context.addChore,
+      pointsEnabled: context.pointsEnabled,
+      plantEnabled: context.plantEnabled,
+    }));
 
   const { confirm, info } = useConfirm();
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
@@ -491,20 +512,7 @@ export default function GroupChoresScreen() {
             Group Chores
           </Text>
         </View>
-        <View style={styles.headerButtons}>
-          <View
-            style={[
-              styles.anonBadge,
-              { backgroundColor: colors.secondary, borderColor: colors.border },
-            ]}
-          >
-            <Feather name="eye-off" size={11} color={colors.mutedForeground} />
-            <Text style={[styles.anonText, { color: colors.mutedForeground }]}>
-              Nudges are anonymous
-            </Text>
-          </View>
-          <HeaderActions />
-        </View>
+        <HeaderActions />
       </View>
 
       <PendingApprovalBanner />
@@ -1332,18 +1340,6 @@ const styles = StyleSheet.create({
   },
   headerSub: { fontFamily: "Inter_400Regular", fontSize: 13 },
   headerTitle: { fontFamily: "Inter_700Bold", fontSize: 30, lineHeight: 36, marginTop: 2 },
-  anonBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  anonText: { fontFamily: "Inter_400Regular", fontSize: 11 },
-  headerButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
-
   // Plant card
   plantCard: {
     marginHorizontal: 16,

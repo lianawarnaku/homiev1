@@ -27,7 +27,10 @@ import { AssignedLoadNotice } from "@/components/AssignedLoadNotice";
 import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
 import { PendingApprovalBanner } from "@/components/PendingApprovalBanner";
-import { type ChoreCategory, useAppContext } from "@/context/AppContext";
+import {
+  type ChoreCategory,
+  useAppContextSelector,
+} from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -125,7 +128,9 @@ function ChoreRow({
   calendarDestinationLabel,
 }: ChoreRowProps) {
   const colors = useTheme();
-  const { pointsEnabled } = useAppContext();
+  const pointsEnabled = useAppContextSelector(
+    (context) => context.pointsEnabled,
+  );
   const { confirm } = useConfirm();
   const cat = CATEGORIES.find((c) => c.key === chore.category) ?? CATEGORIES[5];
   const overdue = isOverdue(chore.dueDate, chore.completed);
@@ -364,7 +369,20 @@ export default function MyChoresScreen() {
   const insets = useSafeAreaInsets();
   const { scrollBottomPadding } = useFloatingActionMetrics();
   const { currentUserId, chores, roommates, completeChore, deleteChore, addChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled } =
-    useAppContext();
+    useAppContextSelector((context) => ({
+      currentUserId: context.currentUserId,
+      chores: context.chores,
+      roommates: context.roommates,
+      completeChore: context.completeChore,
+      deleteChore: context.deleteChore,
+      addChore: context.addChore,
+      essentialsAssignees: context.essentialsAssignees,
+      setEssentialAssignee: context.setEssentialAssignee,
+      shoppingLists: context.shoppingLists,
+      shoppingItems: context.shoppingItems,
+      toggleShoppingItem: context.toggleShoppingItem,
+      pointsEnabled: context.pointsEnabled,
+    }));
 
   const currentUser = roommates.find((r) => r.id === currentUserId);
   const [filter, setFilter] = useState<Filter>("all");

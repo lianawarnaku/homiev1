@@ -4,7 +4,7 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { useTheme } from "@/constants/colors";
-import { useAppContext } from "@/context/AppContext";
+import { useAppContextSelector } from "@/context/AppContext";
 
 function namesList(names: string[]) {
   if (names.length < 2) return names[0] ?? "";
@@ -14,7 +14,12 @@ function namesList(names: string[]) {
 
 export function PendingApprovalBanner() {
   const colors = useTheme();
-  const { currentProposedChart, chartApprovals, roommates } = useAppContext();
+  const { currentProposedChart, chartApprovals, roommates } =
+    useAppContextSelector((context) => ({
+      currentProposedChart: context.currentProposedChart,
+      chartApprovals: context.chartApprovals,
+      roommates: context.roommates,
+    }));
   if (currentProposedChart?.status !== "pending") return null;
   const waiting = chartApprovals
     .filter((approval) => !approval.approved)

@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { Redirect } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { HeaderActions } from "@/components/HeaderActions";
-import { useAppContext } from "@/context/AppContext";
+import { useAppContextSelector } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 
 type Period = "weekly" | "alltime";
@@ -35,33 +35,57 @@ const HOME_ICONS: (keyof typeof Feather.glyphMap)[] = [
 export default function LeaderboardScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, currentUserId, pointsEnabled } = useAppContext();
+  const { roommates, chores, currentUserId, pointsEnabled } =
+    useAppContextSelector((context) => ({
+      roommates: context.roommates,
+      chores: context.chores,
+      currentUserId: context.currentUserId,
+      pointsEnabled: context.pointsEnabled,
+    }));
 
   const [period, setPeriod] = useState<Period>("weekly");
-
-  if (!pointsEnabled) return <Redirect href="/(tabs)" />;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
 
-  const sorted = [...roommates].sort((a, b) =>
-    period === "weekly"
-      ? b.weeklyPoints - a.weeklyPoints
-      : b.points - a.points
-  );
+  const { sorted, completedByUser, extraCompletedByUser, totalCompleted } =
+    useMemo(() => {
+      const completed = new Map<string, number>();
+      const extraCompleted = new Map<string, number>();
+      let total = 0;
+      chores.forEach((chore) => {
+        if (!chore.completed) return;
+        total += 1;
+        completed.set(
+          chore.assignedTo,
+          (completed.get(chore.assignedTo) ?? 0) + 1,
+        );
+        const completedByExtra = (
+          chore as typeof chore & { completedByExtra?: string }
+        ).completedByExtra;
+        if (completedByExtra && completedByExtra !== chore.assignedTo) {
+          extraCompleted.set(
+            completedByExtra,
+            (extraCompleted.get(completedByExtra) ?? 0) + 1,
+          );
+        }
+      });
+      return {
+        sorted: [...roommates].sort((a, b) =>
+          period === "weekly"
+            ? b.weeklyPoints - a.weeklyPoints
+            : b.points - a.points,
+        ),
+        completedByUser: (id: string) => completed.get(id) ?? 0,
+        extraCompletedByUser: (id: string) => extraCompleted.get(id) ?? 0,
+        totalCompleted: total,
+      };
+    }, [chores, period, roommates]);
 
   const top3 = sorted.slice(0, 3);
   const rest = sorted.slice(3);
 
-  const completedByUser = (id: string) =>
-    chores.filter((c) => c.completed && c.assignedTo === id).length;
-
-  const extraCompletedByUser = (id: string) =>
-    chores.filter(
-      (c) => c.completed && c.assignedTo !== id && (c as { completedByExtra?: string }).completedByExtra === id
-    ).length;
-
-  const totalCompleted = chores.filter((c) => c.completed).length;
+  if (!pointsEnabled) return <Redirect href="/(tabs)" />;
 
   return (
     <ScrollView

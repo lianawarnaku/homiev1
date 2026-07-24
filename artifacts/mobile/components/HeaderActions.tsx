@@ -5,11 +5,16 @@ import { StyleSheet, View } from "react-native";
 
 import { SmoothPressable } from "@/components/SmoothPressable";
 import { useTheme } from "@/constants/colors";
-import { useAppContext } from "@/context/AppContext";
+import { useAppContextSelector } from "@/context/AppContext";
 
 export function HeaderActions() {
   const colors = useTheme();
-  const { currentProposedChart, currentUserId, nudges } = useAppContext();
+  const { currentProposedChart, currentUserId, nudges } =
+    useAppContextSelector((context) => ({
+      currentProposedChart: context.currentProposedChart,
+      currentUserId: context.currentUserId,
+      nudges: context.nudges,
+    }));
   const hasPendingAlert =
     currentProposedChart?.status === "pending" ||
     nudges.some((nudge) => nudge.toRoommateId === currentUserId && !nudge.seen);

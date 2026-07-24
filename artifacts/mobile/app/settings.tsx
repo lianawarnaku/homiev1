@@ -84,7 +84,7 @@ export default function SettingsScreen() {
   const {
     roommates, currentUserId, updateRoommate, setCurrentUser, householdName,
     inviteCode, deleteHousehold, restartChartProcess, currentProposedChart,
-    isHost, removeRoommate, deleteOwnAccount,
+    isHost, removeRoommate, deleteOwnAccount, openQuickGuide,
   } = useAppContext();
   const { confirm } = useConfirm();
   const me = roommates.find((r) => r.id === currentUserId);
@@ -538,6 +538,27 @@ export default function SettingsScreen() {
           </View>
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>🎨  APPEARANCE & FEATURES</Text>
           <UserPreferencesPanel />
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ⓘ  HELP</Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Open Quick guide"
+            style={[styles.linkRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              openQuickGuide();
+            }}
+          >
+            <View style={[styles.linkIcon, { backgroundColor: colors.primary + "18" }]}>
+              <Feather name="info" size={18} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.linkTitle, { color: colors.foreground }]}>QUICK GUIDE</Text>
+              <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
+                Revisit a few helpful SweetMate features
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+          </TouchableOpacity>
           {/* Cloud Account — Supabase session. Shown above the legacy local
               account section. Signing out here drops the whole app back to
               the SignInScreen via AuthGate. */}

@@ -3,12 +3,17 @@ import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { useTheme } from "@/constants/colors";
-import { useAppContext } from "@/context/AppContext";
+import { useAppContextSelector } from "@/context/AppContext";
 import { findAssignedLoadDeviations } from "@/lib/chartLoadBalance";
 
 export function AssignedLoadNotice() {
   const colors = useTheme();
-  const { currentProposedChart, roommates } = useAppContext();
+  const { currentProposedChart, roommates } = useAppContextSelector(
+    (context) => ({
+      currentProposedChart: context.currentProposedChart,
+      roommates: context.roommates,
+    }),
+  );
   const approvedChart =
     currentProposedChart?.status === "approved" ? currentProposedChart : null;
   const deviations = useMemo(

@@ -1,5 +1,5 @@
 import { Alert, Platform } from "react-native";
-import { useAppContext } from "@/context/AppContext";
+import { useAppContextSelector } from "@/context/AppContext";
 
 type ConfirmOpts = {
   confirmText?: string;
@@ -7,7 +7,12 @@ type ConfirmOpts = {
 };
 
 export function useConfirm() {
-  const { suppressedAlerts, suppressAlert } = useAppContext();
+  const { suppressedAlerts, suppressAlert } = useAppContextSelector(
+    (context) => ({
+      suppressedAlerts: context.suppressedAlerts,
+      suppressAlert: context.suppressAlert,
+    }),
+  );
 
   function confirm(
     id: string,

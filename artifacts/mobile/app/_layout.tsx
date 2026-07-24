@@ -14,6 +14,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthGate } from "@/components/AuthGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { QuickGuideModal } from "@/components/QuickGuideModal";
 import { AppProvider } from "@/context/AppContext";
 import { useSupabaseSession } from "@/hooks/useSupabaseSession";
 import { setBaseUrl } from "@workspace/api-client-react";
@@ -67,6 +68,7 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <AppProvider session={session}>
               <AuthGate session={session} sessionLoading={sessionLoading}>
+                <>
                 <Stack
                   screenOptions={{
                     headerShown: false,
@@ -84,6 +86,8 @@ export default function RootLayout() {
                   <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
                   <Stack.Screen name="+not-found" />
                 </Stack>
+                <QuickGuideModal />
+                </>
               </AuthGate>
             </AppProvider>
           </GestureHandlerRootView>

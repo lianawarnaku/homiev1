@@ -2,25 +2,63 @@ import { Feather } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef } from "react";
+import {
+  InteractionManager,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "@/constants/colors";
-import { useAppContext } from "@/context/AppContext";
+import { useAppContextSelector } from "@/context/AppContext";
 import { SmoothPressable } from "@/components/SmoothPressable";
 
 function ScrollableTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const colors = useTheme();
-  const { pointsEnabled } = useAppContext();
+  const pointsEnabled = useAppContextSelector(
+    (context) => context.pointsEnabled,
+  );
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   // Expo Router auto-registers every route file, even when its Tabs.Screen
   // configuration is conditionally omitted. Remove the route from the array
   // we actually render so it creates neither a button nor a flex slot.
-  const visibleRoutes = state.routes.filter(
-    (route) => pointsEnabled || route.name !== "leaderboard"
+  const visibleRoutes = useMemo(
+    () =>
+      state.routes.filter(
+        (route) => pointsEnabled || route.name !== "leaderboard",
+      ),
+    [pointsEnabled, state.routes],
   );
   const focusedRouteKey = state.routes[state.index]?.key;
+  const preloadedRouteKeys = useRef(new Set<string>());
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      visibleRoutes.forEach((route, index) => {
+        if (
+          route.key === focusedRouteKey ||
+          preloadedRouteKeys.current.has(route.key)
+        ) {
+          return;
+        }
+        timers.push(
+          setTimeout(() => {
+            navigation.preload(route.name, route.params);
+            preloadedRouteKeys.current.add(route.key);
+          }, index * 45),
+        );
+      });
+    });
+    return () => {
+      interaction.cancel();
+      timers.forEach(clearTimeout);
+    };
+  }, [focusedRouteKey, navigation, visibleRoutes]);
 
   return (
     <View
@@ -84,21 +122,23 @@ function ScrollableTabBar({ state, descriptors, navigation }: BottomTabBarProps)
 
 export default function TabLayout() {
   const colors = useTheme();
-  const { pointsEnabled } = useAppContext();
+  const pointsEnabled = useAppContextSelector(
+    (context) => context.pointsEnabled,
+  );
 
   return (
     <Tabs
       tabBar={(props) => <ScrollableTabBar {...props} />}
-      detachInactiveScreens
+      detachInactiveScreens={false}
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
-        // Keep a visited tab's component/state alive, but freeze inactive
-        // native screens so household sync updates do not spend a frame
-        // rendering five invisible page trees.
+        // Keep the first frame light, then ScrollableTabBar preloads the other
+        // routes after interactions. Once mounted, tabs stay live so an edit
+        // is not paid as a queued rerender on the next focus.
         lazy: true,
-        freezeOnBlur: Platform.OS !== "web",
+        freezeOnBlur: false,
         animation: "fade",
       }}
     >

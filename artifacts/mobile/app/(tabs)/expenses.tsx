@@ -40,7 +40,7 @@ import {
   type ExpenseCategory,
   type Expense,
   type RecurringInterval,
-  useAppContext,
+  useAppContextSelector,
 } from "@/context/AppContext";
 
 const EXPENSE_CATEGORIES: {
@@ -91,7 +91,19 @@ export default function ExpensesScreen() {
     currentUserId,
     pendingIouDraft,
     setPendingIouDraft,
-  } = useAppContext();
+  } = useAppContextSelector((context) => ({
+    roommates: context.roommates,
+    expenses: context.expenses,
+    addExpense: context.addExpense,
+    updateExpense: context.updateExpense,
+    settleExpense: context.settleExpense,
+    deleteExpense: context.deleteExpense,
+    markPersonPaid: context.markPersonPaid,
+    getBalances: context.getBalances,
+    currentUserId: context.currentUserId,
+    pendingIouDraft: context.pendingIouDraft,
+    setPendingIouDraft: context.setPendingIouDraft,
+  }));
 
   const { confirm } = useConfirm();
   const [showExpenseModal, setShowExpenseModal] = useState(false);
