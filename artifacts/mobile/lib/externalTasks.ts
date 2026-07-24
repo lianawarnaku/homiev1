@@ -1,9 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Calendar from "expo-calendar";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 
 const REMINDER_LIST_TITLE = "SweetMate";
 const MAPPING_KEY_PREFIX = "@sweetmate/external-task/v1";
+const DESTINATION_KEY_PREFIX = "@sweetmate/external-task-destination/v1";
+
+export type ExternalTaskDestination =
+  | "googleCalendar"
+  | "reminders"
+  | "both";
 
 export type ExternalTaskChore = {
   id: string;
@@ -11,6 +17,8 @@ export type ExternalTaskChore = {
   dueDate: string;
   category?: string;
   assignedToName?: string;
+  points?: number;
+  includePoints?: boolean;
 };
 
 type StoredExternalTask = {
@@ -81,6 +89,28 @@ export function getExternalTaskSupport(): ExternalTaskSupport {
     unavailableReason:
       "Task export is available in the SweetMate iOS app, not in the web preview.",
   };
+}
+
+function destinationKey(userScope: string) {
+  return `${DESTINATION_KEY_PREFIX}/${encodeURIComponent(userScope)}`;
+}
+
+export async function getExternalTaskDestination(
+  userScope: string,
+): Promise<ExternalTaskDestination | null> {
+  const stored = await AsyncStorage.getItem(destinationKey(userScope));
+  return stored === "googleCalendar" ||
+    stored === "reminders" ||
+    stored === "both"
+    ? stored
+    : null;
+}
+
+export async function setExternalTaskDestination(
+  userScope: string,
+  destination: ExternalTaskDestination,
+) {
+  await AsyncStorage.setItem(destinationKey(userScope), destination);
 }
 
 function mappingKey(userScope: string, choreId: string) {
@@ -300,4 +330,71 @@ export async function exportChoresToExternalTasks(
   }
 
   return result;
+}
+
+export async function openChoreInGoogleCalendar(chore: ExternalTaskChore) {
+  const due = new Date(chore.dueDate);
+  if (Number.isNaN(due.getTime())) {
+    throw new ExternalTaskError("EXPORT_FAILED", "This chore has an invalid due date.");
+  }
+
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const formatDate = (date: Date) =>
+    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
+  const next = new Date(due);
+  next.setDate(due.getDate() + 1);
+  const notes = [
+    "Added from SweetMate",
+    chore.assignedToName ? `Assigned to: ${chore.assignedToName}` : null,
+    chore.category ? `Category: ${chore.category}` : null,
+    chore.includePoints && chore.points ? `Points: +${chore.points}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: `🏠 ${chore.title}`,
+    dates: `${formatDate(due)}/${formatDate(next)}`,
+    details: notes,
+  });
+  const url = `https://calendar.google.com/calendar/render?${params.toString()}`;
+  if (!(await Linking.canOpenURL(url))) {
+    throw new ExternalTaskError(
+      "EXPORT_FAILED",
+      "Google Calendar could not be opened on this device.",
+    );
+  }
+  await Linking.openURL(url);
+}
+
+export async function exportChoreToDestinations(
+  userScope: string,
+  chore: ExternalTaskChore,
+  destination: ExternalTaskDestination,
+) {
+  const failures: string[] = [];
+
+  if (destination === "reminders" || destination === "both") {
+    try {
+      const result = await exportChoresToExternalTasks(userScope, [chore]);
+      failures.push(...result.failures.map((failure) => failure.message));
+    } catch (error) {
+      failures.push(normalizeNativeError(error));
+    }
+  }
+
+  if (destination === "googleCalendar" || destination === "both") {
+    try {
+      await openChoreInGoogleCalendar(chore);
+    } catch (error) {
+      failures.push(normalizeNativeError(error));
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new ExternalTaskError(
+      "EXPORT_FAILED",
+      failures.join("\n"),
+    );
+  }
 }

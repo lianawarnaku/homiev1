@@ -33,8 +33,10 @@ import { success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import {
-  exportChoresToExternalTasks,
-  getExternalTaskSupport,
+  exportChoreToDestinations,
+  getExternalTaskDestination,
+  setExternalTaskDestination,
+  type ExternalTaskDestination,
 } from "@/lib/externalTasks";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
 
@@ -109,14 +111,27 @@ interface ChoreRowProps {
   };
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
+  onAddToCalendar: () => Promise<boolean>;
+  onChangeCalendarDestination: () => void;
+  calendarDestinationLabel: string;
 }
 
-function ChoreRow({ chore, onComplete, onDelete }: ChoreRowProps) {
+function ChoreRow({
+  chore,
+  onComplete,
+  onDelete,
+  onAddToCalendar,
+  onChangeCalendarDestination,
+  calendarDestinationLabel,
+}: ChoreRowProps) {
   const colors = useTheme();
   const { pointsEnabled } = useAppContext();
   const { confirm } = useConfirm();
   const cat = CATEGORIES.find((c) => c.key === chore.category) ?? CATEGORIES[5];
   const overdue = isOverdue(chore.dueDate, chore.completed);
+  const [calState, setCalState] = useState<
+    "idle" | "loading" | "done" | "error"
+  >("idle");
 
   // Slide-out animation on completion — the row slides right within its own
   // bounds (clipped by the outer wrapper) revealing a brown "Done!" panel
@@ -165,6 +180,36 @@ function ChoreRow({ chore, onComplete, onDelete }: ChoreRowProps) {
     : isToday(chore.dueDate)
     ? colors.primary
     : colors.mutedForeground;
+
+  const handleCalendar = async () => {
+    if (calState === "loading") return;
+    setCalState("loading");
+    try {
+      const exported = await onAddToCalendar();
+      if (!exported) {
+        setCalState("idle");
+        return;
+      }
+      setCalState("done");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      setCalState("error");
+      Alert.alert(
+        "Couldn't add this chore",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+      setTimeout(() => setCalState("idle"), 2000);
+    }
+  };
+
+  const calColor =
+    calState === "done"
+      ? colors.success
+      : calState === "error"
+        ? colors.destructive
+        : calState === "loading"
+          ? colors.mutedForeground
+          : colors.primary;
 
   return (
     <View style={{ borderRadius: 12, overflow: "hidden", position: "relative" }}>
@@ -258,6 +303,36 @@ function ChoreRow({ chore, onComplete, onDelete }: ChoreRowProps) {
       </View>}
 
       <TouchableOpacity
+        onPress={handleCalendar}
+        onLongPress={onChangeCalendarDestination}
+        disabled={calState === "loading"}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={[
+          styles.calBtn,
+          {
+            backgroundColor:
+              calState === "done"
+                ? colors.success + "18"
+                : calState === "loading"
+                  ? colors.muted
+                  : colors.primary + "14",
+            borderColor:
+              calState === "done"
+                ? colors.success + "55"
+                : colors.primary + "30",
+          },
+        ]}
+        accessibilityLabel={`Add to ${calendarDestinationLabel}`}
+        accessibilityHint="Long press to change the saved destination"
+      >
+        <Feather
+          name={calState === "done" ? "check" : "calendar"}
+          size={13}
+          color={calColor}
+        />
+      </TouchableOpacity>
+
+      <TouchableOpacity
         onPress={() =>
           confirm("delete_chore", "Delete Chore", "Are you sure?", () => onDelete(chore.id), { confirmText: "Delete", destructive: true })
         }
@@ -327,8 +402,22 @@ export default function MyChoresScreen() {
   const [newTitle, setNewTitle] = useState("");
   const [newCategory, setNewCategory] = useState<ChoreCategory>("cleaning");
   const [newPoints, setNewPoints] = useState("20");
-  const [taskExportLoading, setTaskExportLoading] = useState(false);
-  const externalTaskSupport = useMemo(() => getExternalTaskSupport(), []);
+  const [calendarDestination, setCalendarDestinationState] =
+    useState<ExternalTaskDestination | null | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    getExternalTaskDestination(currentUserId)
+      .then((destination) => {
+        if (active) setCalendarDestinationState(destination);
+      })
+      .catch((error) =>
+        reportRuntimeError("Load calendar destination preference", error),
+      );
+    return () => {
+      active = false;
+    };
+  }, [currentUserId]);
 
   const myToBuyItems = useMemo(
     () =>
@@ -370,64 +459,65 @@ export default function MyChoresScreen() {
     () => chores.filter((chore) => chore.assignedTo === currentUserId),
     [chores, currentUserId],
   );
-  const exportableChores = useMemo(
-    () => myChores.filter((chore) => !chore.completed),
-    [myChores],
-  );
+  const chooseCalendarDestination = (
+    showSavedConfirmation = false,
+  ): Promise<ExternalTaskDestination | null> =>
+    new Promise((resolve) => {
+      const save = (destination: ExternalTaskDestination) => {
+        setExternalTaskDestination(currentUserId, destination)
+          .then(() => {
+            setCalendarDestinationState(destination);
+            if (showSavedConfirmation) {
+              Alert.alert(
+                "Calendar preference saved",
+                "Future calendar-icon taps will use this destination. Long press the icon to change it again.",
+              );
+            }
+            resolve(destination);
+          })
+          .catch((error) => {
+            reportRuntimeError("Save calendar destination preference", error);
+            resolve(null);
+          });
+      };
 
-  const handleExportMyTasks = async () => {
-    if (taskExportLoading || !externalTaskSupport.supported) return;
-    if (exportableChores.length === 0) {
-      Alert.alert("No tasks to add", "You have no incomplete assigned chores.");
-      return;
-    }
-
-    setTaskExportLoading(true);
-    try {
-      const result = await exportChoresToExternalTasks(
-        currentUserId,
-        exportableChores.map((chore) => ({
-          id: chore.id,
-          title: chore.title,
-          dueDate: chore.dueDate,
-          category: chore.category,
-          assignedToName: currentUser?.name ?? "You",
-        })),
-      );
-      const changed = result.created + result.updated;
-      const summary = [
-        changed > 0
-          ? `${changed} reminder${changed === 1 ? "" : "s"} added or updated.`
-          : "Your reminders are already up to date.",
-        result.unchanged > 0
-          ? `${result.unchanged} already up to date.`
-          : null,
-        result.failures.length > 0
-          ? `${result.failures.length} could not be saved. Try those chores again.`
-          : null,
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      if (result.failures.length > 0) {
-        reportRuntimeError("Export chores to Apple Reminders (partial)", result.failures);
-        Alert.alert("Some reminders weren't added", summary);
-      } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert("Reminders ready", summary);
+      if (Platform.OS === "ios") {
+        Alert.alert(
+          "Where should this chore go?",
+          "Google Calendar uses the same all-day calendar entry as before. Apple Reminders creates a true task. Your choice is saved; long-press the icon later to change it.",
+          [
+            {
+              text: "Google Calendar",
+              onPress: () => save("googleCalendar"),
+            },
+            { text: "Reminders", onPress: () => save("reminders") },
+            { text: "Both", onPress: () => save("both") },
+          ],
+          { cancelable: true, onDismiss: () => resolve(null) },
+        );
+        return;
       }
-    } catch (error) {
-      reportRuntimeError("Export chores to Apple Reminders", error);
+
       Alert.alert(
-        "Couldn't add reminders",
-        error instanceof Error
-          ? error.message
-          : "SweetMate could not access Apple Reminders. Please try again.",
+        "Use Google Calendar?",
+        "SweetMate can open the same Google Calendar entry as before. Apple Reminders is available only on iPhone. Long-press the icon later to change this preference.",
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+          {
+            text: "Google Calendar",
+            onPress: () => save("googleCalendar"),
+          },
+        ],
+        { cancelable: true, onDismiss: () => resolve(null) },
       );
-    } finally {
-      setTaskExportLoading(false);
-    }
-  };
+    });
+
+  const calendarDestinationLabel =
+    calendarDestination === "both"
+      ? "Google Calendar and Apple Reminders"
+      : calendarDestination === "reminders"
+        ? "Apple Reminders"
+        : "Google Calendar";
   const weekDays = useMemo(() => {
     const start = new Date();
     start.setHours(12, 0, 0, 0);
@@ -711,71 +801,6 @@ export default function MyChoresScreen() {
               </View>
             </View>
 
-            <View
-              style={[
-                styles.taskExportCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.taskExportButton,
-                  {
-                    backgroundColor: externalTaskSupport.supported
-                      ? colors.primary
-                      : colors.muted,
-                    opacity:
-                      taskExportLoading || exportableChores.length === 0
-                        ? 0.65
-                        : 1,
-                  },
-                ]}
-                onPress={handleExportMyTasks}
-                disabled={
-                  taskExportLoading ||
-                  !externalTaskSupport.supported ||
-                  exportableChores.length === 0
-                }
-                activeOpacity={0.78}
-                accessibilityRole="button"
-                accessibilityLabel={externalTaskSupport.actionLabel}
-                accessibilityHint={externalTaskSupport.unavailableReason}
-              >
-                <Feather
-                  name={taskExportLoading ? "loader" : "check-square"}
-                  size={17}
-                  color={
-                    externalTaskSupport.supported
-                      ? colors.primaryForeground
-                      : colors.mutedForeground
-                  }
-                />
-                <Text
-                  style={[
-                    styles.taskExportButtonText,
-                    {
-                      color: externalTaskSupport.supported
-                        ? colors.primaryForeground
-                        : colors.mutedForeground,
-                    },
-                  ]}
-                >
-                  {taskExportLoading
-                    ? "Adding reminders…"
-                    : externalTaskSupport.actionLabel}
-                </Text>
-              </TouchableOpacity>
-              <Text
-                style={[
-                  styles.taskExportHelp,
-                  { color: colors.mutedForeground },
-                ]}
-              >
-                {externalTaskSupport.unavailableReason ??
-                  `Adds your incomplete assigned chores to ${externalTaskSupport.destinationLabel}. Repeating this updates existing reminders.`}
-              </Text>
-            </View>
-
             <View style={[styles.sectionTitleRow, { borderBottomColor: colors.primary }]}>
               <Feather name="check-square" size={15} color={colors.primary} />
               <Text style={[styles.sectionTitleText, { color: colors.foreground }]}>My Chores</Text>
@@ -828,6 +853,45 @@ export default function MyChoresScreen() {
             chore={item}
             onComplete={completeChore}
             onDelete={deleteChore}
+            calendarDestinationLabel={calendarDestinationLabel}
+            onChangeCalendarDestination={() => {
+              void chooseCalendarDestination(true);
+            }}
+            onAddToCalendar={async () => {
+              const savedDestination =
+                calendarDestination === undefined
+                  ? await getExternalTaskDestination(currentUserId)
+                  : calendarDestination;
+              if (calendarDestination === undefined) {
+                setCalendarDestinationState(savedDestination);
+              }
+              const destination =
+                savedDestination ?? (await chooseCalendarDestination());
+              if (!destination) return false;
+              try {
+                await exportChoreToDestinations(
+                  currentUserId,
+                  {
+                    id: item.id,
+                    title: item.title,
+                    dueDate: item.dueDate,
+                    category: item.category,
+                    assignedToName: currentUser?.name ?? "You",
+                    points: item.points,
+                    includePoints: pointsEnabled,
+                  },
+                  destination,
+                );
+                return true;
+              } catch (error) {
+                reportRuntimeError(
+                  `Add chore to ${destination}`,
+                  error,
+                  { choreId: item.id },
+                );
+                throw error;
+              }
+            }}
           />
         )}
         ListFooterComponent={
@@ -1135,32 +1199,6 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 2,
   },
-  taskExportCard: {
-    borderRadius: 18,
-    padding: 12,
-    borderWidth: 1,
-    marginBottom: 14,
-  },
-  taskExportButton: {
-    minHeight: 46,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  taskExportButtonText: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 14,
-  },
-  taskExportHelp: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 9,
-    paddingHorizontal: 2,
-  },
   calendarCard: {
     borderRadius: 22,
     borderWidth: 1,
@@ -1404,6 +1442,15 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontFamily: "Inter_700Bold",
     fontSize: 16,
+  },
+  calBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
   },
   toBuyCard: {
     borderRadius: 22,
