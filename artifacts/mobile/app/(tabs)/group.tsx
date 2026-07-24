@@ -24,10 +24,8 @@ const COMPLETE_REVEAL_BROWN = "#A87C50";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
-import { AssignedLoadNotice } from "@/components/AssignedLoadNotice";
 import { HeaderActions } from "@/components/HeaderActions";
 import { HomePlant } from "@/components/HomePlant";
-import { PendingApprovalBanner } from "@/components/PendingApprovalBanner";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import {
   useAppContextSelector,
@@ -515,8 +513,6 @@ export default function GroupChoresScreen() {
         <HeaderActions />
       </View>
 
-      <PendingApprovalBanner />
-      <AssignedLoadNotice />
 
       {viewMode === "calendar" ? (
         (() => {

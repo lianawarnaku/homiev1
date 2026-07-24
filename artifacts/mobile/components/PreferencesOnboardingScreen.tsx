@@ -9,11 +9,18 @@ import { HouseholdCompletionControl } from "@/components/HouseholdCompletionCont
 import { useTheme } from "@/constants/colors";
 import { useAppContext } from "@/context/AppContext";
 import { SmoothPressable } from "@/components/SmoothPressable";
+import { InviteCodeCard } from "@/components/InviteCodeCard";
 
 export function PreferencesOnboardingScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { finishPreferencesOnboarding } = useAppContext();
+  const {
+    finishPreferencesOnboarding,
+    householdName,
+    inviteCode,
+    householdLoading,
+    refreshHousehold,
+  } = useAppContext();
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -24,11 +31,16 @@ export function PreferencesOnboardingScreen() {
         }}
       >
         <View style={styles.brand}><BrandMark size={58} color={colors.primary} /></View>
-        <Text style={[styles.eyebrow, { color: colors.primary }]}>ONE LAST STEP</Text>
-        <Text style={[styles.title, { color: colors.foreground }]}>Make SweetMate yours</Text>
+        <Text style={[styles.eyebrow, { color: colors.primary }]}>YOUR SWEET IS READY</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>{householdName ?? "Your Sweet"}</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Choose how your household experience looks and what you want to see.
+          Invite your Sweetmates now, then choose how your household experience looks.
         </Text>
+        <InviteCodeCard
+          inviteCode={inviteCode}
+          loading={householdLoading}
+          onRetry={refreshHousehold}
+        />
         <UserPreferencesPanel />
         <View style={styles.completion}>
           <HouseholdCompletionControl />

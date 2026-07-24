@@ -9,15 +9,17 @@ import { useAppContextSelector } from "@/context/AppContext";
 
 export function HeaderActions() {
   const colors = useTheme();
-  const { currentProposedChart, currentUserId, nudges } =
+  const { currentProposedChart, currentUserId, nudges, appAlerts } =
     useAppContextSelector((context) => ({
       currentProposedChart: context.currentProposedChart,
       currentUserId: context.currentUserId,
       nudges: context.nudges,
+      appAlerts: context.appAlerts,
     }));
   const hasPendingAlert =
     currentProposedChart?.status === "pending" ||
-    nudges.some((nudge) => nudge.toRoommateId === currentUserId && !nudge.seen);
+    nudges.some((nudge) => nudge.toRoommateId === currentUserId && !nudge.seen) ||
+    appAlerts.some((alert) => !alert.readAt);
 
   return (
     <View style={styles.cluster}>

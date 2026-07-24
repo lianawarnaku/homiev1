@@ -2,7 +2,6 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -36,9 +35,11 @@ import { useTheme } from "@/constants/colors";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import { success as hapticSuccess } from "@/lib/haptics";
+import { buildEvenSplitCents, centsToDollars, parseMoneyToCents, validateExpenseAllocation } from "@/lib/money";
 import {
   type ExpenseCategory,
   type Expense,
+  type PendingIouDraft,
   type RecurringInterval,
   useAppContextSelector,
 } from "@/context/AppContext";
@@ -65,14 +66,15 @@ function formatDate(iso: string) {
 }
 
 function buildEvenSplits(
-  total: number,
+  totalCents: number,
   participants: string[]
 ): Record<string, string> {
-  if (!participants.length || !total) return {};
-  const even = (total / participants.length).toFixed(2);
-  const result: Record<string, string> = {};
-  participants.forEach((id) => (result[id] = even));
-  return result;
+  return Object.fromEntries(
+    Object.entries(buildEvenSplitCents(totalCents, participants)).map(([id, cents]) => [
+      id,
+      centsToDollars(cents).toFixed(2),
+    ]),
+  );
 }
 
 export default function ExpensesScreen() {
@@ -91,6 +93,7 @@ export default function ExpensesScreen() {
     currentUserId,
     pendingIouDraft,
     setPendingIouDraft,
+    linkShoppingItemsToExpense,
   } = useAppContextSelector((context) => ({
     roommates: context.roommates,
     expenses: context.expenses,
@@ -103,32 +106,31 @@ export default function ExpensesScreen() {
     currentUserId: context.currentUserId,
     pendingIouDraft: context.pendingIouDraft,
     setPendingIouDraft: context.setPendingIouDraft,
+    linkShoppingItemsToExpense: context.linkShoppingItemsToExpense,
   }));
 
   const { confirm } = useConfirm();
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [detailExpenseId, setDetailExpenseId] = useState<string | null>(null);
+  const [submittingIou, setSubmittingIou] = useState(false);
+  const submittingIouRef = useRef(false);
 
   // ── IOU builder state ──────────────────────────────────────────────────────
   const [expTitle, setExpTitle] = useState("");
   const [expCategory, setExpCategory] = useState<ExpenseCategory>("groceries");
   const [expPaidBy, setExpPaidBy] = useState(currentUserId);
   const [expTotalAmount, setExpTotalAmount] = useState("");
-  // participants = who OWES the payer (not including payer)
+  // participants = everyone whose share is part of the expense (payer allowed)
   const [expParticipants, setExpParticipants] = useState<string[]>(
     roommates.filter((r) => r.id !== currentUserId).map((r) => r.id)
   );
   // splits: person id → dollar string they owe
   const [expSplits, setExpSplits] = useState<Record<string, string>>({});
+  const [allocationMode, setAllocationMode] = useState<"equal" | "custom">("equal");
   const [expRecurring, setExpRecurring] = useState<RecurringInterval | null>(null);
   const [expRecurringCustom, setExpRecurringCustom] = useState("");
-  // Locked per-person amounts baked in from the shopping list — the builder
-  // adds `expGroupTotal / N` on top of each of these to derive `expSplits`.
-  // Only populated for shopping-generated IOUs; regular IOUs leave it empty
-  // and the group-total row is hidden.
-  const [expItemizedSplits, setExpItemizedSplits] = useState<Record<string, number>>({});
-  const [expGroupTotal, setExpGroupTotal] = useState("");
+  const [expenseSource, setExpenseSource] = useState<PendingIouDraft["source"]>();
 
   // Consume a pre-filled IOU draft handed off from the Shopping tab. When
   // present, populate the builder state and pop the modal, then clear the
@@ -142,37 +144,13 @@ export default function ExpensesScreen() {
     setExpTotalAmount(pendingIouDraft.totalAmount);
     setExpParticipants(pendingIouDraft.participants);
     setExpSplits(pendingIouDraft.splits);
-    setExpItemizedSplits(pendingIouDraft.itemizedSplits ?? {});
-    setExpGroupTotal(pendingIouDraft.groupTotal ?? "");
+    setAllocationMode("custom");
+    setExpenseSource(pendingIouDraft.source);
     setExpRecurring(null);
     setExpRecurringCustom("");
     setShowExpenseModal(true);
     setPendingIouDraft(null);
   }, [pendingIouDraft, setPendingIouDraft]);
-
-  const hasItemized = Object.keys(expItemizedSplits).length > 0;
-
-  // Whenever itemized amounts, group total, or participants change, recompute
-  // per-person splits and the grand total. This only fires for shopping-
-  // generated IOUs (where itemizedSplits is non-empty); ordinary IOUs are
-  // unaffected because the effect is a no-op with empty itemized.
-  useEffect(() => {
-    if (!hasItemized) return;
-    const groupParsed = parseFloat(expGroupTotal);
-    const group = Number.isFinite(groupParsed) && groupParsed > 0 ? groupParsed : 0;
-    const N = expParticipants.length;
-    const groupShare = N > 0 ? group / N : 0;
-    const nextSplits: Record<string, string> = {};
-    let sum = 0;
-    expParticipants.forEach((id) => {
-      const itemized = expItemizedSplits[id] ?? 0;
-      const owed = itemized + groupShare;
-      nextSplits[id] = owed > 0 ? owed.toFixed(2) : "";
-      sum += owed;
-    });
-    setExpSplits(nextSplits);
-    setExpTotalAmount(sum > 0 ? sum.toFixed(2) : "");
-  }, [hasItemized, expItemizedSplits, expGroupTotal, expParticipants]);
 
   const flatListRef = useRef<FlatList>(null);
   const expenseScrollY = useSharedValue(0);
@@ -285,48 +263,50 @@ export default function ExpensesScreen() {
 
   // ── Recalculate even split when total or participants change ───────────────
   const recalcEvenSplit = useCallback(() => {
-    const total = parseFloat(expTotalAmount);
-    if (isNaN(total) || total <= 0 || !expParticipants.length) {
+    const totalCents = parseMoneyToCents(expTotalAmount);
+    if (totalCents === null || !expParticipants.length) {
       setExpSplits({});
       return;
     }
-    setExpSplits(buildEvenSplits(total, expParticipants));
+    setExpSplits(buildEvenSplits(totalCents, expParticipants));
+    setAllocationMode("equal");
   }, [expTotalAmount, expParticipants]);
 
-  useEffect(() => {
-    // For shopping-derived IOUs, splits are driven by expItemizedSplits +
-    // expGroupTotal via the recompute effect above — don't clobber them with
-    // an even-split of the total.
-    if (hasItemized) return;
-    recalcEvenSplit();
-  }, [expParticipants, hasItemized, recalcEvenSplit]);
-
   // ── Derived: sum of splits, remainder ─────────────────────────────────────
-  const splitSum = useMemo(() => {
-    return Object.values(expSplits).reduce(
-      (acc, v) => acc + (parseFloat(v) || 0),
-      0
-    );
-  }, [expSplits]);
-
-  const totalParsed = parseFloat(expTotalAmount) || 0;
-  const remainder = Math.round((totalParsed - splitSum) * 100) / 100;
-  const splitsValid =
-    expParticipants.length > 0 &&
-    Math.abs(remainder) < 0.02 &&
-    totalParsed > 0;
-
-  const canSubmit = !!expTitle.trim() && totalParsed > 0 && expParticipants.length > 0;
+  const totalCents = parseMoneyToCents(expTotalAmount);
+  const activeMemberIds = new Set(roommates.map((member) => member.id));
+  const allocationValidation = validateExpenseAllocation({
+    total: expTotalAmount,
+    payerId: expPaidBy,
+    participantIds: expParticipants,
+    allocations: expSplits,
+    activeMemberIds,
+  });
+  const totalParsed = totalCents === null ? 0 : centsToDollars(totalCents);
+  const remainingCents = allocationValidation.valid ? 0 : allocationValidation.remainingCents;
+  const splitsValid = allocationValidation.valid;
+  const canSubmit = !submittingIou && allocationValidation.valid;
 
   // ── Toggle participant ─────────────────────────────────────────────────────
   const toggleParticipant = (id: string) => {
-    setExpParticipants((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+    const next = expParticipants.includes(id)
+      ? expParticipants.filter((value) => value !== id)
+      : [...expParticipants, id];
+    setExpParticipants(next);
+    if (allocationMode === "equal" && totalCents !== null && next.length) {
+      setExpSplits(buildEvenSplits(totalCents, next));
+    } else {
+      setExpSplits((current) => {
+        const updated = Object.fromEntries(Object.entries(current).filter(([memberId]) => next.includes(memberId)));
+        if (next.includes(id) && !(id in updated)) updated[id] = "";
+        return updated;
+      });
+    }
   };
 
   // ── Update individual split ────────────────────────────────────────────────
   const updateSplit = (id: string, val: string) => {
+    setAllocationMode("custom");
     setExpSplits((prev) => ({ ...prev, [id]: val }));
   };
 
@@ -340,11 +320,11 @@ export default function ExpensesScreen() {
       roommates.filter((r) => r.id !== currentUserId).map((r) => r.id)
     );
     setExpSplits({});
+    setAllocationMode("equal");
     setExpRecurring(null);
     setExpRecurringCustom("");
     setEditingExpenseId(null);
-    setExpItemizedSplits({});
-    setExpGroupTotal("");
+    setExpenseSource(undefined);
   };
 
   // ── Open / close animation for the New IOU sheet ───────────────────────────
@@ -376,12 +356,16 @@ export default function ExpensesScreen() {
       if (!finished) return;
       setShowExpenseModal(false);
       resetModal();
+      submittingIouRef.current = false;
+      setSubmittingIou(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [iouTranslateY]);
   const iouDragHandlers = useDraggableSheet(iouTranslateY, () => {
     setShowExpenseModal(false);
     resetModal();
+    submittingIouRef.current = false;
+    setSubmittingIou(false);
   });
 
   const openEditModal = (item: (typeof expenses)[number]) => {
@@ -396,23 +380,25 @@ export default function ExpensesScreen() {
         Object.entries(item.splits ?? {}).map(([id, amt]) => [id, (amt as number).toFixed(2)])
       )
     );
+    setAllocationMode("custom");
     setExpRecurring(item.recurring ?? null);
     setExpRecurringCustom(item.recurringCustom ?? "");
-    // Editing an existing IOU: no shopping-list itemization to preserve
-    setExpItemizedSplits({});
-    setExpGroupTotal("");
+    setExpenseSource(undefined);
     setShowExpenseModal(true);
   };
 
   // ── Submit IOU ─────────────────────────────────────────────────────────────
   const doSendIOU = () => {
+    if (submittingIouRef.current || !canSubmit || !allocationValidation.valid) return;
+    submittingIouRef.current = true;
+    setSubmittingIou(true);
     const numericSplits: Record<string, number> = {};
     expParticipants.forEach((id) => {
-      numericSplits[id] = parseFloat(expSplits[id] ?? "0") || 0;
+      numericSplits[id] = centsToDollars(allocationValidation.allocationCents[id]);
     });
     const payload = {
-      title: expTitle.trim(),
-      amount: totalParsed,
+      title: expTitle.trim() || "IOU",
+      amount: centsToDollars(allocationValidation.totalCents),
       paidBy: expPaidBy,
       sharedWith: expParticipants,
       splits: numericSplits,
@@ -423,7 +409,8 @@ export default function ExpensesScreen() {
     if (editingExpenseId) {
       updateExpense(editingExpenseId, payload);
     } else {
-      addExpense({ ...payload, date: new Date().toISOString(), settled: false });
+      const expenseId = addExpense({ ...payload, date: new Date().toISOString(), settled: false });
+      if (expenseSource) linkShoppingItemsToExpense(expenseSource.itemIds, expenseId);
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     closeIou();
@@ -431,19 +418,6 @@ export default function ExpensesScreen() {
 
   const handleSendIOU = () => {
     if (!canSubmit) return;
-    if (Math.abs(remainder) >= 0.02) {
-      const overUnder = remainder > 0 ? "unassigned" : "over-assigned";
-      const amt = `$${Math.abs(remainder).toFixed(2)}`;
-      Alert.alert(
-        "Splits don't add up",
-        `The splits are ${amt} ${overUnder}. Send the IOU anyway?`,
-        [
-          { text: "Go back", style: "cancel" },
-          { text: "Send anyway", onPress: doSendIOU },
-        ]
-      );
-      return;
-    }
     doSendIOU();
   };
 
@@ -612,7 +586,7 @@ export default function ExpensesScreen() {
                             { color: colors.mutedForeground },
                           ]}
                         >
-                          Paid by {payer?.name ?? "?"} · {formatDate(item.date)}
+                          Paid by {payer?.name ?? "Former Sweetmate"} · {formatDate(item.date)}
                         </Text>
                         {item.recurring ? (
                           <View style={[styles.recurringBadge, { backgroundColor: colors.primary + "14" }]}>
@@ -680,8 +654,13 @@ export default function ExpensesScreen() {
                   {/* IOU breakdown chips */}
                   <View style={styles.iouChips}>
                     {Object.entries(item.splits ?? {}).map(([personId, amount]) => {
-                      const person = roommates.find((r) => r.id === personId);
-                      if (!person) return null;
+                      const person = roommates.find((r) => r.id === personId) ?? {
+                        id: personId,
+                        name: "Former Sweetmate",
+                        color: colors.mutedForeground,
+                        points: 0,
+                        weeklyPoints: 0,
+                      };
                       const isMe = personId === currentUserId;
                       const isOwer = personId !== item.paidBy;
                       const hasPaidBack = !!(item.paidBack ?? {})[personId];
@@ -776,7 +755,7 @@ export default function ExpensesScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.detailTitle, { color: colors.foreground }]}>{detailExp.title}</Text>
                       <Text style={[styles.detailMeta, { color: colors.mutedForeground }]}>
-                        Paid by {payer?.name ?? "?"} · {formatDate(detailExp.date)}
+                        Paid by {payer?.name ?? "Former Sweetmate"} · {formatDate(detailExp.date)}
                       </Text>
                     </View>
                     <Text style={[styles.detailAmount, { color: colors.foreground }]}>
@@ -791,8 +770,13 @@ export default function ExpensesScreen() {
                   <Text style={[styles.detailSectionLabel, { color: colors.mutedForeground }]}>Who owes</Text>
                   <View style={{ gap: 8 }}>
                     {Object.entries(detailExp.splits ?? {}).map(([personId, amount]) => {
-                      const person = roommates.find((r) => r.id === personId);
-                      if (!person) return null;
+                      const person = roommates.find((r) => r.id === personId) ?? {
+                        id: personId,
+                        name: "Former Sweetmate",
+                        color: colors.mutedForeground,
+                        points: 0,
+                        weeklyPoints: 0,
+                      };
                       const isOwer = personId !== detailExp.paidBy;
                       const hasPaid = !!(detailExp.paidBack ?? {})[personId];
                       const isMe = personId === currentUserId;
@@ -1079,13 +1063,7 @@ export default function ExpensesScreen() {
                             expPaidBy === r.id ? r.color : colors.border,
                         },
                       ]}
-                      onPress={() => {
-                        setExpPaidBy(r.id);
-                        // Remove payer from participants
-                        setExpParticipants((prev) =>
-                          prev.filter((x) => x !== r.id)
-                        );
-                      }}
+                      onPress={() => setExpPaidBy(r.id)}
                     >
                       <RoommateAvatar
                         name={r.name}
@@ -1136,11 +1114,12 @@ export default function ExpensesScreen() {
                     placeholderTextColor={colors.mutedForeground}
                     value={expTotalAmount}
                     onChangeText={(v) => setExpTotalAmount(v)}
-                    onBlur={recalcEvenSplit}
+                    onBlur={() => {
+                      if (allocationMode === "equal") recalcEvenSplit();
+                    }}
                     keyboardType="decimal-pad"
-                    editable={!hasItemized}
                   />
-                  {totalParsed > 0 && expParticipants.length > 0 && !hasItemized && (
+                  {totalParsed > 0 && expParticipants.length > 0 && (
                     <TouchableOpacity
                       style={[
                         styles.evenSplitBtn,
@@ -1160,57 +1139,7 @@ export default function ExpensesScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-                {hasItemized && (
-                  <Text
-                    style={{
-                      fontFamily: "Inter_400Regular",
-                      fontSize: 11,
-                      color: colors.mutedForeground,
-                      marginTop: 4,
-                    }}
-                  >
-                    Auto-computed from itemized amounts + group total below
-                  </Text>
-                )}
               </View>
-
-              {/* Group total — shared portion split evenly across participants,
-                  in addition to each person's itemized amount. Only shown when
-                  the IOU was seeded from a shopping list. */}
-              {hasItemized && (
-                <View>
-                  <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                    Group total
-                  </Text>
-                  <View
-                    style={[
-                      styles.amountInputRow,
-                      { backgroundColor: colors.muted, borderColor: colors.border },
-                    ]}
-                  >
-                    <Text style={[styles.dollarSign, { color: colors.mutedForeground }]}>$</Text>
-                    <TextInput
-                      style={[styles.amountInput, { color: colors.foreground }]}
-                      placeholder="0.00"
-                      placeholderTextColor={colors.mutedForeground}
-                      value={expGroupTotal}
-                      onChangeText={setExpGroupTotal}
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
-                  <Text
-                    style={{
-                      fontFamily: "Inter_400Regular",
-                      fontSize: 11,
-                      color: colors.mutedForeground,
-                      marginTop: 4,
-                    }}
-                  >
-                    Shared amount — split evenly across {expParticipants.length}
-                    {expParticipants.length === 1 ? " person" : " people"} on top of their itemized share
-                  </Text>
-                </View>
-              )}
 
               {/* Split between */}
               <View>
@@ -1220,9 +1149,7 @@ export default function ExpensesScreen() {
                   Split between
                 </Text>
                 <View style={styles.roommateRow}>
-                  {roommates
-                    .filter((r) => r.id !== expPaidBy)
-                    .map((r) => {
+                  {roommates.map((r) => {
                       const selected = expParticipants.includes(r.id);
                       return (
                         <TouchableOpacity
@@ -1357,20 +1284,20 @@ export default function ExpensesScreen() {
                     >
                       Each person owes
                     </Text>
-                    {Math.abs(remainder) >= 0.02 && totalParsed > 0 && (
+                    {remainingCents !== 0 && totalParsed > 0 && (
                       <Text
                         style={{
                           color:
-                            remainder > 0
+                            remainingCents > 0
                               ? colors.warning
                               : colors.destructive,
                           fontFamily: "Inter_600SemiBold",
                           fontSize: 12,
                         }}
                       >
-                        {remainder > 0
-                          ? `$${remainder.toFixed(2)} unassigned`
-                          : `$${Math.abs(remainder).toFixed(2)} over`}
+                        {remainingCents > 0
+                          ? `$${centsToDollars(remainingCents).toFixed(2)} left to assign`
+                          : `$${centsToDollars(Math.abs(remainingCents)).toFixed(2)} over the expense total`}
                       </Text>
                     )}
                     {splitsValid && (
@@ -1381,7 +1308,7 @@ export default function ExpensesScreen() {
                           fontSize: 12,
                         }}
                       >
-                        ✓ Balanced
+                        ✓ Fully allocated
                       </Text>
                     )}
                   </View>
@@ -1466,7 +1393,7 @@ export default function ExpensesScreen() {
                   styles.iouSendBtn,
                   { backgroundColor: canSubmit ? colors.primary : colors.muted },
                 ]}
-                disabled={!canSubmit}
+                disabled={!canSubmit || submittingIou}
                 onPress={handleSendIOU}
               >
                 <Feather
@@ -1480,7 +1407,7 @@ export default function ExpensesScreen() {
                     { color: canSubmit ? "#fff" : colors.mutedForeground },
                   ]}
                 >
-                  {editingExpenseId ? "Save Changes" : "Send IOU"}
+                  {submittingIou ? "Saving…" : editingExpenseId ? "Save Changes" : "Send IOU"}
                 </Text>
               </TouchableOpacity>
             </View>

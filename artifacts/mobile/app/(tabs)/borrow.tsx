@@ -134,7 +134,12 @@ export default function BorrowScreen() {
   };
 
   const handleSave = () => {
-    if (!item.trim() || !borrowedFrom) return;
+    if (
+      !item.trim() ||
+      !borrowedFrom ||
+      borrowedFrom === currentUserId ||
+      !roommates.some((member) => member.id === borrowedFrom)
+    ) return;
     const due = new Date();
     due.setDate(due.getDate() + parseInt(dueDays, 10));
     if (editingId) {
@@ -147,6 +152,7 @@ export default function BorrowScreen() {
     } else {
       addBorrowItem({
         item: item.trim(),
+        borrowedBy: currentUserId,
         borrowedFrom,
         borrowedAt: new Date().toISOString(),
         dueDate: due.toISOString(),
@@ -380,7 +386,11 @@ export default function BorrowScreen() {
                         From {owner.name}
                       </Text>
                     </View>
-                  ) : null}
+                  ) : (
+                    <Text style={[styles.ownerText, { color: colors.mutedForeground }]}>
+                      From Former Sweetmate
+                    </Text>
+                  )}
                   {borrow.notes ? (
                     <Text
                       style={[styles.notesText, { color: colors.mutedForeground }]}
@@ -582,10 +592,18 @@ export default function BorrowScreen() {
               styles.saveBtn,
               {
                 backgroundColor:
-                  item.trim() && borrowedFrom ? colors.primary : colors.muted,
+                  item.trim() &&
+                  borrowedFrom !== currentUserId &&
+                  roommates.some((member) => member.id === borrowedFrom)
+                    ? colors.primary
+                    : colors.muted,
               },
             ]}
-            disabled={!item.trim() || !borrowedFrom}
+            disabled={
+              !item.trim() ||
+              borrowedFrom === currentUserId ||
+              !roommates.some((member) => member.id === borrowedFrom)
+            }
             onPress={handleSave}
           >
             <Text style={styles.saveBtnText}>Save</Text>

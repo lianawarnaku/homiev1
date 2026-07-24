@@ -16,6 +16,24 @@ import { tapLight } from "@/lib/haptics";
 
 const GUIDE_ITEMS = [
   {
+    icon: "clipboard" as const,
+    title: "Chore planner",
+    description:
+      "Choose what is in your Sweet, and SweetMate builds a predictable recurring plan using preset household rules.",
+  },
+  {
+    icon: "award" as const,
+    title: "Difficulty and points",
+    description:
+      "Difficulty reflects typical effort. Completing harder chores can earn more points, so ranks reflect effort as well as task count.",
+  },
+  {
+    icon: "repeat" as const,
+    title: "Schedules and assignments",
+    description:
+      "Cleaning chores repeat automatically. Fixed balancing rules spread automatic assignments among active Sweetmates.",
+  },
+  {
     icon: "eye-off" as const,
     title: "Anonymous nudges",
     description:
@@ -28,10 +46,10 @@ const GUIDE_ITEMS = [
       "Saves your assigned tasks and due dates to your chosen calendar or reminders app.",
   },
   {
-    icon: "activity" as const,
-    title: "Room Health",
+    icon: "bell" as const,
+    title: "Alerts",
     description:
-      "A quick view of how well your Sweet is keeping up with shared tasks.",
+      "Workload warnings, overdue reminders, and other important updates appear in Alerts instead of interrupting you.",
   },
 ];
 
@@ -91,7 +109,7 @@ export function QuickGuideModal() {
               QUICK GUIDE
             </Text>
             <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-              Three helpful things to know about SweetMate.
+              Six helpful things to know about SweetMate.
             </Text>
 
             <View style={styles.items}>

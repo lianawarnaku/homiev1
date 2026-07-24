@@ -66,7 +66,7 @@ function slotVisualFor(key: string) {
   return SLOT_VISUAL_BY_KEY[key] ?? SLOT_VISUAL_DEFAULT;
 }
 
-// Derive the slot list from chart data; fall back to keys present in week 1 if AI didn't return slots.
+// Derive the slot list from stored chart data, falling back to week-one keys.
 function getActiveSlots(data: ChoreChartData): { key: string; label: string; category?: ChoreCategory }[] {
   if (data.slots && data.slots.length > 0) return data.slots;
   const seen = new Set<string>();
@@ -703,7 +703,7 @@ function SectionCard({
 export default function PlanningScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, addChore, essentialsAssignees, setEssentialAssignee, pointsEnabled, householdComplete, householdId, homeProfile, customTasks, addCustomTask, deleteCustomTask, memberPreferences, setMemberPreference, currentUserId, proposeChart } = useAppContext();
+  const { roommates, addChore, addChores, essentialsAssignees, setEssentialAssignee, pointsEnabled, householdComplete, householdId, homeProfile, customTasks, addCustomTask, deleteCustomTask, memberPreferences, setMemberPreference, currentUserId } = useAppContext();
 
   const [selectedType, setSelectedType] = useState<PlanType>(null);
   const [housingType, setHousingType] = useState<HousingType>(homeProfile?.housingType ?? null);
@@ -718,7 +718,6 @@ export default function PlanningScreen() {
   const [checkedEssentials, setCheckedEssentials] = useState<Record<string, Set<string>>>({});
   const [customEssentials, setCustomEssentials] = useState<Record<string, string[]>>({});
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
-  const [preferences, setPreferences] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [choreChartData, setChoreChartData] = useState<ChoreChartData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -732,10 +731,6 @@ export default function PlanningScreen() {
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
-
-  const baseUrl =
-    process.env.EXPO_PUBLIC_API_URL ??
-    (process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : "");
 
   function toggleSet(set: Set<string>, key: string): Set<string> {
     const next = new Set(set);
@@ -787,9 +782,7 @@ export default function PlanningScreen() {
 
     type Subtask = { title: string; category: ChoreCategory; points: number };
 
-    // Map a slot to its individual cleaning tasks. Uses the AI's slot label as a
-    // fallback for unknown keys so dynamically-generated slots (e.g. "laundry",
-    // "trash") still produce one chore per slot.
+    // Legacy slot expansion retained only for previously stored charts.
     const subtasksFor = (slotKey: string, slotLabel?: string, slotCategory?: ChoreCategory): Subtask[] => {
       switch (slotKey) {
         case "bathroom_heavy":
@@ -883,7 +876,7 @@ export default function PlanningScreen() {
       }
     };
 
-    // ── Resolve slot list: prefer AI chart, else fall back to legacy default ──
+    // ── Resolve a previously stored chart or use the legacy fixed defaults ──
     const fallbackSlots: { key: string; label: string; category?: ChoreCategory }[] = [
       { key: "bathroom_heavy", label: "Bathroom Heavy", category: "bathroom" },
       { key: "kitchen_heavy", label: "Kitchen Heavy", category: "kitchen" },
@@ -902,7 +895,7 @@ export default function PlanningScreen() {
           ? choreChartData.slots
           : Object.keys(week1).map((k) => ({ key: k, label: k }));
     } else {
-      // No AI chart — assign roommates 1:1 to the legacy slots
+      // No stored chart — assign roommates 1:1 to the fixed legacy slots
       week1 = {};
       activeSlots = fallbackSlots.slice(0, Math.min(n, fallbackSlots.length));
       for (let i = 0; i < activeSlots.length; i++) {
@@ -943,7 +936,7 @@ export default function PlanningScreen() {
     return count;
   }
 
-  // ── Build AI context string ──────────────────────────────────────────────
+  // ── Build a local checklist summary ─────────────────────────────────────
   function buildContext(): string {
     const parts: string[] = [];
     if (housingType) {
@@ -988,7 +981,6 @@ export default function PlanningScreen() {
       });
     }
 
-    if (preferences.trim()) parts.push(preferences.trim());
     return parts.join(". ");
   }
 
@@ -1009,63 +1001,65 @@ export default function PlanningScreen() {
         }
         const tasks = await generateHouseholdTasks(
           householdId,
-          parseHouseholdAmenities(homeProfile.items),
+          parseHouseholdAmenities(homeProfile.items).flatMap((amenity) => {
+            const count = amenity.category === "bathroom"
+              ? Math.max(1, homeProfile.roomCounts?.bathroom ?? 1)
+              : 1;
+            return Array.from({ length: count }, (_, index) => ({
+              ...amenity,
+              roomInstanceId: `${amenity.category}-${index + 1}`,
+            }));
+          }),
           homeProfile.housingType,
           customTasks,
         );
         setGeneratedTasks(tasks);
-        await proposeChart(
-          buildBalancedChart(tasks, roommates, memberPreferences, {
-            mode: "preference",
-          }),
+        const chart = buildBalancedChart(tasks, roommates, [], { mode: "perfectSplit" });
+        const assigneeByTask = new Map<string, string>();
+        chart.assignments.forEach((assignment) =>
+          assignment.taskIds.forEach((taskId) => assigneeByTask.set(taskId, assignment.memberId)),
         );
+        const pointByDifficulty = [0, 5, 10, 15, 25, 30] as const;
+        const now = Date.now();
+        const added = addChores(tasks.map((task) => {
+          const intervalDays =
+            task.frequency === "daily" ? 1 :
+            task.frequency === "everyOtherDay" ? 2 :
+            task.frequency === "weekly" || task.frequency === "biweekly" ? 7 : 30;
+          return {
+            title: task.title,
+            assignedTo: assigneeByTask.get(task.id) ?? roommates[0].id,
+            dueDate: new Date(now + intervalDays * 86_400_000).toISOString(),
+            completed: false,
+            points: pointByDifficulty[task.difficulty],
+            category:
+              task.itemCategory === "bathroom" ? "bathroom" :
+              task.itemCategory === "kitchen" ? "kitchen" :
+              task.itemCategory === "living" ? "cleaning" : "other",
+            recurring:
+              task.frequency === "daily" || task.frequency === "everyOtherDay" ? "daily" :
+              task.frequency === "monthly" ? "monthly" : "weekly",
+            sourceKey: task.id,
+          };
+        }));
+        setChoresAdded(added);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         return;
       }
-      const res = await fetch(`${baseUrl}/api/planning/suggest`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: selectedType,
-          preferences: buildContext() || undefined,
-          roommates: roommates.map((r) => r.name),
-        }),
-      });
-      if (!res.ok) {
-        const responseText = await res.text().catch(() => "");
-        throw new Error(
-          `Planning request failed (${res.status} ${res.statusText}) at ${baseUrl || "the local Expo server"}/api/planning/suggest` +
-          (responseText ? `: ${responseText.slice(0, 180)}` : ""),
-        );
-      }
-      const contentType = res.headers.get("content-type") ?? "";
-      if (!contentType.includes("application/json")) {
-        throw new Error(
-          `Planning request returned ${contentType || "an unknown content type"} instead of JSON at ` +
-          `${baseUrl || "the local Expo server"}/api/planning/suggest`,
-        );
-      }
-      const data = (await res.json()) as { suggestion: string };
-      if (!data || typeof data.suggestion !== "string") {
-        throw new Error("Planning response did not include a suggestion.");
-      }
-
-      setResult(data.suggestion);
+      const selectedItems = HOME_ESSENTIALS_SECTIONS.flatMap((section) => [
+        ...[...(checkedEssentials[section.key] ?? [])],
+        ...(customEssentials[section.key] ?? []),
+      ]);
+      setResult(
+        selectedItems.length
+          ? selectedItems.map((item) => `• ${item}`).join("\n")
+          : "Select the household essentials you want included.",
+      );
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
-      reportRuntimeError("generate planning suggestion", error, {
-        selectedType,
-        baseUrl: baseUrl || "local Expo origin",
-      });
-      const message =
-        error instanceof Error && error.message.startsWith("Planning request")
-          ? process.env.EXPO_PUBLIC_API_URL || process.env.EXPO_PUBLIC_DOMAIN
-            ? "The planning service could not complete this request. Please try again."
-            : "Planning suggestions need EXPO_PUBLIC_API_URL when running locally."
-          : error instanceof Error
-            ? error.message
-            : "Unable to generate suggestion. Please try again.";
+      reportRuntimeError("build formulaic household plan", error, { selectedType });
+      const message = error instanceof Error ? error.message : "Unable to build the plan. Please try again.";
       setError(message);
       hapticError();
     } finally {
@@ -1112,7 +1106,7 @@ export default function PlanningScreen() {
               Planning Helper
             </Text>
             <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              AI-powered suggestions for your Sweet
+              Formulaic plans for your Sweet
             </Text>
           </View>
         </View>
@@ -1692,33 +1686,6 @@ export default function PlanningScreen() {
           </TouchableOpacity>
         </View>
       )}
-
-      {/* ── Preferences ── */}
-      <Text
-        style={[
-          styles.sectionLabel,
-          { color: colors.foreground, marginTop: isChoreChart && housingType ? 4 : 0 },
-        ]}
-      >
-        Additional notes (optional)
-      </Text>
-
-      <TextInput
-        style={[
-          styles.textarea,
-          {
-            backgroundColor: colors.card,
-            color: colors.foreground,
-            borderColor: colors.border,
-          },
-        ]}
-        placeholder="Describe your schedules, pets, special preferences..."
-        placeholderTextColor={colors.mutedForeground}
-        value={preferences}
-        onChangeText={setPreferences}
-        multiline
-        numberOfLines={3}
-      />
 
       {/* ── Error ── */}
       {error ? (

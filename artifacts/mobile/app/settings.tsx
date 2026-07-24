@@ -1,6 +1,5 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -24,6 +23,7 @@ import { useAppContext } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { UserPreferencesPanel } from "@/components/UserPreferencesPanel";
 import { HouseholdCompletionControl } from "@/components/HouseholdCompletionControl";
+import { InviteCodeCard } from "@/components/InviteCodeCard";
 import { useSupabaseSession } from "@/hooks/useSupabaseSession";
 import { useConfirm } from "@/hooks/useConfirm";
 import { supabase } from "@/lib/supabase";
@@ -83,7 +83,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const {
     roommates, currentUserId, updateRoommate, setCurrentUser, householdName,
-    inviteCode, deleteHousehold, restartChartProcess, currentProposedChart,
+    inviteCode, householdLoading, refreshHousehold, deleteHousehold, restartChartProcess, currentProposedChart,
     isHost, removeRoommate, deleteOwnAccount, openQuickGuide,
   } = useAppContext();
   const { confirm } = useConfirm();
@@ -494,15 +494,20 @@ export default function SettingsScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!name.trim()) return;
-    updateRoommate(currentUserId, {
-      name: name.trim(),
-      color,
-      avatarUri,
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.back();
+    try {
+      await updateRoommate(currentUserId, {
+        name: name.trim(),
+        color,
+        avatarUri,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch (error) {
+      reportRuntimeError("save Sweetmate profile", error);
+      Alert.alert("Unable to save profile", "Please check your connection and try again.");
+    }
   };
 
   return (
@@ -648,16 +653,12 @@ export default function SettingsScreen() {
               />
             </View>
             <View style={styles.householdTileGroup}>
-              <TouchableOpacity disabled={!inviteCode} onPress={() => inviteCode && Clipboard.setStringAsync(inviteCode)} style={[styles.input, { backgroundColor: colors.muted, borderColor: colors.border, justifyContent: "center", flexDirection: "row", alignItems: "center" }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.accountUsername, { color: colors.mutedForeground }]}>INVITE CODE</Text>
-                  <Text style={[styles.accountName, { color: colors.foreground, letterSpacing: 2 }]}>{inviteCode ?? "Unavailable"}</Text>
-                </View>
-                <Feather name="copy" size={19} color={colors.primary} />
-              </TouchableOpacity>
-              <Text style={[styles.accountHint, { color: colors.mutedForeground }]}>
-                Share this code with roommates. Each person signs into their own account before joining.
-              </Text>
+              <InviteCodeCard
+                compact
+                inviteCode={inviteCode}
+                loading={householdLoading}
+                onRetry={refreshHousehold}
+              />
             </View>
             {isHost && roommates.some((roommate) => roommate.id !== currentUserId) ? (
               <View style={[styles.memberManagement, { borderTopColor: colors.border }]}>

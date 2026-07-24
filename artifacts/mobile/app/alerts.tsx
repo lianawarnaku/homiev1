@@ -27,6 +27,7 @@ export default function AlertsScreen() {
     currentProposedChart, chartApprovals, currentUserId, roommates,
     memberPreferences, approveProposedChart, forceApproveProposedChart,
     proposeChart, isHost, nudges, chores, acknowledgeNudge,
+    appAlerts, markAlertRead, markAllAlertsRead,
   } = useAppContext();
   const [busy, setBusy] = useState(false);
   const [dismissingNudgeId, setDismissingNudgeId] = useState<string | null>(null);
@@ -37,7 +38,9 @@ export default function AlertsScreen() {
   const feedItems = [
     ...(proposal ? [{ type: "proposal" as const, id: proposal.id }] : []),
     ...unseenNudges.map((nudge) => ({ type: "nudge" as const, id: nudge.id, nudge })),
+    ...appAlerts.map((alert) => ({ type: "informational" as const, id: alert.id, alert })),
   ];
+  const unreadCount = appAlerts.filter((alert) => !alert.readAt).length;
   const myApproval = chartApprovals.find((approval) => approval.memberId === currentUserId);
   const tasks = proposal?.payload.generatedTasks ?? [];
 
@@ -86,17 +89,51 @@ export default function AlertsScreen() {
           <Feather name="chevron-left" size={21} color={colors.foreground} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.foreground }]}>Alerts</Text>
-        <View style={styles.icon} />
+        {unreadCount ? (
+          <TouchableOpacity accessibilityRole="button" onPress={markAllAlertsRead} style={styles.markAll}>
+            <Text style={[styles.markAllText, { color: colors.primary }]}>Read all</Text>
+          </TouchableOpacity>
+        ) : <View style={styles.icon} />}
       </View>
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 30 }]}>
         {feedItems.length === 0 ? (
           <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Feather name="check-circle" size={28} color={colors.success} />
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>You’re all caught up</Text>
-            <Text style={[styles.meta, { color: colors.mutedForeground }]}>No alerts need your attention.</Text>
+            <Text style={[styles.meta, { color: colors.mutedForeground }]}>Important Sweet updates will appear here.</Text>
           </View>
         ) : (
           feedItems.map((feedItem) => {
+            if (feedItem.type === "informational") {
+              const icon =
+                feedItem.alert.type === "difficulty-imbalance" ? "bar-chart-2" :
+                feedItem.alert.type === "overdue-chore" ? "clock" :
+                feedItem.alert.type === "expense" ? "dollar-sign" :
+                feedItem.alert.type === "borrowing" ? "repeat" :
+                feedItem.alert.type === "membership" ? "user-plus" : "info";
+              return (
+                <TouchableOpacity
+                  key={`information:${feedItem.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${feedItem.alert.readAt ? "" : "Unread "}${feedItem.alert.title}`}
+                  onPress={() => markAlertRead(feedItem.id)}
+                  activeOpacity={0.78}
+                  style={[styles.nudgeCard, { backgroundColor: colors.card, borderColor: feedItem.alert.readAt ? colors.border : colors.primary }]}
+                >
+                  <View style={[styles.nudgeIcon, { backgroundColor: colors.primary + "14" }]}>
+                    <Feather name={icon} size={19} color={colors.primary} />
+                  </View>
+                  <View style={styles.nudgeCopy}>
+                    <View style={styles.alertTitleRow}>
+                      {!feedItem.alert.readAt ? <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} /> : null}
+                      <Text style={[styles.nudgeTitle, { color: colors.foreground }]}>{feedItem.alert.title}</Text>
+                    </View>
+                    <Text style={[styles.alertMessage, { color: colors.mutedForeground }]}>{feedItem.alert.message}</Text>
+                    <Text style={[styles.meta, { color: colors.mutedForeground }]}>{relativeTime(feedItem.alert.createdAt)}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }
             if (feedItem.type === "nudge") {
               const chore = chores.find((value) => value.id === feedItem.nudge.choreId);
               const dismissing = dismissingNudgeId === feedItem.id;
@@ -181,6 +218,8 @@ const styles = StyleSheet.create({
   header: { minHeight: 78, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   icon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   title: { fontFamily: "Inter_700Bold", fontSize: 27 },
+  markAll: { minWidth: 56, minHeight: 40, alignItems: "center", justifyContent: "center" },
+  markAllText: { fontFamily: "Inter_700Bold", fontSize: 13 },
   content: { padding: 16, gap: 12 },
   proposalGroup: { gap: 12 },
   card: { borderWidth: 1, borderRadius: 18, padding: 15 },
@@ -213,6 +252,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   nudgeCopy: { flex: 1 },
+  alertTitleRow: { flexDirection: "row", alignItems: "center", gap: 7 },
+  unreadDot: { width: 7, height: 7, borderRadius: 4 },
+  alertMessage: { fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 18, marginTop: 3 },
   nudgeTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, lineHeight: 20 },
   dismiss: {
     width: 38,

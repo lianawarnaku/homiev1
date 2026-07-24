@@ -1,15 +1,19 @@
-import { getChoreRule } from "@/constants/choreRules";
+import {
+  buildFeatureChorePlan,
+  normalizeFeatureId,
+  type RuleRecurrence,
+} from "@/constants/featureChoreRegistry";
 import type { ItemCategory } from "@/constants/itemDifficulty";
 import type {
   CustomTask,
   GeneratedTask,
   HousingType,
 } from "@/context/AppContext";
-import { getItemDifficulty } from "@/lib/itemDifficulty";
 
 export interface SelectedAmenity {
   category: ItemCategory;
   item: string;
+  roomInstanceId?: string;
 }
 
 export function parseHouseholdAmenities(items: string[]): SelectedAmenity[] {
@@ -23,28 +27,33 @@ export function parseHouseholdAmenities(items: string[]): SelectedAmenity[] {
 }
 
 export async function generateHouseholdTasks(
-  householdId: string,
+  _householdId: string,
   amenities: SelectedAmenity[],
-  housingType: HousingType,
+  _housingType: HousingType,
   customTasks: CustomTask[] = [],
 ): Promise<GeneratedTask[]> {
-  const generated = await Promise.all(
-    amenities.flatMap((amenity) => {
-      const rule = getChoreRule(amenity.category, amenity.item, housingType);
-      if (!rule) return [];
-      return rule.tasks.map(async (task): Promise<GeneratedTask> => ({
-        ...task,
-        id: `${amenity.category}:${amenity.item}:${task.id}`,
-        itemCategory: amenity.category,
-        item: amenity.item,
-        difficulty: await getItemDifficulty(
-          householdId,
-          amenity.category,
-          amenity.item,
-        ),
-      }));
-    }),
+  const amenityByFeatureId = new Map(
+    amenities.map((amenity) => [normalizeFeatureId(amenity.category, amenity.item), amenity]),
   );
+  const frequency = (value: RuleRecurrence): GeneratedTask["frequency"] =>
+    value === "every_3_days" ? "everyOtherDay" : value;
+  const generated: GeneratedTask[] = buildFeatureChorePlan(
+    amenities.map((amenity) => ({
+      roomInstanceId: amenity.roomInstanceId ?? `${amenity.category}-1`,
+      featureId: normalizeFeatureId(amenity.category, amenity.item),
+    })),
+  ).map((task) => {
+    const amenity = amenityByFeatureId.get(task.featureId);
+    return {
+      id: task.sourceKey,
+      itemCategory: amenity?.category ?? "other",
+      item: amenity?.item ?? task.featureId,
+      title: task.title,
+      frequency: frequency(task.recurrence),
+      timeOfDay: "any",
+      difficulty: (task.points <= 5 ? 1 : task.points <= 10 ? 2 : task.points <= 15 ? 3 : task.points <= 25 ? 4 : 5),
+    };
+  });
 
   return [
     ...generated,

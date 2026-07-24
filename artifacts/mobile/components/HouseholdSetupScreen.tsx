@@ -1,5 +1,4 @@
 import { Feather } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
 import * as Crypto from "expo-crypto";
 import * as Haptics from "expo-haptics";
 import React, { useMemo, useState } from "react";
@@ -12,6 +11,13 @@ import { useTheme } from "@/constants/colors";
 import { supabase } from "@/lib/supabase";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import { error as hapticError } from "@/lib/haptics";
+import { useSupabaseSession } from "@/hooks/useSupabaseSession";
+import {
+  buildFeatureChorePlan,
+  normalizeFeatureId,
+  type PersistedRecurrence,
+} from "@/constants/featureChoreRegistry";
+import type { ChoreCategory } from "@/context/AppContext";
 
 const COLORS = ["#7B563B", "#A66A3F", "#C58B57", "#7D8B6A", "#B36A6A", "#8C6D80"];
 const makeInviteCode = () => Crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
@@ -21,19 +27,18 @@ const HOUSING: { key: HousingType; label: string; description: string; icon: key
   { key: "apartment", label: "Apartment", description: "Full kitchen, bathroom, and living area", icon: "grid" },
 ];
 const ITEM_SECTIONS = [
-  { key: "kitchen", title: "Kitchen", icon: "coffee", items: ["Mini fridge", "Trash can", "Microwave", "Kettle", "Floor", "Coffee machine"] },
-  { key: "bathroom", title: "Bathroom", icon: "droplet", items: ["Bathroom sink", "Mirror", "Shower", "Toilet", "Bath mat", "Floor", "Trash can"] },
-  { key: "living", title: "Living Space", icon: "home", items: ["Trash can", "Vacuum", "Laundry basket"] },
+  { key: "kitchen", title: "Kitchen", icon: "coffee", items: ["Mini fridge", "Trash can", "Microwave", "Kettle", "Floor", "Coffee machine", "Dishwasher", "Stove"] },
+  { key: "bathroom", title: "Bathroom", icon: "droplet", items: ["Bathroom sink", "Mirror", "Shower", "Bathtub", "Toilet", "Bath mat", "Floor", "Trash can"] },
+  { key: "living", title: "Living Space", icon: "home", items: ["Trash can", "Vacuum", "Laundry basket", "Washing machine", "Dryer"] },
+  { key: "bedroom", title: "Bedrooms", icon: "moon", items: ["Carpet", "Bed linens"] },
   { key: "other", title: "Other", icon: "more-horizontal", items: ["Floor", "Trash can"] },
 ] as const;
-const SUGGESTED_CHORES = ["Take out trash", "Vacuum floors", "Clean microwave", "Do laundry"];
-const SUITE_CHORES = ["Clean bathroom", "Restock bathroom supplies"];
-const APARTMENT_CHORES = ["Do the dishes", "Clean kitchen", "Mop floors", "Tidy living room"];
 
 export function HouseholdSetupScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { createHousehold, joinHousehold, setHomeProfile } = useAppContext();
+  const { createHousehold, joinHousehold, setHomeProfile, addChores } = useAppContext();
+  const { session } = useSupabaseSession();
   const [mode, setMode] = useState<"create" | "join">("create");
   const [step, setStep] = useState(1);
   const [householdName, setHouseholdName] = useState("");
@@ -42,17 +47,44 @@ export function HouseholdSetupScreen() {
   const [createInviteCode] = useState(makeInviteCode);
   const [color, setColor] = useState(COLORS[0]);
   const [housingType, setHousingType] = useState<HousingType | null>(null);
+  const [bathroomCount, setBathroomCount] = useState(1);
+  const [bedroomCount, setBedroomCount] = useState(1);
   const [items, setItems] = useState<string[]>([]);
   const [customItems, setCustomItems] = useState<Record<string, string[]>>({});
   const [customItemDrafts, setCustomItemDrafts] = useState<Record<string, string>>({});
   const [chores, setChores] = useState<string[]>([]);
   const [customChore, setCustomChore] = useState("");
+  const [customCategory, setCustomCategory] = useState<ChoreCategory>("other");
+  const [customRecurrence, setCustomRecurrence] = useState<PersistedRecurrence>("weekly");
+  const [customPoints, setCustomPoints] = useState(15);
+  const [customChoreSettings, setCustomChoreSettings] = useState<Record<string, {
+    category: ChoreCategory;
+    recurrence: PersistedRecurrence;
+    points: number;
+  }>>({});
+  const [removedGeneratedKeys, setRemovedGeneratedKeys] = useState<Set<string>>(new Set());
+  const [recurrenceOverrides, setRecurrenceOverrides] = useState<Record<string, PersistedRecurrence>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const suggestedChores = useMemo(
-    () => [...SUGGESTED_CHORES, ...(housingType === "suite" || housingType === "apartment" ? SUITE_CHORES : []), ...(housingType === "apartment" ? APARTMENT_CHORES : [])],
-    [housingType]
+  const generatedPlan = useMemo(
+    () =>
+      buildFeatureChorePlan(
+        items.flatMap((value) => {
+          const [category, ...itemParts] = value.split(":");
+          const count = category === "bathroom" ? bathroomCount : category === "bedroom" ? bedroomCount : 1;
+          return Array.from({ length: count }, (_, index) => ({
+            roomInstanceId: `${category}-${index + 1}`,
+            featureId: normalizeFeatureId(category, itemParts.join(":")),
+          }));
+        }),
+      )
+        .filter((chore) => !removedGeneratedKeys.has(chore.sourceKey))
+        .map((chore) => ({
+          ...chore,
+          persistedRecurrence: recurrenceOverrides[chore.sourceKey] ?? chore.persistedRecurrence,
+        })),
+    [bathroomCount, bedroomCount, items, recurrenceOverrides, removedGeneratedKeys],
   );
 
   const changeMode = (next: "create" | "join") => {
@@ -91,8 +123,39 @@ export function HouseholdSetupScreen() {
     setLoading(true);
     setError(null);
     try {
-      setHomeProfile({ housingType, items, additionalChores: chores });
+      setHomeProfile({ housingType, items, additionalChores: chores, roomCounts: { bathroom: bathroomCount, bedroom: bedroomCount } });
       await createHousehold(householdName, displayName, color, createInviteCode);
+      const assigneeId = session?.user.id;
+      if (!assigneeId) throw new Error("Your session expired before chores could be created.");
+      const now = Date.now();
+      addChores([
+        ...generatedPlan.map((chore) => ({
+          title: chore.title,
+          assignedTo: assigneeId,
+          dueDate: new Date(now + (chore.persistedRecurrence === "daily" ? 1 : chore.persistedRecurrence === "weekly" ? 7 : 30) * 86_400_000).toISOString(),
+          completed: false,
+          points: chore.points,
+          category: chore.category,
+          recurring: chore.persistedRecurrence,
+          sourceKey: chore.sourceKey,
+        })),
+        ...chores.map((title) => {
+          const settings = customChoreSettings[title] ?? {
+            category: "other" as ChoreCategory,
+            recurrence: "weekly" as PersistedRecurrence,
+            points: 15,
+          };
+          return {
+            title,
+            assignedTo: assigneeId,
+            dueDate: new Date(now + (settings.recurrence === "daily" ? 1 : settings.recurrence === "weekly" ? 7 : 30) * 86_400_000).toISOString(),
+            completed: false,
+            points: settings.points,
+            category: settings.category,
+            recurring: settings.recurrence,
+          };
+        }),
+      ]);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       reportRuntimeError("create household", e);
@@ -105,6 +168,10 @@ export function HouseholdSetupScreen() {
     const value = customChore.trim();
     if (!value || chores.includes(value)) return;
     setChores([...chores, value]);
+    setCustomChoreSettings((current) => ({
+      ...current,
+      [value]: { category: customCategory, recurrence: customRecurrence, points: customPoints },
+    }));
     setCustomChore("");
   };
 
@@ -124,10 +191,10 @@ export function HouseholdSetupScreen() {
         <View style={styles.brand}><BrandMark size={58} color={colors.primary} /></View>
         <Text style={[styles.eyebrow, { color: colors.primary }]}>{mode === "create" ? `CREATE YOUR SWEET · STEP ${step} OF 4` : "JOIN YOUR SWEET"}</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>
-          {mode === "join" ? "Join your roommates" : step === 1 ? "Start your household" : step === 2 ? "What kind of home is it?" : step === 3 ? "What's in your space?" : "Which chores should we add?"}
+          {mode === "join" ? "Join your roommates" : step === 1 ? "Start your household" : step === 2 ? "What kind of home is it?" : step === 3 ? "What's in your space?" : "Your chore plan"}
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          {mode === "join" ? "Enter the invite code a roommate shared with you." : step === 1 ? "Set up your private household and invite your roommates." : step === 2 ? "This helps SweetMate suggest chores that fit your actual space." : step === 3 ? "Select everything your household shares. You can change this later." : "Pick suggested chores or add your own. This step is optional."}
+          {mode === "join" ? "Enter the invite code a roommate shared with you." : step === 1 ? "Set up your private household and invite your roommates." : step === 2 ? "This determines which fixed chore rules apply." : step === 3 ? "Select everything your household shares. Your plan updates automatically." : "We created these chores from what is in your Sweet. Remove any you do not want or add your own."}
         </Text>
 
         {step === 1 && (
@@ -153,14 +220,6 @@ export function HouseholdSetupScreen() {
             <>
               <Field label="YOUR DISPLAY NAME" icon="user" value={displayName} onChangeText={setDisplayName} placeholder="e.g. Liana" colors={colors} />
               <Field label="HOUSEHOLD NAME" icon="home" value={householdName} onChangeText={setHouseholdName} placeholder="e.g. The Maple House" colors={colors} />
-              <View>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>YOUR INVITE CODE</Text>
-                <Pressable onPress={() => Clipboard.setStringAsync(createInviteCode)} style={[styles.codeRow, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                  <Text style={[styles.codeText, { color: colors.foreground }]}>{createInviteCode}</Text>
-                  <View style={[styles.copyButton, { backgroundColor: colors.primary }]}><Feather name="copy" size={16} color="#fff" /></View>
-                </Pressable>
-                <Text style={[styles.codeHint, { color: colors.mutedForeground }]}>Copy and share this after creating your household.</Text>
-              </View>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>PROFILE COLOR</Text>
               <ColorPicker value={color} onChange={setColor} colors={colors} />
             </>
@@ -176,6 +235,32 @@ export function HouseholdSetupScreen() {
                     </View>
                     <Text style={[styles.itemSectionTitle, { color: colors.foreground }]}>{section.title}</Text>
                   </View>
+                  {section.key === "bathroom" ? (
+                    <View style={styles.chips}>
+                      {[1, 2, 3].map((count) => (
+                        <Chip
+                          key={count}
+                          label={`${count} ${count === 1 ? "bathroom" : "bathrooms"}`}
+                          selected={bathroomCount === count}
+                          onPress={() => setBathroomCount(count)}
+                          colors={colors}
+                        />
+                      ))}
+                    </View>
+                  ) : null}
+                  {section.key === "bedroom" ? (
+                    <View style={styles.chips}>
+                      {[1, 2, 3].map((count) => (
+                        <Chip
+                          key={count}
+                          label={`${count} ${count === 1 ? "bedroom" : "bedrooms"}`}
+                          selected={bedroomCount === count}
+                          onPress={() => setBedroomCount(count)}
+                          colors={colors}
+                        />
+                      ))}
+                    </View>
+                  ) : null}
                   <View style={styles.chips}>
                     {[...section.items, ...(customItems[section.key] ?? [])].map((item) => {
                       const key = itemKey(section.key, item);
@@ -200,15 +285,62 @@ export function HouseholdSetupScreen() {
             </View>
           ) : (
             <>
-              <View style={styles.chips}>{suggestedChores.map((chore) => <Chip key={chore} label={chore} selected={chores.includes(chore)} onPress={() => toggle(chore, chores, setChores)} colors={colors} />)}</View>
+              <View style={styles.reviewList}>
+                {generatedPlan.length ? generatedPlan.map((chore) => (
+                  <View key={chore.sourceKey} style={[styles.reviewRow, { borderColor: colors.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.customChoreText, { color: colors.foreground }]}>{chore.title}</Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Change recurrence for ${chore.title}`}
+                        onPress={() => {
+                          const recurrences: PersistedRecurrence[] = ["daily", "weekly", "monthly"];
+                          const next = recurrences[(recurrences.indexOf(chore.persistedRecurrence) + 1) % recurrences.length];
+                          setRecurrenceOverrides((current) => ({ ...current, [chore.sourceKey]: next }));
+                        }}
+                      >
+                        <Text style={[styles.reviewMeta, { color: colors.primary }]}>
+                          {chore.persistedRecurrence} · {chore.points} points · {chore.category} · tap to change
+                        </Text>
+                      </Pressable>
+                    </View>
+                    <Pressable
+                      accessibilityLabel={`Remove ${chore.title}`}
+                      onPress={() => setRemovedGeneratedKeys((current) => new Set([...current, chore.sourceKey]))}
+                    >
+                      <Feather name="x" size={18} color={colors.mutedForeground} />
+                    </Pressable>
+                  </View>
+                )) : <Text style={[styles.reviewMeta, { color: colors.mutedForeground }]}>Select household features to create mapped chores.</Text>}
+              </View>
               <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 4 }]}>ADD A CUSTOM CHORE</Text>
+              <View style={styles.chips}>
+                {(["kitchen", "bathroom", "cleaning", "laundry", "other"] as ChoreCategory[]).map((category) => (
+                  <Chip key={category} label={category} selected={customCategory === category} onPress={() => setCustomCategory(category)} colors={colors} />
+                ))}
+              </View>
+              <View style={styles.chips}>
+                {(["daily", "weekly", "monthly"] as PersistedRecurrence[]).map((recurrence) => (
+                  <Chip key={recurrence} label={recurrence} selected={customRecurrence === recurrence} onPress={() => setCustomRecurrence(recurrence)} colors={colors} />
+                ))}
+                {[10, 15, 25, 30].map((points) => (
+                  <Chip key={points} label={`${points} pts`} selected={customPoints === points} onPress={() => setCustomPoints(points)} colors={colors} />
+                ))}
+              </View>
               <View style={[styles.customRow, { backgroundColor: colors.muted, borderColor: colors.border }]}>
                 <TextInput value={customChore} onChangeText={setCustomChore} onSubmitEditing={addCustomChore} placeholder="e.g. Water the plants" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} />
                 <Pressable onPress={addCustomChore} style={[styles.addButton, { backgroundColor: colors.primary }]}><Feather name="plus" color="#fff" size={18} /></Pressable>
               </View>
-              {chores.filter((chore) => !suggestedChores.includes(chore)).map((chore) => (
+              {chores.map((chore) => (
                 <Pressable key={chore} onPress={() => setChores(chores.filter((item) => item !== chore))} style={styles.customChore}>
-                  <Feather name="check-circle" size={16} color={colors.primary} /><Text style={[styles.customChoreText, { color: colors.foreground }]}>{chore}</Text><Feather name="x" size={16} color={colors.mutedForeground} />
+                  <Feather name="check-circle" size={16} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.customChoreText, { color: colors.foreground }]}>{chore}</Text>
+                    <Text style={[styles.reviewMeta, { color: colors.mutedForeground }]}>
+                      {customChoreSettings[chore]?.recurrence ?? "weekly"} · {customChoreSettings[chore]?.points ?? 15} points · {customChoreSettings[chore]?.category ?? "other"}
+                    </Text>
+                  </View>
+                  <Feather name="x" size={16} color={colors.mutedForeground} />
                 </Pressable>
               ))}
             </>
@@ -243,7 +375,7 @@ export function HouseholdSetupScreen() {
 }
 
 function Progress({ step, colors }: any) {
-  return <View style={styles.progressWrap}><View style={styles.progressLabels}><Text style={[styles.progressText, { color: colors.foreground }]}>Household setup</Text><Text style={[styles.progressCount, { color: colors.mutedForeground }]}>{step}/4</Text></View><View style={[styles.progressTrack, { backgroundColor: colors.muted }]}><View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${step * 25}%` }]} /></View><View style={styles.progressDots}>{["Details", "Home", "Items", "Chores"].map((label, index) => <Text key={label} style={[styles.progressDotLabel, { color: index + 1 <= step ? colors.primary : colors.mutedForeground }]}>{label}</Text>)}</View></View>;
+  return <View style={styles.progressWrap}><View style={styles.progressLabels}><Text style={[styles.progressText, { color: colors.foreground }]}>Household setup</Text><Text style={[styles.progressCount, { color: colors.mutedForeground }]}>{step}/4</Text></View><View style={[styles.progressTrack, { backgroundColor: colors.muted }]}><View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${step * 25}%` }]} /></View><View style={styles.progressDots}>{["Details", "Home", "Items", "Review"].map((label, index) => <Text key={label} style={[styles.progressDotLabel, { color: index + 1 <= step ? colors.primary : colors.mutedForeground }]}>{label}</Text>)}</View></View>;
 }
 function Field({ label, icon, colors, ...props }: any) { return <View><Text style={[styles.label, { color: colors.mutedForeground }]}>{label}</Text><View style={[styles.inputWrap, { backgroundColor: colors.muted, borderColor: colors.border }]}><Feather name={icon} size={16} color={colors.mutedForeground} /><TextInput {...props} placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} /></View></View>; }
 function ColorPicker({ value, onChange, colors }: any) { return <View style={styles.swatches}>{COLORS.map((item) => <Pressable key={item} onPress={() => onChange(item)} style={[styles.swatch, { backgroundColor: item }, value === item && { borderColor: colors.foreground, borderWidth: 3 }]}>{value === item && <Feather name="check" size={16} color="#fff" />}</Pressable>)}</View>; }
@@ -255,9 +387,11 @@ const styles = StyleSheet.create({
   progressWrap: { marginBottom: 16 }, progressLabels: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }, progressText: { fontFamily: "Inter_700Bold", fontSize: 14 }, progressCount: { fontFamily: "Inter_600SemiBold", fontSize: 13 }, progressTrack: { height: 7, borderRadius: 4, overflow: "hidden" }, progressFill: { height: "100%", borderRadius: 4 }, progressDots: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 }, progressDotLabel: { width: "25%", textAlign: "center", fontFamily: "Inter_600SemiBold", fontSize: 11 },
   segment: { borderRadius: 16, padding: 4, flexDirection: "row", marginBottom: 14 }, segmentButton: { flex: 1, height: 48, borderRadius: 13, borderWidth: 1, borderColor: "transparent", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }, segmentText: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
   card: { borderWidth: 1, borderRadius: 22, padding: 18, gap: 16 }, label: { fontFamily: "Inter_700Bold", fontSize: 12, letterSpacing: 1, marginBottom: 7 }, inputWrap: { height: 52, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10 }, input: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 16 },
-  codeRow: { height: 56, borderWidth: 1, borderRadius: 14, paddingLeft: 15, paddingRight: 7, flexDirection: "row", alignItems: "center" }, codeText: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 21, letterSpacing: 3 }, copyButton: { width: 42, height: 42, borderRadius: 11, alignItems: "center", justifyContent: "center" }, codeHint: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 6 },
   swatches: { flexDirection: "row", justifyContent: "space-between" }, swatch: { width: 39, height: 39, borderRadius: 20, alignItems: "center", justifyContent: "center", borderColor: "transparent" }, optionList: { gap: 10 }, selectionCard: { borderWidth: 1.5, borderRadius: 16, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }, selectionIcon: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" }, selectionTitle: { fontFamily: "Inter_700Bold", fontSize: 18 }, selectionSub: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 18, marginTop: 2 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 9 }, chip: { minHeight: 40, borderWidth: 1, borderRadius: 20, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 6 }, chipText: { fontFamily: "Inter_600SemiBold", fontSize: 14 }, customRow: { height: 52, borderWidth: 1, borderRadius: 14, paddingLeft: 14, paddingRight: 6, flexDirection: "row", alignItems: "center" }, addButton: { width: 40, height: 40, borderRadius: 11, alignItems: "center", justifyContent: "center" }, customChore: { flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 5 }, customChoreText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 15 },
   itemSections: { gap: 14 }, itemSection: { borderBottomWidth: 1, paddingBottom: 14, gap: 12 }, itemSectionHeader: { flexDirection: "row", alignItems: "center", gap: 9 }, itemSectionIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" }, itemSectionTitle: { fontFamily: "Inter_700Bold", fontSize: 20 },
+  reviewList: { gap: 8 },
+  reviewRow: { minHeight: 58, borderWidth: 1, borderRadius: 13, padding: 11, flexDirection: "row", alignItems: "center", gap: 8 },
+  reviewMeta: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 3 },
   error: { padding: 12, borderRadius: 12, flexDirection: "row", gap: 8 }, errorText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 14 }, actions: { flexDirection: "row", gap: 10 }, back: { height: 54, borderRadius: 15, borderWidth: 1, paddingHorizontal: 18, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 7 }, backText: { fontFamily: "Inter_700Bold", fontSize: 16 }, primary: { flex: 1, height: 54, borderRadius: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10 }, primaryText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 17 }, signOut: { padding: 18, alignItems: "center" }, signOutText: { fontFamily: "Inter_500Medium", fontSize: 14 },
 });

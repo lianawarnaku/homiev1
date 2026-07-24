@@ -23,10 +23,8 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
-import { AssignedLoadNotice } from "@/components/AssignedLoadNotice";
 import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
-import { PendingApprovalBanner } from "@/components/PendingApprovalBanner";
 import {
   type ChoreCategory,
   useAppContextSelector,
@@ -486,10 +484,7 @@ export default function MyChoresScreen() {
           .then(() => {
             setCalendarDestinationState(destination);
             if (showSavedConfirmation) {
-              Alert.alert(
-                "Calendar preference saved",
-                "Future calendar-icon taps will use this destination. Long press the icon to change it again.",
-              );
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
             resolve(destination);
           })
@@ -635,8 +630,6 @@ export default function MyChoresScreen() {
               </Text>
             </View>
 
-            <PendingApprovalBanner />
-            <AssignedLoadNotice />
 
             <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.calendarTopRow}>
