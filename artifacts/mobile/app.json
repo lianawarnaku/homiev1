@@ -19,7 +19,8 @@
       "bundleIdentifier": "com.homieapplication.homie",
       "buildNumber": "1",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "SweetMate uses your photo library only when you choose a profile photo."
+        "NSPhotoLibraryUsageDescription": "SweetMate uses your photo library only when you choose a profile photo.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
