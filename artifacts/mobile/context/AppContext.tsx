@@ -8,8 +8,8 @@ import React, {
   useRef,
   useState,
 } from "react";
+import type { Session } from "@supabase/supabase-js";
 
-import { useSupabaseSession } from "@/hooks/useSupabaseSession";
 import { supabase } from "@/lib/supabase";
 import { normalizeColorScheme, type ColorScheme } from "@/constants/colors";
 import type { ItemCategory } from "@/constants/itemDifficulty";
@@ -579,8 +579,13 @@ interface SharedHouseholdState {
   customTasks: CustomTask[];
 }
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
-  const { session } = useSupabaseSession();
+export function AppProvider({
+  children,
+  session,
+}: {
+  children: React.ReactNode;
+  session: Session | null;
+}) {
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [householdName, setHouseholdName] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -1084,12 +1089,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loaded) return;
-    AsyncStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId })
-    ).catch((error) => {
-      reportRuntimeError("cache household state", error);
-    });
+    // Coalesce rapid mutations and move the full-state serialization off the
+    // interaction frame. This is especially important when a user completes
+    // a chore and immediately switches tabs.
+    const timer = setTimeout(() => {
+      AsyncStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId })
+      ).catch((error) => {
+        reportRuntimeError("cache household state", error);
+      });
+    }, 120);
+    return () => clearTimeout(timer);
   }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId]);
 
   const sharedState = useMemo<SharedHouseholdState>(() => ({
@@ -2113,105 +2124,133 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return balances;
   }, [expenses, roommates]);
 
+  // AppProvider also owns synchronization-only state (hydration flags,
+  // realtime readiness, auth token refreshes). Those updates should not
+  // broadcast a brand-new context object to every mounted tab when none of
+  // the values that screens consume changed.
+  const contextValue = useMemo<AppContextType>(() => ({
+    itemDifficulties,
+    setItemDifficulty,
+    resetItemDifficulties,
+    memberPreferences,
+    setMemberPreference,
+    currentProposedChart,
+    setCurrentProposedChart,
+    liveChart,
+    setLiveChart,
+    customTasks,
+    addCustomTask,
+    deleteCustomTask,
+    chartApprovals,
+    proposeChart,
+    approveProposedChart,
+    forceApproveProposedChart,
+    restartChartProcess,
+    isHost,
+    preferencesLoaded,
+    preferencesOnboardingPending,
+    finishPreferencesOnboarding,
+    householdComplete,
+    setHouseholdComplete,
+    colorScheme,
+    setColorScheme,
+    pointsEnabled,
+    setPointsEnabled,
+    plantEnabled,
+    setPlantEnabled,
+    householdId,
+    householdName,
+    inviteCode,
+    householdLoading,
+    createHousehold,
+    joinHousehold,
+    deleteHousehold,
+    removeRoommate,
+    deleteOwnAccount,
+    currentUserId,
+    setCurrentUser,
+    roommates,
+    chores,
+    expenses,
+    shoppingLists,
+    shoppingItems,
+    borrowItems,
+    nudges,
+    addChore,
+    completeChore,
+    pickUpChore,
+    deleteChore,
+    addExpense,
+    updateExpense,
+    settleExpense,
+    deleteExpense,
+    markPersonPaid,
+    addShoppingList,
+    reorderShoppingLists,
+    pinShoppingList,
+    deleteShoppingList,
+    addShoppingItem,
+    toggleShoppingItem,
+    deleteShoppingItem,
+    reorderShoppingItems,
+    assignShoppingList,
+    assignShoppingItem,
+    updateShoppingItemPrice,
+    pendingIouDraft,
+    setPendingIouDraft,
+    addBorrowItem,
+    updateBorrowItem,
+    returnBorrowItem,
+    deleteBorrowItem,
+    sendNudge,
+    removeNudge,
+    acknowledgeNudge,
+    getRoommateById,
+    updateRoommate,
+    getChoresByRoommate,
+    getBalances,
+    essentialsAssignees,
+    setEssentialAssignee,
+    suppressedAlerts,
+    suppressAlert,
+    roommateStatuses,
+    setRoommateStatus,
+    sleepStartedAt,
+    homeLocation,
+    setHomeLocation,
+    choreChart,
+    choreChartStartedAt,
+    setChoreChart,
+    homeProfile,
+    setHomeProfile: setHomeProfileState,
+  }), [
+    itemDifficulties, setItemDifficulty, resetItemDifficulties,
+    memberPreferences, setMemberPreference, currentProposedChart,
+    setCurrentProposedChart, liveChart, setLiveChart, customTasks,
+    addCustomTask, deleteCustomTask, chartApprovals, proposeChart,
+    approveProposedChart, forceApproveProposedChart, restartChartProcess,
+    isHost, preferencesLoaded, preferencesOnboardingPending,
+    finishPreferencesOnboarding, householdComplete, setHouseholdComplete,
+    colorScheme, pointsEnabled, plantEnabled, householdId, householdName,
+    inviteCode, householdLoading, createHousehold, joinHousehold,
+    deleteHousehold, removeRoommate, deleteOwnAccount, currentUserId,
+    setCurrentUser, roommates, chores, expenses, shoppingLists, shoppingItems,
+    borrowItems, nudges, addChore, completeChore, pickUpChore, deleteChore,
+    addExpense, updateExpense, settleExpense, deleteExpense, markPersonPaid,
+    addShoppingList, reorderShoppingLists, pinShoppingList, deleteShoppingList,
+    addShoppingItem, toggleShoppingItem, deleteShoppingItem,
+    reorderShoppingItems, assignShoppingList, assignShoppingItem,
+    updateShoppingItemPrice, pendingIouDraft, setPendingIouDraft, addBorrowItem,
+    updateBorrowItem, returnBorrowItem, deleteBorrowItem, sendNudge,
+    removeNudge, acknowledgeNudge, getRoommateById, updateRoommate,
+    getChoresByRoommate, getBalances, essentialsAssignees,
+    setEssentialAssignee, suppressedAlerts, suppressAlert, roommateStatuses,
+    setRoommateStatus, sleepStartedAt, homeLocation, setHomeLocation,
+    choreChart, choreChartStartedAt, setChoreChart, homeProfile,
+  ]);
+
   return (
-    <AppContext.Provider
-      value={{
-        itemDifficulties,
-        setItemDifficulty,
-        resetItemDifficulties,
-        memberPreferences,
-        setMemberPreference,
-        currentProposedChart,
-        setCurrentProposedChart,
-        liveChart,
-        setLiveChart,
-        customTasks,
-        addCustomTask,
-        deleteCustomTask,
-        chartApprovals,
-        proposeChart,
-        approveProposedChart,
-        forceApproveProposedChart,
-        restartChartProcess,
-        isHost,
-        preferencesLoaded,
-        preferencesOnboardingPending,
-        finishPreferencesOnboarding,
-        householdComplete,
-        setHouseholdComplete,
-        colorScheme,
-        setColorScheme,
-        pointsEnabled,
-        setPointsEnabled,
-        plantEnabled,
-        setPlantEnabled,
-        householdId,
-        householdName,
-        inviteCode,
-        householdLoading,
-        createHousehold,
-        joinHousehold,
-        deleteHousehold,
-        removeRoommate,
-        deleteOwnAccount,
-        currentUserId,
-        setCurrentUser,
-        roommates,
-        chores,
-        expenses,
-        shoppingLists,
-        shoppingItems,
-        borrowItems,
-        nudges,
-        addChore,
-        completeChore,
-        pickUpChore,
-        deleteChore,
-        addExpense,
-        updateExpense,
-        settleExpense,
-        deleteExpense,
-        markPersonPaid,
-        addShoppingList,
-        reorderShoppingLists,
-        pinShoppingList,
-        deleteShoppingList,
-        addShoppingItem,
-        toggleShoppingItem,
-        deleteShoppingItem,
-        reorderShoppingItems,
-        assignShoppingList,
-        assignShoppingItem,
-        updateShoppingItemPrice,
-        pendingIouDraft,
-        setPendingIouDraft,
-        addBorrowItem,
-        updateBorrowItem,
-        returnBorrowItem,
-        deleteBorrowItem,
-        sendNudge,
-        removeNudge,
-        acknowledgeNudge,
-        getRoommateById,
-        updateRoommate,
-        getChoresByRoommate,
-        getBalances,
-        essentialsAssignees,
-        setEssentialAssignee,
-        suppressedAlerts,
-        suppressAlert,
-        roommateStatuses,
-        setRoommateStatus,
-        sleepStartedAt,
-        homeLocation,
-        setHomeLocation,
-        choreChart,
-        choreChartStartedAt,
-        setChoreChart,
-        homeProfile,
-        setHomeProfile: setHomeProfileState,
-      }}
-    >
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );

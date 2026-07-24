@@ -223,35 +223,47 @@ export default function ExpensesScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
 
-  const balances = getBalances();
-  const activeExpenses = expenses.filter((e) => !e.settled);
-  const myBalance = balances[currentUserId] ?? 0;
+  const {
+    activeExpenses,
+    firstIOweIndex,
+    firstOwedToMeIndex,
+    iOwe,
+    myBalance,
+    owedToMe,
+  } = useMemo(() => {
+    const balances = getBalances();
+    const active = expenses.filter((expense) => !expense.settled);
 
-  // Gross amounts in each direction — exclude entries already paid back
-  const owedToMe = activeExpenses.reduce((sum, e) => {
-    if (e.paidBy !== currentUserId) return sum;
-    return (
-      sum +
-      Object.entries(e.splits ?? {}).reduce((s, [id, amt]) => {
-        if (id === e.paidBy) return s;
-        if ((e.paidBack ?? {})[id]) return s; // already paid back
-        return s + (amt as number);
-      }, 0)
-    );
-  }, 0);
+    // Gross amounts in each direction — exclude entries already paid back.
+    let nextOwedToMe = 0;
+    let nextIOwe = 0;
+    active.forEach((expense) => {
+      if (expense.paidBy === currentUserId) {
+        Object.entries(expense.splits ?? {}).forEach(([id, amount]) => {
+          if (id !== expense.paidBy && !(expense.paidBack ?? {})[id]) {
+            nextOwedToMe += amount as number;
+          }
+        });
+      } else if (!(expense.paidBack ?? {})[currentUserId]) {
+        nextIOwe += (expense.splits ?? {})[currentUserId] as number || 0;
+      }
+    });
 
-  const iOwe = activeExpenses.reduce((sum, e) => {
-    if (e.paidBy === currentUserId) return sum;
-    if ((e.paidBack ?? {})[currentUserId]) return sum; // I already paid back
-    return sum + ((e.splits ?? {})[currentUserId] as number || 0);
-  }, 0);
-
-  const firstIOweIndex = activeExpenses.findIndex(
-    (e) => e.paidBy !== currentUserId && ((e.splits ?? {})[currentUserId] as number || 0) > 0
-  );
-  const firstOwedToMeIndex = activeExpenses.findIndex(
-    (e) => e.paidBy === currentUserId
-  );
+    return {
+      activeExpenses: active,
+      firstIOweIndex: active.findIndex(
+        (expense) =>
+          expense.paidBy !== currentUserId &&
+          ((expense.splits ?? {})[currentUserId] as number || 0) > 0,
+      ),
+      firstOwedToMeIndex: active.findIndex(
+        (expense) => expense.paidBy === currentUserId,
+      ),
+      iOwe: nextIOwe,
+      myBalance: balances[currentUserId] ?? 0,
+      owedToMe: nextOwedToMe,
+    };
+  }, [currentUserId, expenses, getBalances]);
 
   const scrollToExpense = (index: number) => {
     if (index < 0) return;

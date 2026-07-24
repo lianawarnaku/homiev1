@@ -1,7 +1,7 @@
 // grabbing a specific named export from a package
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -77,11 +77,14 @@ export default function BorrowScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
 
-  const activeBorrows = borrowItems.filter((b) => !b.returned);
-  const returnedBorrows = borrowItems.filter((b) => b.returned);
-  const overdue = activeBorrows.filter(
-    (b) => new Date(b.dueDate) < new Date()
-  );
+  const { activeBorrows, returnedBorrows, overdue } = useMemo(() => {
+    const active = borrowItems.filter((borrow) => !borrow.returned);
+    return {
+      activeBorrows: active,
+      returnedBorrows: borrowItems.filter((borrow) => borrow.returned),
+      overdue: active.filter((borrow) => new Date(borrow.dueDate) < new Date()),
+    };
+  }, [borrowItems]);
 
   const resetForm = () => {
     setItem("");

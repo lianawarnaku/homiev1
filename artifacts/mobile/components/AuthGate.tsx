@@ -7,15 +7,22 @@
 // visible on top for the first ~500ms, so users usually don't see this.
 
 import React from "react";
-import { useSupabaseSession } from "@/hooks/useSupabaseSession";
+import type { Session } from "@supabase/supabase-js";
 import { HouseLoader } from "./HouseLoader";
 import { HouseholdSetupScreen } from "./HouseholdSetupScreen";
 import { PreferencesOnboardingScreen } from "./PreferencesOnboardingScreen";
 import { SignInScreen } from "./SignInScreen";
 import { useAppContext } from "@/context/AppContext";
 
-export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useSupabaseSession();
+export function AuthGate({
+  children,
+  session,
+  sessionLoading,
+}: {
+  children: React.ReactNode;
+  session: Session | null;
+  sessionLoading: boolean;
+}) {
   const {
     householdId,
     householdLoading,
@@ -23,7 +30,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     preferencesOnboardingPending,
   } = useAppContext();
 
-  if (loading) {
+  if (sessionLoading) {
     return <HouseLoader />;
   }
 

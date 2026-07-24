@@ -59,6 +59,7 @@
     "@expo-google-fonts/barlow-condensed": "^0.4.1",
     "@react-navigation/bottom-tabs": "^7.15.11",
     "@supabase/supabase-js": "^2.110.0",
+    "expo-calendar": "~15.0.8",
     "expo-clipboard": "~8.0.8",
     "expo-crypto": "^15.0.9",
     "expo-secure-store": "^15.0.8",

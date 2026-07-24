@@ -89,17 +89,23 @@ export default function TabLayout() {
   return (
     <Tabs
       tabBar={(props) => <ScrollableTabBar {...props} />}
+      detachInactiveScreens
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
+        // Keep a visited tab's component/state alive, but freeze inactive
+        // native screens so household sync updates do not spend a frame
+        // rendering five invisible page trees.
+        lazy: true,
+        freezeOnBlur: Platform.OS !== "web",
         animation: "fade",
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "My Home",
+          title: "My Sweet",
           tabBarIcon: ({ color }) => (
             <Feather name="home" size={21} color={color} />
           ),

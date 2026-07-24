@@ -794,7 +794,7 @@ export default function SettingsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.linkTitle, { color: colors.foreground }]}>CHORE PLANNING</Text>
               <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
-                Build a chore chart or generate a home checklist
+                Build a chore chart or generate a Sweet checklist
               </Text>
             </View>
             <Feather name="chevron-right" size={18} color={colors.mutedForeground} />

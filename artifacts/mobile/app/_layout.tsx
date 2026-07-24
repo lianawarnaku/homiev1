@@ -16,6 +16,7 @@ import { AuthGate } from "@/components/AuthGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LaunchScreen } from "@/components/LaunchScreen";
 import { AppProvider } from "@/context/AppContext";
+import { useSupabaseSession } from "@/hooks/useSupabaseSession";
 import { setBaseUrl } from "@workspace/api-client-react";
 import {
   installGlobalRuntimeDiagnostics,
@@ -32,6 +33,9 @@ const queryClient = new QueryClient();
 
 export default function RootLayout() {
   const [showLaunch, setShowLaunch] = useState(true);
+  // Restore the auth session exactly once. The same result is shared by the
+  // provider and gate, and the lookup can finish behind the launch screen.
+  const { session, loading: sessionLoading } = useSupabaseSession();
   const [fontsLoaded] = useFonts({
     // Keep the established aliases so every existing screen adopts the new
     // condensed SweetMate type system without scattered one-off font changes.
@@ -81,8 +85,8 @@ export default function RootLayout() {
               >
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
-            <AppProvider>
-              <AuthGate>
+            <AppProvider session={session}>
+              <AuthGate session={session} sessionLoading={sessionLoading}>
                 <Stack
                   screenOptions={{
                     headerShown: false,

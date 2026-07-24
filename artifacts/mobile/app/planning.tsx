@@ -1112,7 +1112,7 @@ export default function PlanningScreen() {
               Planning Helper
             </Text>
             <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              AI-powered suggestions for your home
+              AI-powered suggestions for your Sweet
             </Text>
           </View>
         </View>
@@ -1218,10 +1218,10 @@ export default function PlanningScreen() {
               },
             ]}
           >
-            Home Essentials
+            Sweet Essentials
           </Text>
           <Text style={[styles.typeDesc, { color: colors.mutedForeground }]}>
-            What to buy for a new home
+            What to buy for a new Sweet
           </Text>
         </TouchableOpacity>
       </View>
@@ -1814,7 +1814,7 @@ export default function PlanningScreen() {
             <View style={[styles.successBanner, { backgroundColor: colors.success + "14", borderColor: colors.success + "44" }]}>
               <Feather name="check-circle" size={16} color={colors.success} />
               <Text style={[styles.successText, { color: colors.success }]}>
-                {choresAdded} chore{choresAdded !== 1 ? "s" : ""} added to My Home!
+                {choresAdded} chore{choresAdded !== 1 ? "s" : ""} added to My Sweet!
               </Text>
             </View>
           ) : null}
@@ -1827,7 +1827,7 @@ export default function PlanningScreen() {
           <View style={styles.resultHeaderRow}>
             <Feather name="check-circle" size={16} color={colors.success} />
             <Text style={[styles.resultTitle, { color: colors.foreground }]}>
-              Your {selectedType === "chore-chart" ? "Chore Chart" : "Home Checklist"}
+              Your {selectedType === "chore-chart" ? "Chore Chart" : "Sweet Checklist"}
             </Text>
             <TouchableOpacity onPress={() => { setResult(null); setChoresAdded(0); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Feather name="x" size={16} color={colors.mutedForeground} />
@@ -1847,7 +1847,7 @@ export default function PlanningScreen() {
           onPress={addTasks}
         >
           <Feather name="plus-circle" size={18} color="#fff" />
-          <Text style={styles.generateText}>Add Tasks to My Home</Text>
+          <Text style={styles.generateText}>Add Tasks to My Sweet</Text>
         </Pressable>
       ) : null}
 

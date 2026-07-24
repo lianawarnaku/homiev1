@@ -5,7 +5,7 @@
     "owner": "lianawarnakulasooriyas-team",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/roomie-icon.png",
+    "icon": "./assets/images/sweetmate-icon.png",
     "scheme": "sweetmate",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -18,15 +18,20 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.homieapplication.homie",
       "buildNumber": "1",
+      "icon": "./assets/images/sweetmate-icon.png",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "SweetMate uses your photo library only when you choose a profile photo.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
+      "blockedPermissions": [
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/roomie-icon.png",
-        "backgroundColor": "#FAF6F0"
+        "foregroundImage": "./assets/images/sweetmate-adaptive-foreground.png",
+        "backgroundColor": "#FFFFFF"
       }
     },
     "web": {
@@ -41,7 +46,14 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "SweetMate does not create calendar events for chores.",
+          "remindersPermission": "Allow SweetMate to add your assigned chores to Apple Reminders."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

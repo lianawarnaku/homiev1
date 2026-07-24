@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -331,7 +331,10 @@ export default function GroupChoresScreen() {
   const botPad = Platform.OS === "web" ? 34 : 0;
 
   const totalChores = chores.length;
-  const completedChores = chores.filter((c) => c.completed).length;
+  const completedChores = useMemo(
+    () => chores.filter((chore) => chore.completed).length,
+    [chores],
+  );
   const healthPct = totalChores > 0 ? completedChores / totalChores : 0;
 
   const stage =
@@ -358,13 +361,21 @@ export default function GroupChoresScreen() {
 
   const msg = HEALTH_MESSAGES[stage];
 
-  const roommatesWithChores = roommates.map((r) => ({
-    roommate: r,
-    // Completed chores automatically move to the bottom of each roommate's section.
-    chores: chores
-      .filter((c) => c.assignedTo === r.id)
-      .sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1)),
-  }));
+  const roommatesWithChores = useMemo(() => {
+    const choresByRoommate = new Map<string, typeof chores>();
+    chores.forEach((chore) => {
+      const current = choresByRoommate.get(chore.assignedTo);
+      if (current) current.push(chore);
+      else choresByRoommate.set(chore.assignedTo, [chore]);
+    });
+    return roommates.map((roommate) => ({
+      roommate,
+      // Completed chores automatically move to the bottom of each section.
+      chores: (choresByRoommate.get(roommate.id) ?? []).sort((a, b) =>
+        a.completed === b.completed ? 0 : a.completed ? 1 : -1,
+      ),
+    }));
+  }, [chores, roommates]);
 
   // Per-chore Animated values for the slide-out animation on completion.
   // Keyed by chore id so the animation applies to the right row even when the
@@ -682,14 +693,9 @@ export default function GroupChoresScreen() {
             },
           ]}
         >
-          {/* Ambient glow strip at top */}
-          <View
-            {...addChoreDragHandlers}
-            style={[
-              styles.glowStrip,
-              { backgroundColor: healthColor + "28" },
-            ]}
-          />
+          {/* Preserve the card's established vertical spacing without the
+              tinted strip that created a discoloration above the plant. */}
+          <View style={styles.plantTopSpacer} />
 
           <View style={styles.plantCardInner}>
             {/* Left: Animated plant */}
@@ -1350,7 +1356,7 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 3,
   },
-  glowStrip: { height: 4, width: "100%" },
+  plantTopSpacer: { height: 4, width: "100%" },
   plantCardInner: {
     flexDirection: "row",
     alignItems: "flex-end",

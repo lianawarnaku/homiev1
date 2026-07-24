@@ -122,7 +122,7 @@ export function HouseholdSetupScreen() {
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 18, paddingBottom: insets.bottom + 28 }]} keyboardShouldPersistTaps="handled">
         {mode === "create" && <Progress step={step} colors={colors} />}
         <View style={styles.brand}><BrandMark size={58} color={colors.primary} /></View>
-        <Text style={[styles.eyebrow, { color: colors.primary }]}>{mode === "create" ? `CREATE YOUR HOME · STEP ${step} OF 4` : "JOIN YOUR HOME"}</Text>
+        <Text style={[styles.eyebrow, { color: colors.primary }]}>{mode === "create" ? `CREATE YOUR SWEET · STEP ${step} OF 4` : "JOIN YOUR SWEET"}</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>
           {mode === "join" ? "Join your roommates" : step === 1 ? "Start your household" : step === 2 ? "What kind of home is it?" : step === 3 ? "What's in your space?" : "Which chores should we add?"}
         </Text>
@@ -135,7 +135,7 @@ export function HouseholdSetupScreen() {
             {(["create", "join"] as const).map((item) => (
               <Pressable key={item} onPress={() => changeMode(item)} style={[styles.segmentButton, mode === item && { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Feather name={item === "create" ? "home" : "user-plus"} size={16} color={mode === item ? colors.primary : colors.mutedForeground} />
-                <Text style={[styles.segmentText, { color: mode === item ? colors.foreground : colors.mutedForeground }]}>{item === "create" ? "Create home" : "Join home"}</Text>
+                <Text style={[styles.segmentText, { color: mode === item ? colors.foreground : colors.mutedForeground }]}>{item === "create" ? "Create a Sweet" : "Join a Sweet"}</Text>
               </Pressable>
             ))}
           </View>
