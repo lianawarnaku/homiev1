@@ -31,7 +31,7 @@ import { supabase } from "@/lib/supabase";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 
 type Mode = "signin" | "signup";
-const EMAIL_CONFIRMATION_URL = "https://homie-application.com/auth/confirm";
+const EMAIL_CONFIRMATION_URL = "https://sweetmate.info/auth/confirm";
 
 function isValidEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -102,7 +102,7 @@ export function SignInScreen() {
           // Email confirmation is ON — Supabase sent a link. Wait for click.
           setConfirmationEmail(email.trim());
           setInfo(
-            "Check your email for a confirmation link. After confirming, return to Homie and sign in."
+            "Check your email for a confirmation link. After confirming, return to SweetMate and sign in."
           );
         }
       }
@@ -163,7 +163,7 @@ export function SignInScreen() {
         <View style={styles.logoWrap}>
           <BrandMark size={86} color={colors.primary} />
         </View>
-        <Text style={[styles.title, { color: colors.foreground }]}>Homie</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>SweetMate</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           {mode === "signin"
             ? "Sign in to sync with your roommates"

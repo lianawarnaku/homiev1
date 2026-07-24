@@ -51,14 +51,14 @@ export default function ConfirmEmailPage() {
 
         if (!active) return;
         setState("confirmed");
-        setMessage("Your email is confirmed. You can return to Homie and sign in.");
+        setMessage("Your email is confirmed. You can return to SweetMate and sign in.");
       } catch (error) {
         if (!active) return;
         setState("error");
         setMessage(
           error instanceof Error
             ? error.message
-            : "We could not confirm this email. Please request a new link from Homie.",
+            : "We could not confirm this email. Please request a new link from SweetMate.",
         );
       }
     }
@@ -75,7 +75,7 @@ export default function ConfirmEmailPage() {
         <div className={`status-mark status-${state}`} aria-hidden="true">
           {state === "checking" ? <span className="spinner" /> : state === "confirmed" ? "✓" : "!"}
         </div>
-        <p className="eyebrow">Homie account</p>
+        <p className="eyebrow">SweetMate account</p>
         <h1>
           {state === "checking"
             ? "One moment"
@@ -85,17 +85,17 @@ export default function ConfirmEmailPage() {
         </h1>
         <p className="confirmation-copy">{message}</p>
         {state === "confirmed" ? (
-          <a className="primary-button full-width" href="homie://auth/callback">
-            Open Homie
+          <a className="primary-button full-width" href="sweetmate://auth/callback">
+            Open SweetMate
           </a>
         ) : null}
         {state === "error" ? (
           <p className="small-copy">
-            Open Homie and choose <strong>Resend confirmation</strong> to receive a fresh link.
+            Open SweetMate and choose <strong>Resend confirmation</strong> to receive a fresh link.
           </p>
         ) : null}
         <Link className="text-link centered" href="/">
-          Return to homie-application.com
+          Return to sweetmate.info
         </Link>
       </section>
     </main>

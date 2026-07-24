@@ -256,7 +256,7 @@ export default function GroupChoresScreen() {
   };
 
   // Cycle a roommate's mood: home (😊) → asleep (😴) → away (🤫) → home
-  const cycleHomieMood = (roommateId: string) => {
+  const cycleRoommateMood = (roommateId: string) => {
     const current = roommateStatuses[roommateId] ?? "home";
     const next =
       current === "home" ? "asleep" : current === "asleep" ? "away" : "home";
@@ -765,7 +765,7 @@ export default function GroupChoresScreen() {
           </View>
         </View>}
 
-        {/* ── The Homies ─────────────────────────────────
+        {/* ── Roommates ──────────────────────────────────
             Tap a roommate's emoji to cycle through their vibe:
               😊 (chill / around)  →  😴 (sleeping)  →  🤫 (do not disturb)  →  😊
             Sleeping still auto-reverts after 9 hours via AppContext. */}
@@ -774,9 +774,9 @@ export default function GroupChoresScreen() {
             <View style={[styles.activityHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
               <Feather name="users" size={14} color={colors.primary} />
             </View>
-            <Text style={[styles.activityTitle, { color: colors.foreground }]}>The Homies</Text>
+            <Text style={[styles.activityTitle, { color: colors.foreground }]}>Roommates</Text>
           </View>
-          <View style={styles.homiesGrid}>
+          <View style={styles.roommatesGrid}>
             {roommates.map((rm) => {
               const status = roommateStatuses[rm.id] ?? "home";
               const emoji =
@@ -785,7 +785,7 @@ export default function GroupChoresScreen() {
                 <View
                   key={rm.id}
                   style={[
-                    styles.homieTile,
+                    styles.roommateTile,
                     { backgroundColor: colors.background, borderColor: colors.border },
                   ]}
                 >
@@ -795,19 +795,19 @@ export default function GroupChoresScreen() {
                     size={44}
                     imageUri={rm.avatarUri}
                   />
-                  <Text style={[styles.homieName, { color: colors.foreground }]} numberOfLines={1}>
+                  <Text style={[styles.roommateTileName, { color: colors.foreground }]} numberOfLines={1}>
                     {rm.id === currentUserId ? "You" : rm.name.split(" ")[0]}
                   </Text>
                   <TouchableOpacity
-                    onPress={() => cycleHomieMood(rm.id)}
+                    onPress={() => cycleRoommateMood(rm.id)}
                     activeOpacity={0.6}
                     style={[
-                      styles.homieEmojiBtn,
+                      styles.roommateEmojiBtn,
                       { backgroundColor: colors.muted, borderColor: colors.border },
                     ]}
                     hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                   >
-                    <Text style={styles.homieEmoji}>{emoji}</Text>
+                    <Text style={styles.roommateEmoji}>{emoji}</Text>
                   </TouchableOpacity>
                 </View>
               );
@@ -1582,15 +1582,15 @@ const styles = StyleSheet.create({
   activityRmStatus: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
   activityHint: { fontFamily: "Inter_400Regular", fontSize: 11, textAlign: "center", marginTop: 2 },
 
-  // ── The Homies ──
-  homiesGrid: {
+  // ── Roommates ──
+  roommatesGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     paddingHorizontal: 14,
     paddingBottom: 14,
     gap: 10,
   },
-  homieTile: {
+  roommateTile: {
     flexBasis: "30%",
     flexGrow: 1,
     alignItems: "center",
@@ -1600,12 +1600,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
   },
-  homieName: {
+  roommateTileName: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 12,
     maxWidth: "100%",
   },
-  homieEmojiBtn: {
+  roommateEmojiBtn: {
     width: 42,
     height: 42,
     borderRadius: 21,
@@ -1614,7 +1614,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 2,
   },
-  homieEmoji: {
+  roommateEmoji: {
     fontSize: 22,
     // Ensures the emoji centers visually in the button
     textAlign: "center",

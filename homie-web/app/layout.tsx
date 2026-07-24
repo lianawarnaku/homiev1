@@ -9,10 +9,10 @@ const barlow = Barlow_Condensed({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://homie-application.com"),
+  metadataBase: new URL("https://sweetmate.info"),
   title: {
-    default: "Homie — A happier home, together",
-    template: "%s | Homie",
+    default: "SweetMate — A sweeter home, together",
+    template: "%s | SweetMate",
   },
   description:
     "Share chores, expenses, shopping, and borrowed items with your household.",

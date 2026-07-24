@@ -715,7 +715,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!active) return;
       if (error) {
         reportSupabaseError("load household preferences", error, { householdId });
-        console.warn("Homie preferences sync could not start:", error.message);
+        console.warn("SweetMate preferences sync could not start:", error.message);
         return;
       }
 
@@ -745,7 +745,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
             if (existing) applyPreferences(existing);
           } else {
-            console.warn("Homie preferences could not be created:", createError.message);
+            console.warn("SweetMate preferences could not be created:", createError.message);
             return;
           }
         }
@@ -816,7 +816,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       if (error) {
         reportSupabaseError("save household preferences", error, { householdId });
-        console.warn("Homie preference could not sync:", error.message);
+        console.warn("SweetMate preference could not sync:", error.message);
       }
     }, 220);
     return () => clearTimeout(timer);
@@ -1154,7 +1154,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!active) return;
       if (error) {
         reportSupabaseError("load shared household state", error, { householdId });
-        console.warn("Homie cloud sync could not start:", error.message);
+        console.warn("SweetMate cloud sync could not start:", error.message);
         return;
       }
 
@@ -1196,7 +1196,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
         if (createError) {
           reportSupabaseError("create shared household state", createError, { householdId });
-          console.warn("Homie household could not be created:", createError.message);
+          console.warn("SweetMate household could not be created:", createError.message);
           return;
         }
       }
@@ -1259,7 +1259,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       if (error) {
         reportSupabaseError("save shared household state", error, { householdId });
-        console.warn("Homie change could not sync:", error.message);
+        console.warn("SweetMate change could not sync:", error.message);
       }
     }, 220);
     return () => clearTimeout(timer);

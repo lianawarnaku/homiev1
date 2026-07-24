@@ -202,7 +202,7 @@ export default function SettingsScreen() {
     confirm(
       "delete-own-account",
       "Delete your account permanently?",
-      "This erases your Supabase login and removes you from Homie. You can later create a brand-new account with the same email. A host must remove all other roommates first.",
+      "This erases your Supabase login and removes you from SweetMate. You can later create a brand-new account with the same email. A host must remove all other roommates first.",
       () => {
         void (async () => {
           setDeletingAccount(true);
@@ -365,8 +365,8 @@ export default function SettingsScreen() {
         const roommateName = roommates.find((r) => r.id === authRoommateId)?.name ?? "there";
         sendEmail(
           authEmail.trim(),
-          "Welcome to Homie",
-          `Hi ${roommateName},\n\nYour Homie account was just set up on this device with username "${authUsername.trim()}".\n\nIf this wasn't you, sign in and change your password.\n\n— Homie`
+          "Welcome to SweetMate",
+          `Hi ${roommateName},\n\nYour SweetMate account was just set up on this device with username "${authUsername.trim()}".\n\nIf this wasn't you, sign in and change your password.\n\n— SweetMate`
         ).catch(() => {
           // Email failure is non-blocking; user is already logged in
         });
@@ -417,8 +417,8 @@ export default function SettingsScreen() {
       try {
         const result = await sendEmail(
           forgotEmail.trim(),
-          "Your Homie reset code",
-          `Hi ${roommateName},\n\nYour Homie password reset code is:\n\n${code}\n\nThis code is good for one reset. If you didn't request a reset, ignore this email.\n\n— Homie`
+          "Your SweetMate reset code",
+          `Hi ${roommateName},\n\nYour SweetMate password reset code is:\n\n${code}\n\nThis code is good for one reset. If you didn't request a reset, ignore this email.\n\n— SweetMate`
         );
         if (result.simulated) {
           setResetDemoCode(code);
@@ -509,7 +509,7 @@ export default function SettingsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: topPad + 12, borderBottomColor: colors.border }]}>
         <View style={styles.iconBtn} />
-        <Text style={[styles.title, { color: colors.foreground }]}>HOMIE SETTINGS</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>SWEETMATE SETTINGS</Text>
         <TouchableOpacity
           onPress={() => router.back()}
           style={[styles.iconBtn, { backgroundColor: colors.muted }]}
@@ -532,7 +532,7 @@ export default function SettingsScreen() {
           <View style={[styles.settingsIntro, { borderBottomColor: colors.border }]}>
             <Text style={styles.settingsIntroEmoji}>⚙️</Text>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.settingsIntroTitle, { color: colors.foreground }]}>MAKE HOMIE YOURS</Text>
+              <Text style={[styles.settingsIntroTitle, { color: colors.foreground }]}>MAKE SWEETMATE YOURS</Text>
               <Text style={[styles.settingsIntroSub, { color: colors.mutedForeground }]}>Profile, household tools, and account access</Text>
             </View>
           </View>

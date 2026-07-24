@@ -737,7 +737,7 @@ export default function MyChoresScreen() {
               next.setDate(due.getDate() + 1);
               const nextStr = `${next.getFullYear()}${pad(next.getMonth() + 1)}${pad(next.getDate())}`;
               const details = [
-                "Homie chore reminder",
+                "SweetMate chore reminder",
                 item.category ? `Category: ${item.category}` : null,
                 pointsEnabled && item.points ? `Points: +${item.points}` : null,
               ]

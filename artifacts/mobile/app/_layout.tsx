@@ -34,7 +34,7 @@ export default function RootLayout() {
   const [showLaunch, setShowLaunch] = useState(true);
   const [fontsLoaded] = useFonts({
     // Keep the established aliases so every existing screen adopts the new
-    // condensed Homie type system without scattered one-off font changes.
+    // condensed SweetMate type system without scattered one-off font changes.
     Inter_400Regular: BarlowCondensed_400Regular,
     Inter_500Medium: BarlowCondensed_500Medium,
     Inter_600SemiBold: BarlowCondensed_600SemiBold,
@@ -97,6 +97,7 @@ export default function RootLayout() {
                   <Stack.Screen name="planning" options={{ headerShown: false, presentation: "card" }} />
                   <Stack.Screen name="task-difficulty" options={{ headerShown: false, presentation: "card" }} />
                   <Stack.Screen name="alerts" options={{ headerShown: false, presentation: "card" }} />
+                  <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
                   <Stack.Screen name="+not-found" />
                 </Stack>
               </AuthGate>

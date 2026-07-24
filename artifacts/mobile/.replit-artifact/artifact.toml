@@ -1,6 +1,6 @@
 kind = "mobile"
 previewPath = "/"
-title = "Homie"
+title = "SweetMate"
 version = "1.0.0"
 id = "artifacts/mobile"
 router = "expo-domain"

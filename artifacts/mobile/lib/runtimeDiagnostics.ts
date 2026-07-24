@@ -66,7 +66,7 @@ export function reportRuntimeError(
     ...diagnosticPayload(error, action),
     ...context,
   };
-  logger("[Homie runtime error]", JSON.stringify(payload, null, 2));
+  logger("[SweetMate runtime error]", JSON.stringify(payload, null, 2));
 }
 
 export function reportSupabaseError(
@@ -104,7 +104,7 @@ export function installGlobalRuntimeDiagnostics() {
         value instanceof Error ||
         (value && typeof value === "object" && "message" in value),
     );
-    originalConsoleError?.("[Homie console.error]", JSON.stringify({
+    originalConsoleError?.("[SweetMate console.error]", JSON.stringify({
       ...diagnosticPayload(firstError ?? args.map(String).join(" ")),
       arguments: args.map((value) =>
         value instanceof Error

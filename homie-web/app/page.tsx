@@ -1,8 +1,8 @@
 import Link from "next/link";
 
-function HomieMark() {
+function SweetMateMark() {
   return (
-    <div className="homie-mark" aria-label="Homie">
+    <div className="homie-mark" aria-label="SweetMate">
       <div className="homie-roof" />
       <div className="homie-tiles" aria-hidden="true">
         <span />
@@ -19,8 +19,8 @@ export default function Home() {
     <main className="page-shell">
       <nav className="nav">
         <Link className="brand" href="/">
-          <HomieMark />
-          <span>Homie</span>
+          <SweetMateMark />
+          <span>SweetMate</span>
         </Link>
         <Link className="text-link" href="/privacy">
           Privacy
@@ -31,15 +31,15 @@ export default function Home() {
         <div className="eyebrow">A happier home, together</div>
         <h1>Make sharing a home feel simple.</h1>
         <p>
-          Homie keeps chores, shared expenses, shopping, and borrowed items in
+          SweetMate keeps chores, shared expenses, shopping, and borrowed items in
           one calm place for everyone in your household.
         </p>
-        <a className="primary-button" href="homie://auth/callback">
-          Open Homie
+        <a className="primary-button" href="sweetmate://auth/callback">
+          Open SweetMate
         </a>
       </section>
 
-      <section className="feature-grid" aria-label="Homie features">
+      <section className="feature-grid" aria-label="SweetMate features">
         <article>
           <span>01</span>
           <h2>Share the work</h2>

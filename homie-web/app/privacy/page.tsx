@@ -4,22 +4,22 @@ export default function PrivacyPage() {
   return (
     <main className="legal-shell">
       <Link className="brand simple-brand" href="/">
-        Homie
+        SweetMate
       </Link>
       <article className="legal-card">
         <p className="eyebrow">Legal</p>
         <h1>Privacy Policy</h1>
         <p className="updated">Last updated July 23, 2026</p>
-        <h2>What Homie stores</h2>
+        <h2>What SweetMate stores</h2>
         <p>
-          Homie stores account information and the household information you
+          SweetMate stores account information and the household information you
           choose to share, including chores, expenses, shopping items, borrowed
           items, and household preferences.
         </p>
         <h2>How information is used</h2>
         <p>
-          Information is used to operate Homie, synchronize household activity,
-          keep your account secure, and provide the features you request. Homie
+          Information is used to operate SweetMate, synchronize household activity,
+          keep your account secure, and provide the features you request. SweetMate
           does not sell personal information.
         </p>
         <h2>Shared household information</h2>
@@ -30,15 +30,15 @@ export default function PrivacyPage() {
         </p>
         <h2>Account deletion</h2>
         <p>
-          You can request account deletion from the Homie Settings screen.
+          You can request account deletion from the SweetMate Settings screen.
           Household owners can also remove household access for individual
           members.
         </p>
         <h2>Contact</h2>
         <p>
           Privacy questions can be sent to{" "}
-          <a href="mailto:support@homie-application.com">
-            support@homie-application.com
+          <a href="mailto:support@sweetmate.info">
+            support@sweetmate.info
           </a>
           .
         </p>
