@@ -9,11 +9,6 @@
     "scheme": "sweetmate",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/roomie-splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FAF6F0"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.homieapplication.homie",
@@ -42,6 +37,15 @@
         "expo-router",
         {
           "origin": "https://sweetmate.info/"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/sweetmate-splash.png",
+          "imageWidth": 224,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
         }
       ],
       "expo-font",

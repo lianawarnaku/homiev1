@@ -16,7 +16,7 @@ import { BrandMark } from "@/components/BrandMark";
 export function HouseLoader() {
   const colors = useTheme();
   const pulse = useSharedValue(1);
-  const opacity = useSharedValue(0.78);
+  const opacity = useSharedValue(1);
 
   useEffect(() => {
     pulse.value = withRepeat(
@@ -53,7 +53,7 @@ export function HouseLoader() {
       style={[styles.screen, { backgroundColor: colors.background }]}
     >
       <Animated.View style={pulseStyle}>
-        <BrandMark size={132} color={colors.primary} />
+        <BrandMark size={224} color={colors.primary} />
       </Animated.View>
     </View>
   );

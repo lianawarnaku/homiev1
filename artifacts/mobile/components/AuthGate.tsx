@@ -2,9 +2,8 @@
 // the sign-in screen. Sits inside AppProvider in the root layout so the rest
 // of the app can assume it's always running behind a logged-in user.
 //
-// The brief loading tick (first mount, while the session is being restored
-// from AsyncStorage) shows a plain spinner — the native splash is already
-// visible on top for the first ~500ms, so users usually don't see this.
+// The brief loading state (while session or household data is restored) uses
+// the same SweetMate tile mark as the native splash for a continuous handoff.
 
 import React from "react";
 import type { Session } from "@supabase/supabase-js";

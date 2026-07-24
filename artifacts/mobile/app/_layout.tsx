@@ -8,13 +8,12 @@ import { useFonts } from "expo-font";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthGate } from "@/components/AuthGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { LaunchScreen } from "@/components/LaunchScreen";
 import { AppProvider } from "@/context/AppContext";
 import { useSupabaseSession } from "@/hooks/useSupabaseSession";
 import { setBaseUrl } from "@workspace/api-client-react";
@@ -28,15 +27,15 @@ setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
 SplashScreen.preventAutoHideAsync().catch(() => {
   // ignore if splash screen is not available (web)
 });
+SplashScreen.setOptions({ duration: 250, fade: true });
 
 const queryClient = new QueryClient();
 
 export default function RootLayout() {
-  const [showLaunch, setShowLaunch] = useState(true);
   // Restore the auth session exactly once. The same result is shared by the
   // provider and gate, and the lookup can finish behind the launch screen.
   const { session, loading: sessionLoading } = useSupabaseSession();
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     // Keep the established aliases so every existing screen adopts the new
     // condensed SweetMate type system without scattered one-off font changes.
     Inter_400Regular: BarlowCondensed_400Regular,
@@ -50,31 +49,12 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    // Hide splash as soon as fonts are ready OR after a short timeout (web fallback)
-    if (fontsLoaded) {
+    if (fontsLoaded || fontError) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [fontsLoaded]);
+  }, [fontsLoaded, fontError]);
 
-  useEffect(() => {
-    // Web fallback: always hide splash after 500ms
-    const t = setTimeout(() => {
-      SplashScreen.hideAsync().catch(() => {});
-    }, 500);
-    return () => clearTimeout(t);
-  }, []);
-
-  const finishLaunch = useCallback(() => setShowLaunch(false), []);
-
-  if (!fontsLoaded) return null;
-
-  if (showLaunch) {
-    return (
-      <SafeAreaProvider>
-        <LaunchScreen onFinish={finishLaunch} />
-      </SafeAreaProvider>
-    );
-  }
+  if (!fontsLoaded && !fontError) return null;
 
   return (
     <SafeAreaProvider>
