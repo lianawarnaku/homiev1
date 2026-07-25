@@ -24,6 +24,7 @@ import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostic
 import { findAssignedLoadDeviations } from "@/lib/chartLoadBalance";
 
 export type RoommateStatus = "home" | "away" | "asleep" | "unknown";
+export type LeaderboardPeriod = "weekly" | "alltime";
 
 export interface HomeLocation {
   latitude: number;
@@ -39,6 +40,13 @@ export type ChoreCategory =
   | "outdoor"
   | "other";
 
+export type AssignmentMode =
+  | "specific-person"
+  | "round-robin"
+  | "unassigned";
+export type ChoreRecurrence = "daily" | "weekly" | "biweekly" | "monthly";
+export type RecurringChoreDeleteScope = "occurrence" | "future" | "series";
+
 export interface Roommate {
   id: string;
   name: string;
@@ -51,15 +59,30 @@ export interface Roommate {
 
 export interface Chore {
   id: string;
+  householdId?: string;
   title: string;
+  description?: string;
+  creatorId?: string;
   assignedTo: string;
+  assignmentMode?: AssignmentMode;
+  roundRobinParticipantIds?: string[];
+  roundRobinAllMembers?: boolean;
+  roundRobinCursor?: number;
+  excludedParticipantIds?: string[];
   dueDate: string;
+  initialDueDate?: string;
+  nextDueDate?: string;
   completed: boolean;
   completedAt?: string;
   points: number;
   category: ChoreCategory;
-  recurring?: "daily" | "weekly" | "monthly";
+  recurring?: ChoreRecurrence;
+  recurrenceSeriesId?: string;
+  occurrenceIndex?: number;
+  nextOccurrenceId?: string;
   sourceKey?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type ExpenseCategory =
@@ -112,6 +135,13 @@ export interface ShoppingItem {
   convertedExpenseId?: string;
 }
 
+interface ShoppingSyncMeta {
+  listVersions: Record<string, string>;
+  itemVersions: Record<string, string>;
+  deletedLists: Record<string, string>;
+  deletedItems: Record<string, string>;
+}
+
 // Pre-filled expense builder state — Shopping tab pushes one of these when the
 // user turns a list into an IOU; the Expenses tab consumes it on next mount to
 // pop the IOU builder pre-populated, then clears it.
@@ -127,14 +157,22 @@ export interface PendingIouDraft {
 
 export interface BorrowItem {
   id: string;
+  householdId?: string;
+  creatorId?: string;
   item: string;
   borrowedBy?: string;
   borrowedFrom: string;
+  borrowerName?: string;
+  ownerName?: string;
   borrowedAt: string;
   dueDate: string;
   returned: boolean;
   returnedAt?: string;
+  returnRequestedAt?: string;
+  returnConfirmedBy?: string;
   notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Nudge {
@@ -232,7 +270,7 @@ export interface ChartApproval {
 
 export interface AppAlert {
   id: string;
-  type: "difficulty-imbalance" | "overdue-chore" | "expense" | "borrowing" | "membership" | "planner" | "general";
+  type: "difficulty-imbalance" | "overdue-chore" | "expense" | "borrowing" | "membership" | "planner" | "nudge" | "general";
   title: string;
   message: string;
   createdAt: string;
@@ -240,6 +278,7 @@ export interface AppAlert {
   relatedEntityId?: string;
   relatedEntityType?: string;
   deduplicationKey: string;
+  recipientId?: string;
   severity: "info" | "attention" | "important";
 }
 
@@ -287,6 +326,8 @@ interface AppContextType {
   setPointsEnabled: (enabled: boolean) => void;
   plantEnabled: boolean;
   setPlantEnabled: (enabled: boolean) => void;
+  leaderboardPeriod: LeaderboardPeriod;
+  setLeaderboardPeriod: (period: LeaderboardPeriod) => void;
   householdId: string | null;
   householdName: string | null;
   inviteCode: string | null;
@@ -309,11 +350,13 @@ interface AppContextType {
   shoppingItems: ShoppingItem[];
   borrowItems: BorrowItem[];
   nudges: Nudge[];
-  addChore: (chore: Omit<Chore, "id">) => void;
+  nudgesReady: boolean;
+  addChore: (chore: Omit<Chore, "id">) => string | null;
+  updateChore: (id: string, updates: Partial<Omit<Chore, "id">>) => boolean;
   addChores: (chores: Omit<Chore, "id">[]) => number;
   completeChore: (id: string) => void;
   pickUpChore: (choreId: string, completedById: string) => void;
-  deleteChore: (id: string) => void;
+  deleteChore: (id: string, scope?: RecurringChoreDeleteScope) => boolean;
   addExpense: (expense: Omit<Expense, "id">) => string;
   updateExpense: (id: string, updates: Partial<Omit<Expense, "id">>) => void;
   settleExpense: (id: string) => void;
@@ -333,10 +376,10 @@ interface AppContextType {
   linkShoppingItemsToExpense: (itemIds: string[], expenseId: string) => void;
   pendingIouDraft: PendingIouDraft | null;
   setPendingIouDraft: (draft: PendingIouDraft | null) => void;
-  addBorrowItem: (item: Omit<BorrowItem, "id">) => void;
-  updateBorrowItem: (id: string, updates: Partial<Omit<BorrowItem, "id">>) => void;
-  returnBorrowItem: (id: string) => void;
-  deleteBorrowItem: (id: string) => void;
+  addBorrowItem: (item: Omit<BorrowItem, "id">) => string | null;
+  updateBorrowItem: (id: string, updates: Partial<Omit<BorrowItem, "id">>) => boolean;
+  returnBorrowItem: (id: string) => boolean;
+  deleteBorrowItem: (id: string) => boolean;
   sendNudge: (toRoommateId: string, choreId: string) => Promise<void>;
   removeNudge: (toRoommateId: string, choreId: string) => Promise<void>;
   acknowledgeNudge: (nudgeId: string) => Promise<void>;
@@ -413,7 +456,8 @@ function shallowEqualSelection<T>(left: T, right: T): boolean {
 const CURRENT_USER_ID = "current";
 
 function makeId(): string {
-  return Date.now().toString() + Math.random().toString(36).substring(2, 9);
+  const randomUUID = globalThis.crypto?.randomUUID?.();
+  return randomUUID ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function daysFromNow(days: number): string {
@@ -423,15 +467,90 @@ function daysFromNow(days: number): string {
   return d.toISOString();
 }
 
+function advanceChoreDueDate(dateValue: string, recurrence: ChoreRecurrence): string {
+  const next = new Date(dateValue);
+  if (recurrence === "monthly") {
+    const originalDay = next.getDate();
+    next.setDate(1);
+    next.setMonth(next.getMonth() + 1);
+    const finalDay = new Date(
+      next.getFullYear(),
+      next.getMonth() + 1,
+      0,
+    ).getDate();
+    next.setDate(Math.min(originalDay, finalDay));
+  } else {
+    next.setDate(
+      next.getDate() +
+        (recurrence === "daily" ? 1 : recurrence === "biweekly" ? 14 : 7),
+    );
+  }
+  return next.toISOString();
+}
+
+function resolveRoundRobinParticipants(
+  chore: Chore,
+  activeMemberIds: string[],
+): string[] {
+  const active = new Set(activeMemberIds);
+  const excluded = new Set(chore.excludedParticipantIds ?? []);
+  const stored = (chore.roundRobinParticipantIds ?? []).filter(
+    (id) => active.has(id) && !excluded.has(id),
+  );
+  if (!chore.roundRobinAllMembers) return stored;
+  const addedMembers = activeMemberIds
+    .filter((id) => !stored.includes(id) && !excluded.has(id))
+    .sort();
+  return [...stored, ...addedMembers];
+}
+
 const STORAGE_KEY = "homebase_data_v7";
 const PREFERENCES_KEY = "homie_user_preferences_v1";
+const USER_PREFERENCES_KEY_PREFIX = "sweetmate:user-preferences:v1";
+const userPreferencesKey = (userId: string) =>
+  `${USER_PREFERENCES_KEY_PREFIX}:${userId}`;
 const QUICK_GUIDE_VERSION = 2;
+const EMPTY_SHOPPING_SYNC_META: ShoppingSyncMeta = {
+  listVersions: {},
+  itemVersions: {},
+  deletedLists: {},
+  deletedItems: {},
+};
+
+function mergeVersionedShopping<T extends { id: string }>(
+  local: T[],
+  remote: T[],
+  localVersions: Record<string, string>,
+  remoteVersions: Record<string, string>,
+  localDeleted: Record<string, string>,
+  remoteDeleted: Record<string, string>,
+): T[] {
+  const localById = new Map(local.map((entry) => [entry.id, entry]));
+  const remoteById = new Map(remote.map((entry) => [entry.id, entry]));
+  const ids = new Set([...localById.keys(), ...remoteById.keys()]);
+  const merged: T[] = [];
+
+  ids.forEach((id) => {
+    const localVersion = localVersions[id] ?? "";
+    const remoteVersion = remoteVersions[id] ?? "";
+    const deletedVersion = [localDeleted[id] ?? "", remoteDeleted[id] ?? ""]
+      .sort()
+      .at(-1) ?? "";
+    const winningVersion = localVersion > remoteVersion ? localVersion : remoteVersion;
+    if (deletedVersion >= winningVersion && deletedVersion) return;
+    const winner = localVersion > remoteVersion ? localById.get(id) : remoteById.get(id);
+    if (winner) merged.push(winner);
+  });
+  return merged;
+}
+
 interface SharedHouseholdState {
   roommates: Roommate[];
   chores: Chore[];
   expenses: Expense[];
   shoppingLists: ShoppingList[];
   shoppingItems: ShoppingItem[];
+  shoppingSyncMeta: ShoppingSyncMeta;
   borrowItems: BorrowItem[];
   essentialsAssignees: Record<string, Record<string, string>>;
   roommateStatuses: Record<string, RoommateStatus>;
@@ -465,8 +584,18 @@ export function AppProvider({
   const [shoppingLists, setShoppingLists] = useState<ShoppingList[]>([]);
   const [shoppingItems, setShoppingItems] =
     useState<ShoppingItem[]>([]);
+  const [shoppingSyncMeta, setShoppingSyncMeta] = useState<ShoppingSyncMeta>(
+    EMPTY_SHOPPING_SYNC_META,
+  );
+  const shoppingListsRef = useRef(shoppingLists);
+  const shoppingItemsRef = useRef(shoppingItems);
+  const shoppingSyncMetaRef = useRef(shoppingSyncMeta);
+  shoppingListsRef.current = shoppingLists;
+  shoppingItemsRef.current = shoppingItems;
+  shoppingSyncMetaRef.current = shoppingSyncMeta;
   const [borrowItems, setBorrowItems] = useState<BorrowItem[]>([]);
   const [nudges, setNudges] = useState<Nudge[]>([]);
+  const [nudgesReady, setNudgesReady] = useState(false);
   const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
   const [suppressedAlerts, setSuppressedAlerts] = useState<Record<string, boolean>>({});
   const [roommateStatuses, setRoommateStatusesState] = useState<Record<string, RoommateStatus>>({});
@@ -488,6 +617,8 @@ export function AppProvider({
   const [colorScheme, setColorScheme] = useState<ColorScheme>("mono");
   const [pointsEnabled, setPointsEnabled] = useState(true);
   const [plantEnabled, setPlantEnabled] = useState(true);
+  const [leaderboardPeriod, setLeaderboardPeriod] =
+    useState<LeaderboardPeriod>("weekly");
   const [localPreferencesLoaded, setLocalPreferencesLoaded] = useState(false);
   const [householdPreferencesReady, setHouseholdPreferencesReady] = useState(false);
   const [preferencesOnboardingPending, setPreferencesOnboardingPending] = useState(false);
@@ -503,67 +634,152 @@ export function AppProvider({
     householdId: null,
     ids: new Set(),
   });
-  const applyingRemotePreferencesRef = useRef(false);
   const preferencesLoaded =
     localPreferencesLoaded && (!householdId || householdPreferencesReady);
 
-  useEffect(() => {
-    AsyncStorage.getItem(PREFERENCES_KEY)
-      .then((raw) => {
-        if (raw) {
-          try {
-          const preferences = JSON.parse(raw) as Partial<{
-            colorScheme: ColorScheme;
-            pointsEnabled: boolean;
-            plantEnabled: boolean;
-            onboardingPending: boolean;
-            quickGuideVersions: Record<string, number>;
-            householdComplete: boolean;
-          }>;
-          if (preferences.colorScheme) {
-            setColorScheme(normalizeColorScheme(preferences.colorScheme));
-          }
-          if (typeof preferences.pointsEnabled === "boolean") setPointsEnabled(preferences.pointsEnabled);
-          if (typeof preferences.plantEnabled === "boolean") setPlantEnabled(preferences.plantEnabled);
-          if (typeof preferences.onboardingPending === "boolean") {
-            setPreferencesOnboardingPending(preferences.onboardingPending);
-          }
-          if (
-            preferences.quickGuideVersions &&
-            typeof preferences.quickGuideVersions === "object"
-          ) {
-            setQuickGuideVersions(preferences.quickGuideVersions);
-          }
-          if (typeof preferences.householdComplete === "boolean") {
-            setHouseholdCompleteState(preferences.householdComplete);
-          }
-          } catch (error) {
-            reportRuntimeError("parse cached user preferences", error);
-          }
-        }
-      })
-      .catch((error) => {
-        reportRuntimeError("hydrate cached user preferences", error);
-      })
-      .finally(() => setLocalPreferencesLoaded(true));
-  }, []);
+  const preferenceUserId = session?.user.id;
+
+  // Reset before paint when accounts change so the previous user's theme is
+  // never rendered while the next user's record is loading.
+  useLayoutEffect(() => {
+    setLocalPreferencesLoaded(false);
+    setColorScheme("mono");
+    setPointsEnabled(true);
+    setPlantEnabled(true);
+    setLeaderboardPeriod("weekly");
+    setPreferencesOnboardingPending(false);
+    setQuickGuideVersions({});
+    setQuickGuideOpen(false);
+  }, [preferenceUserId]);
 
   useEffect(() => {
-    if (!localPreferencesLoaded) return;
+    if (!preferenceUserId) return;
+    let active = true;
+
+    (async () => {
+      const scopedKey = userPreferencesKey(preferenceUserId);
+      const [scopedRaw, legacyRaw] = await Promise.all([
+        AsyncStorage.getItem(scopedKey),
+        AsyncStorage.getItem(PREFERENCES_KEY),
+      ]);
+      if (!active) return;
+
+      type StoredUserPreferences = Partial<{
+        colorScheme: unknown;
+        pointsEnabled: boolean;
+        plantEnabled: boolean;
+        leaderboardPeriod: LeaderboardPeriod;
+        onboardingPending: boolean;
+        quickGuideVersion: number;
+      }>;
+      let preferences: StoredUserPreferences = {};
+      let markLegacyMigrated = false;
+
+      if (scopedRaw) {
+        preferences = JSON.parse(scopedRaw) as StoredUserPreferences;
+      } else if (legacyRaw) {
+        // One-time, first-user migration. The legacy record remains intact so
+        // unrelated settings are not deleted or copied to later accounts.
+        const legacy = JSON.parse(legacyRaw) as StoredUserPreferences & {
+          quickGuideVersions?: Record<string, number>;
+          appearanceMigratedToUserId?: string;
+        };
+        if (!legacy.appearanceMigratedToUserId) {
+          preferences = {
+            colorScheme: legacy.colorScheme,
+            pointsEnabled: legacy.pointsEnabled,
+            plantEnabled: legacy.plantEnabled,
+            onboardingPending: legacy.onboardingPending,
+            quickGuideVersion: legacy.quickGuideVersions?.[preferenceUserId],
+          };
+          markLegacyMigrated = true;
+        }
+        await AsyncStorage.setItem(scopedKey, JSON.stringify(preferences));
+        if (markLegacyMigrated) {
+          await AsyncStorage.mergeItem(
+            PREFERENCES_KEY,
+            JSON.stringify({ appearanceMigratedToUserId: preferenceUserId }),
+          );
+        }
+      }
+      if (!active) return;
+
+      setColorScheme(normalizeColorScheme(preferences.colorScheme));
+      if (typeof preferences.pointsEnabled === "boolean") {
+        setPointsEnabled(preferences.pointsEnabled);
+      }
+      if (typeof preferences.plantEnabled === "boolean") {
+        setPlantEnabled(preferences.plantEnabled);
+      }
+      if (
+        preferences.leaderboardPeriod === "weekly" ||
+        preferences.leaderboardPeriod === "alltime"
+      ) {
+        setLeaderboardPeriod(preferences.leaderboardPeriod);
+      }
+      if (typeof preferences.onboardingPending === "boolean") {
+        setPreferencesOnboardingPending(preferences.onboardingPending);
+      }
+      if (typeof preferences.quickGuideVersion === "number") {
+        setQuickGuideVersions({
+          [preferenceUserId]: preferences.quickGuideVersion,
+        });
+      }
+    })()
+      .catch((error) => {
+        reportRuntimeError("hydrate personal user preferences", error, {
+          userId: preferenceUserId,
+        });
+      })
+      .finally(() => {
+        if (active) setLocalPreferencesLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [preferenceUserId]);
+
+  useEffect(() => {
+    if (!localPreferencesLoaded || !preferenceUserId) return;
     const interaction = InteractionManager.runAfterInteractions(() => {
-      AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({
-        onboardingPending: preferencesOnboardingPending,
-      })).catch((error) => {
-        reportRuntimeError("cache onboarding preference", error);
+      AsyncStorage.setItem(
+        userPreferencesKey(preferenceUserId),
+        JSON.stringify({
+          colorScheme,
+          pointsEnabled,
+          plantEnabled,
+          leaderboardPeriod,
+          onboardingPending: preferencesOnboardingPending,
+          quickGuideVersion: quickGuideVersions[preferenceUserId] ?? 0,
+        }),
+      ).catch((error) => {
+        reportRuntimeError("cache personal user preferences", error, {
+          userId: preferenceUserId,
+        });
       });
     });
     return () => interaction.cancel();
-  }, [localPreferencesLoaded, preferencesOnboardingPending]);
+  }, [
+    colorScheme,
+    leaderboardPeriod,
+    localPreferencesLoaded,
+    plantEnabled,
+    pointsEnabled,
+    preferenceUserId,
+    preferencesOnboardingPending,
+    quickGuideVersions,
+  ]);
 
   const finishPreferencesOnboarding = useCallback(async () => {
-    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({ onboardingPending: false }));
+    if (preferenceUserId) {
+      await AsyncStorage.mergeItem(
+        userPreferencesKey(preferenceUserId),
+        JSON.stringify({ onboardingPending: false }),
+      );
+    }
     setPreferencesOnboardingPending(false);
-  }, []);
+  }, [preferenceUserId]);
 
   const currentGuideUserId = session?.user.id;
   const currentGuideVersion = currentGuideUserId
@@ -601,8 +817,8 @@ export function AppProvider({
       };
       InteractionManager.runAfterInteractions(() => {
         AsyncStorage.mergeItem(
-          PREFERENCES_KEY,
-          JSON.stringify({ quickGuideVersions: next }),
+          userPreferencesKey(currentGuideUserId),
+          JSON.stringify({ quickGuideVersion: QUICK_GUIDE_VERSION }),
         ).catch((error) => {
           reportRuntimeError("cache Quick guide completion", error);
         });
@@ -611,9 +827,8 @@ export function AppProvider({
     });
   }, [currentGuideUserId]);
 
-  // Household-wide preferences use their own realtime row. The first member
-  // to connect creates it from defaults (or legacy local values), after which
-  // Supabase is authoritative for every roommate.
+  // Only genuinely shared setup state uses the household preference row.
+  // Appearance and display choices are private, user-scoped AsyncStorage data.
   useEffect(() => {
     const userId = session?.user.id;
     if (!localPreferencesLoaded || !userId || !householdId) {
@@ -625,18 +840,7 @@ export function AppProvider({
     setHouseholdPreferencesReady(false);
     const channel = supabase.channel(`household-preferences:${householdId}`);
 
-    const applyPreferences = (row: {
-      color_scheme?: string;
-      points_enabled?: boolean;
-      plant_enabled?: boolean;
-      household_complete?: boolean;
-    }) => {
-      applyingRemotePreferencesRef.current = true;
-      if (row.color_scheme) {
-        setColorScheme(normalizeColorScheme(row.color_scheme));
-      }
-      if (typeof row.points_enabled === "boolean") setPointsEnabled(row.points_enabled);
-      if (typeof row.plant_enabled === "boolean") setPlantEnabled(row.plant_enabled);
+    const applyPreferences = (row: { household_complete?: boolean }) => {
       if (typeof row.household_complete === "boolean") {
         setHouseholdCompleteState(row.household_complete);
       }
@@ -645,7 +849,7 @@ export function AppProvider({
     async function connectPreferences() {
       const { data, error } = await supabase
         .from("household_preferences")
-        .select("color_scheme, points_enabled, plant_enabled, household_complete")
+        .select("household_complete")
         .eq("household_id", householdId)
         .maybeSingle();
 
@@ -661,9 +865,6 @@ export function AppProvider({
       } else {
         const { error: createError } = await supabase.from("household_preferences").insert({
           household_id: householdId,
-          color_scheme: colorScheme,
-          points_enabled: pointsEnabled,
-          plant_enabled: plantEnabled,
           household_complete: householdComplete,
           updated_by: userId,
           updated_at: new Date().toISOString(),
@@ -674,7 +875,7 @@ export function AppProvider({
           if (createError.code === "23505") {
             const { data: existing, error: reloadError } = await supabase
               .from("household_preferences")
-              .select("color_scheme, points_enabled, plant_enabled, household_complete")
+              .select("household_complete")
               .eq("household_id", householdId)
               .maybeSingle();
             if (reloadError) {
@@ -701,9 +902,6 @@ export function AppProvider({
           },
           (payload) => {
             const row = payload.new as {
-              color_scheme?: string;
-              points_enabled?: boolean;
-              plant_enabled?: boolean;
               household_complete?: boolean;
               updated_by?: string;
             };
@@ -732,23 +930,16 @@ export function AppProvider({
     };
   }, [householdId, localPreferencesLoaded, session?.user.id]);
 
-  // Coalesce preference changes and ignore realtime echoes.
+  // Coalesce updates to the shared setup-completion flag only.
   useEffect(() => {
     const userId = session?.user.id;
     if (!householdPreferencesReady || !userId || !householdId) return;
-    if (applyingRemotePreferencesRef.current) {
-      applyingRemotePreferencesRef.current = false;
-      return;
-    }
 
     let interaction: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
     const timer = setTimeout(() => {
       interaction = InteractionManager.runAfterInteractions(async () => {
         const { error } = await supabase.from("household_preferences").upsert({
           household_id: householdId,
-          color_scheme: colorScheme,
-          points_enabled: pointsEnabled,
-          plant_enabled: plantEnabled,
           household_complete: householdComplete,
           updated_by: userId,
           updated_at: new Date().toISOString(),
@@ -764,12 +955,9 @@ export function AppProvider({
       interaction?.cancel();
     };
   }, [
-    colorScheme,
     householdComplete,
     householdId,
     householdPreferencesReady,
-    plantEnabled,
-    pointsEnabled,
     session?.user.id,
   ]);
 
@@ -918,13 +1106,19 @@ export function AppProvider({
       reportSupabaseError("create household", error);
       throw error;
     }
-    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({ onboardingPending: true }));
+    const userId = session?.user.id;
+    if (userId) {
+      await AsyncStorage.mergeItem(
+        userPreferencesKey(userId),
+        JSON.stringify({ onboardingPending: true }),
+      );
+    }
     setPreferencesOnboardingPending(true);
     setHouseholdCompleteState(false);
-    const userId = session?.user.id;
     if (userId) {
       setRoommates([{ id: userId, name: displayName.trim(), color, points: 0, weeklyPoints: 0 }]);
       setChores([]); setExpenses([]); setShoppingLists([]); setShoppingItems([]);
+      setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
       setBorrowItems([]); setNudges([]); setCurrentUserIdState(userId);
     }
     setMembershipVersion((value) => value + 1);
@@ -942,7 +1136,12 @@ export function AppProvider({
       reportSupabaseError("join household", error);
       throw error;
     }
-    await AsyncStorage.mergeItem(PREFERENCES_KEY, JSON.stringify({ onboardingPending: true }));
+    if (session?.user.id) {
+      await AsyncStorage.mergeItem(
+        userPreferencesKey(session.user.id),
+        JSON.stringify({ onboardingPending: true }),
+      );
+    }
     setPreferencesOnboardingPending(true);
     if (session?.user.id) setCurrentUserIdState(session.user.id);
     setMembershipVersion((value) => value + 1);
@@ -980,10 +1179,12 @@ export function AppProvider({
     }
 
     await AsyncStorage.removeItem(STORAGE_KEY);
-    await AsyncStorage.mergeItem(
-      PREFERENCES_KEY,
-      JSON.stringify({ onboardingPending: false, householdComplete: false }),
-    );
+    if (session?.user.id) {
+      await AsyncStorage.mergeItem(
+        userPreferencesKey(session.user.id),
+        JSON.stringify({ onboardingPending: false }),
+      );
+    }
     setHouseholdId(null);
     setHouseholdName(null);
     setInviteCode(null);
@@ -997,6 +1198,7 @@ export function AppProvider({
     setExpenses([]);
     setShoppingLists([]);
     setShoppingItems([]);
+    setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
     setBorrowItems([]);
     setNudges([]);
     setAppAlerts([]);
@@ -1016,7 +1218,7 @@ export function AppProvider({
     setChartApprovals([]);
     setPendingIouDraftState(null);
     setMembershipVersion((value) => value + 1);
-  }, [householdId, isHost]);
+  }, [householdId, isHost, session?.user.id]);
 
   const removeRoommate = useCallback(async (roommateId: string) => {
     if (!householdId) throw new Error("No household is selected.");
@@ -1034,11 +1236,39 @@ export function AppProvider({
       throw error;
     }
     setRoommates((current) => current.filter((roommate) => roommate.id !== roommateId));
-    setChores((current) => current.filter((chore) => chore.assignedTo !== roommateId));
+    setChores((current) => {
+      const remainingIds = roommates
+        .filter((roommate) => roommate.id !== roommateId)
+        .map((roommate) => roommate.id);
+      const next = current.map((chore) => {
+        if (chore.completed || chore.assignedTo !== roommateId) return chore;
+        if (chore.assignmentMode === "round-robin") {
+          const participants = resolveRoundRobinParticipants(chore, remainingIds);
+          const nextCursor = participants.length
+            ? (chore.roundRobinCursor ?? 0) % participants.length
+            : 0;
+          return {
+            ...chore,
+            assignedTo: participants[nextCursor] ?? "",
+            roundRobinParticipantIds: participants,
+            roundRobinCursor: nextCursor,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return {
+          ...chore,
+          assignedTo: "",
+          assignmentMode: "unassigned" as const,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+      choresRef.current = next;
+      return next;
+    });
     setMemberPreferences((current) => current.filter((entry) => entry.memberId !== roommateId));
     setCurrentProposedChartState(null);
     setChartApprovals([]);
-  }, [currentUserId, householdId, isHost]);
+  }, [currentUserId, householdId, isHost, roommates]);
 
   const deleteOwnAccount = useCallback(async () => {
     const { error } = await supabase.rpc("delete_own_account");
@@ -1047,7 +1277,9 @@ export function AppProvider({
       throw error;
     }
     await AsyncStorage.removeItem(STORAGE_KEY);
-    await AsyncStorage.removeItem(PREFERENCES_KEY);
+    if (session?.user.id) {
+      await AsyncStorage.removeItem(userPreferencesKey(session.user.id));
+    }
     await supabase.auth.signOut({ scope: "local" });
     setHouseholdId(null);
     setHouseholdName(null);
@@ -1057,6 +1289,7 @@ export function AppProvider({
     setExpenses([]);
     setShoppingLists([]);
     setShoppingItems([]);
+    setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
     setBorrowItems([]);
     setNudges([]);
     setLiveChartState(null);
@@ -1065,7 +1298,7 @@ export function AppProvider({
     setMemberPreferences([]);
     setCurrentProposedChartState(null);
     setChartApprovals([]);
-  }, []);
+  }, [session?.user.id]);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
@@ -1077,8 +1310,46 @@ export function AppProvider({
           // must never overwrite a newer server roster.
           if (data.chores) setChores(data.chores);
           if (data.expenses) setExpenses(data.expenses);
-          if (data.shoppingLists) setShoppingLists(data.shoppingLists);
-          if (data.shoppingItems) setShoppingItems(data.shoppingItems);
+          const cachedShoppingMeta: ShoppingSyncMeta =
+            data.shoppingSyncMeta ?? EMPTY_SHOPPING_SYNC_META;
+          const localShoppingMeta = shoppingSyncMetaRef.current;
+          if (Array.isArray(data.shoppingLists)) {
+            setShoppingLists((local) => mergeVersionedShopping(
+              local,
+              data.shoppingLists,
+              localShoppingMeta.listVersions,
+              cachedShoppingMeta.listVersions,
+              localShoppingMeta.deletedLists,
+              cachedShoppingMeta.deletedLists,
+            ));
+          }
+          if (Array.isArray(data.shoppingItems)) {
+            setShoppingItems((local) => mergeVersionedShopping(
+              local,
+              data.shoppingItems,
+              localShoppingMeta.itemVersions,
+              cachedShoppingMeta.itemVersions,
+              localShoppingMeta.deletedItems,
+              cachedShoppingMeta.deletedItems,
+            ));
+          }
+          const mergeCachedVersions = (
+            local: Record<string, string>,
+            cached: Record<string, string>,
+          ) => Object.fromEntries(
+            [...new Set([...Object.keys(local), ...Object.keys(cached)])].map((id) => [
+              id,
+              local[id] > (cached[id] ?? "") ? local[id] : cached[id],
+            ]),
+          );
+          const hydratedShoppingMeta: ShoppingSyncMeta = {
+            listVersions: mergeCachedVersions(localShoppingMeta.listVersions, cachedShoppingMeta.listVersions),
+            itemVersions: mergeCachedVersions(localShoppingMeta.itemVersions, cachedShoppingMeta.itemVersions),
+            deletedLists: mergeCachedVersions(localShoppingMeta.deletedLists, cachedShoppingMeta.deletedLists),
+            deletedItems: mergeCachedVersions(localShoppingMeta.deletedItems, cachedShoppingMeta.deletedItems),
+          };
+          setShoppingSyncMeta(hydratedShoppingMeta);
+          shoppingSyncMetaRef.current = hydratedShoppingMeta;
           if (data.borrowItems) setBorrowItems(data.borrowItems);
           if (data.nudges) setNudges(data.nudges);
           if (Array.isArray(data.appAlerts)) setAppAlerts(data.appAlerts);
@@ -1114,7 +1385,7 @@ export function AppProvider({
       interaction = InteractionManager.runAfterInteractions(() => {
         AsyncStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, appAlerts, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId })
+          JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, nudges, appAlerts, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId })
         ).catch((error) => {
           reportRuntimeError("cache household state", error);
         });
@@ -1124,7 +1395,7 @@ export function AppProvider({
       clearTimeout(timer);
       interaction?.cancel();
     };
-  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, nudges, appAlerts, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId]);
+  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, nudges, appAlerts, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId]);
 
   const upsertInformationalAlerts = useCallback((incoming: AppAlert[]) => {
     if (!incoming.length) return;
@@ -1147,6 +1418,37 @@ export function AppProvider({
     const readAt = new Date().toISOString();
     setAppAlerts((current) => current.map((alert) => alert.readAt ? alert : { ...alert, readAt }));
   }, []);
+
+  useEffect(() => {
+    if (!nudgesReady || !householdId || !currentUserId) return;
+    const receivedAlerts = nudges
+      .filter((nudge) => nudge.toRoommateId === currentUserId)
+      .map((nudge): AppAlert => {
+        const chore = chores.find((candidate) => candidate.id === nudge.choreId);
+        return {
+          id: `nudge:${nudge.id}`,
+          type: "nudge",
+          title: "You received a nudge",
+          message: chore
+            ? `Someone in your Sweet sent you a reminder about “${chore.title}”.`
+            : "Someone in your Sweet sent you a reminder.",
+          createdAt: nudge.sentAt,
+          relatedEntityId: nudge.choreId,
+          relatedEntityType: "chore",
+          deduplicationKey: `nudge:${householdId}:${currentUserId}:${nudge.id}`,
+          recipientId: currentUserId,
+          severity: "info",
+        };
+      });
+    upsertInformationalAlerts(receivedAlerts);
+  }, [
+    chores,
+    currentUserId,
+    householdId,
+    nudges,
+    nudgesReady,
+    upsertInformationalAlerts,
+  ]);
 
   useEffect(() => {
     if (!loaded || !householdId || !currentUserId || currentUserId === CURRENT_USER_ID) return;
@@ -1197,6 +1499,23 @@ export function AppProvider({
         relatedEntityId: item.id,
         relatedEntityType: "borrow-item",
         deduplicationKey: `borrowing:${householdId}:${currentUserId}:${item.id}:${item.dueDate}`,
+        severity: "attention",
+      }));
+    borrowItems
+      .filter((item) =>
+        !item.returned &&
+        Boolean(item.returnRequestedAt) &&
+        item.borrowedFrom === currentUserId,
+      )
+      .forEach((item) => incoming.push({
+        id: `borrowing-return:${item.id}`,
+        type: "borrowing",
+        title: "Confirm item return",
+        message: `Confirm that “${item.item}” was returned.`,
+        createdAt,
+        relatedEntityId: item.id,
+        relatedEntityType: "borrow-item",
+        deduplicationKey: `borrowing-return:${householdId}:${currentUserId}:${item.id}:${item.returnRequestedAt}`,
         severity: "attention",
       }));
     const approvedChart = currentProposedChart?.status === "approved" ? currentProposedChart : null;
@@ -1261,6 +1580,7 @@ export function AppProvider({
     expenses,
     shoppingLists,
     shoppingItems,
+    shoppingSyncMeta,
     borrowItems,
     essentialsAssignees,
     roommateStatuses,
@@ -1271,7 +1591,7 @@ export function AppProvider({
     homeProfile,
     liveChart,
     customTasks,
-  }), [roommates, chores, expenses, shoppingLists, shoppingItems, borrowItems, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
+  }), [roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
 
   const latestSharedStateRef = useRef(sharedState);
   latestSharedStateRef.current = sharedState;
@@ -1300,8 +1620,69 @@ export function AppProvider({
     }
     if (Array.isArray(next.chores)) setChores(next.chores);
     if (Array.isArray(next.expenses)) setExpenses(next.expenses);
-    if (Array.isArray(next.shoppingLists)) setShoppingLists(next.shoppingLists);
-    if (Array.isArray(next.shoppingItems)) setShoppingItems(next.shoppingItems);
+    const remoteMeta = next.shoppingSyncMeta ?? EMPTY_SHOPPING_SYNC_META;
+    const localMeta = shoppingSyncMetaRef.current;
+    const hasNewerLocalShoppingChange = (
+      [
+        ["listVersions", "deletedLists"],
+        ["itemVersions", "deletedItems"],
+      ] as const
+    ).some(([versionKey, deletedKey]) => {
+      const ids = new Set([
+        ...Object.keys(localMeta[versionKey]),
+        ...Object.keys(localMeta[deletedKey]),
+      ]);
+      return [...ids].some((id) => {
+        const localVersion = localMeta[versionKey][id] ?? localMeta[deletedKey][id] ?? "";
+        const remoteVersion = [
+          remoteMeta[versionKey][id] ?? "",
+          remoteMeta[deletedKey][id] ?? "",
+        ].sort().at(-1) ?? "";
+        return localVersion > remoteVersion;
+      });
+    });
+    // A remote snapshot normally suppresses the persistence echo. If it raced
+    // with a newer local shopping mutation, however, the merged snapshot must
+    // be written back so the other member receives the local addition too.
+    applyingRemoteRef.current = !hasNewerLocalShoppingChange;
+    const maxVersions = (
+      local: Record<string, string>,
+      remote: Record<string, string>,
+    ) => {
+      const merged = { ...local };
+      Object.entries(remote).forEach(([id, version]) => {
+        if (!merged[id] || version > merged[id]) merged[id] = version;
+      });
+      return merged;
+    };
+    if (Array.isArray(next.shoppingLists)) {
+      setShoppingLists((local) => mergeVersionedShopping(
+        local,
+        next.shoppingLists!,
+        localMeta.listVersions,
+        remoteMeta.listVersions,
+        localMeta.deletedLists,
+        remoteMeta.deletedLists,
+      ));
+    }
+    if (Array.isArray(next.shoppingItems)) {
+      setShoppingItems((local) => mergeVersionedShopping(
+        local,
+        next.shoppingItems!,
+        localMeta.itemVersions,
+        remoteMeta.itemVersions,
+        localMeta.deletedItems,
+        remoteMeta.deletedItems,
+      ));
+    }
+    const mergedMeta: ShoppingSyncMeta = {
+      listVersions: maxVersions(localMeta.listVersions, remoteMeta.listVersions),
+      itemVersions: maxVersions(localMeta.itemVersions, remoteMeta.itemVersions),
+      deletedLists: maxVersions(localMeta.deletedLists, remoteMeta.deletedLists),
+      deletedItems: maxVersions(localMeta.deletedItems, remoteMeta.deletedItems),
+    };
+    shoppingSyncMetaRef.current = mergedMeta;
+    setShoppingSyncMeta(mergedMeta);
     if (Array.isArray(next.borrowItems)) setBorrowItems(next.borrowItems);
     if (next.essentialsAssignees) setEssentialsAssignees(next.essentialsAssignees);
     if (next.roommateStatuses) setRoommateStatusesState(next.roommateStatuses);
@@ -1434,6 +1815,7 @@ export function AppProvider({
   useEffect(() => {
     if (!householdId || !session?.user.id) {
       setNudges([]);
+      setNudgesReady(false);
       return;
     }
     let active = true;
@@ -1468,6 +1850,7 @@ export function AppProvider({
             sentAt: row.sent_at,
             seen: false,
           })));
+          setNudgesReady(true);
           return;
         }
         reportSupabaseError("load household nudges", error, { householdId });
@@ -1480,6 +1863,7 @@ export function AppProvider({
         sentAt: row.sent_at,
         seen: row.seen,
       })));
+      setNudgesReady(true);
     };
 
     void refreshNudges();
@@ -1505,9 +1889,14 @@ export function AppProvider({
           );
         }
       });
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshNudges();
+    });
 
     return () => {
       active = false;
+      appStateSubscription.remove();
+      setNudgesReady(false);
       void supabase.removeChannel(channel);
     };
   }, [householdId, session?.user.id]);
@@ -1648,12 +2037,91 @@ export function AppProvider({
   }, [householdId, session?.user.id]);
 
   const addChore = useCallback((chore: Omit<Chore, "id">) => {
-    setChores((prev) => {
-      if (chore.sourceKey && prev.some((item) => item.sourceKey === chore.sourceKey)) return prev;
-      if (!chore.sourceKey && prev.some((item) => !item.sourceKey && item.title.trim().toLowerCase() === chore.title.trim().toLowerCase())) return prev;
-      return [...prev, { ...chore, id: makeId() }];
-    });
-  }, []);
+    const activeMemberIds = new Set(roommates.map((roommate) => roommate.id));
+    if (
+      !chore.title.trim() ||
+      !Number.isFinite(new Date(chore.dueDate).getTime()) ||
+      (chore.assignedTo && !activeMemberIds.has(chore.assignedTo)) ||
+      (chore.householdId && chore.householdId !== householdId)
+    ) {
+      return null;
+    }
+    if (
+      chore.assignmentMode === "round-robin" &&
+      !(chore.roundRobinParticipantIds ?? []).some((id) => activeMemberIds.has(id))
+    ) {
+      return null;
+    }
+    if (
+      chore.sourceKey &&
+      choresRef.current.some((item) => item.sourceKey === chore.sourceKey)
+    ) {
+      return null;
+    }
+
+    const id = makeId();
+    const now = new Date().toISOString();
+    const next: Chore = {
+      ...chore,
+      id,
+      householdId: chore.householdId ?? householdId ?? undefined,
+      creatorId: chore.creatorId ?? session?.user.id ?? currentUserId,
+      assignmentMode: chore.assignmentMode ?? "specific-person",
+      initialDueDate: chore.initialDueDate ?? chore.dueDate,
+      nextDueDate: chore.nextDueDate ?? chore.dueDate,
+      roundRobinCursor: chore.roundRobinCursor ?? 0,
+      occurrenceIndex: chore.occurrenceIndex ?? 0,
+      recurrenceSeriesId: chore.recurring
+        ? chore.recurrenceSeriesId ?? id
+        : undefined,
+      createdAt: chore.createdAt ?? now,
+      updatedAt: now,
+    };
+    const updated = [...choresRef.current, next];
+    choresRef.current = updated;
+    setChores(updated);
+    return id;
+  }, [currentUserId, householdId, roommates, session?.user.id]);
+
+  const canManageChore = useCallback((chore: Chore) =>
+    isHost || chore.creatorId === currentUserId,
+  [currentUserId, isHost]);
+
+  const updateChore = useCallback((
+    id: string,
+    updates: Partial<Omit<Chore, "id">>,
+  ): boolean => {
+    const current = choresRef.current.find((chore) => chore.id === id);
+    if (!current || current.completed || !canManageChore(current)) return false;
+    const candidate: Chore = {
+      ...current,
+      ...updates,
+      id: current.id,
+      householdId: current.householdId ?? householdId ?? undefined,
+      creatorId: current.creatorId,
+      createdAt: current.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+    const activeMemberIds = new Set(roommates.map((roommate) => roommate.id));
+    if (
+      !candidate.title.trim() ||
+      !Number.isFinite(new Date(candidate.dueDate).getTime()) ||
+      (candidate.assignedTo && !activeMemberIds.has(candidate.assignedTo)) ||
+      (candidate.householdId && candidate.householdId !== householdId) ||
+      (candidate.assignmentMode === "round-robin" &&
+        !(candidate.roundRobinParticipantIds ?? []).some((memberId) =>
+          activeMemberIds.has(memberId),
+        ))
+    ) {
+      return false;
+    }
+    const next = choresRef.current.map((chore) =>
+      chore.id === id ? candidate : chore,
+    );
+    choresRef.current = next;
+    setChores(next);
+    return true;
+  }, [canManageChore, householdId, roommates]);
 
   const addChores = useCallback((newChores: Omit<Chore, "id">[]): number => {
     const current = choresRef.current;
@@ -1681,20 +2149,98 @@ export function AppProvider({
   // the model simple and matches the "unclick to uncross out" UX the user asked
   // for on their own chores in My Home / Group.
   const completeChore = useCallback((id: string) => {
-    const chore = chores.find((c) => c.id === id);
+    const chore = choresRef.current.find((c) => c.id === id);
     if (!chore) return;
     const wasCompleted = chore.completed;
     const delta = wasCompleted ? -chore.points : chore.points;
+    const completedAt = new Date().toISOString();
 
-    setChores((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? wasCompleted
-            ? { ...c, completed: false, completedAt: undefined }
-            : { ...c, completed: true, completedAt: new Date().toISOString() }
-          : c
-      )
-    );
+    let nextChores: Chore[];
+    if (wasCompleted) {
+      const generated = chore.nextOccurrenceId
+        ? choresRef.current.find((candidate) => candidate.id === chore.nextOccurrenceId)
+        : undefined;
+      nextChores = choresRef.current
+        .filter((candidate) =>
+          !generated || generated.completed || candidate.id !== generated.id,
+        )
+        .map((candidate) =>
+          candidate.id === id
+            ? {
+                ...candidate,
+                completed: false,
+                completedAt: undefined,
+                nextOccurrenceId: generated?.completed
+                  ? candidate.nextOccurrenceId
+                  : undefined,
+                updatedAt: completedAt,
+              }
+            : candidate,
+        );
+    } else if (chore.recurring) {
+      let nextDueDate = advanceChoreDueDate(chore.dueDate, chore.recurring);
+      let recurrenceSteps = 1;
+      while (new Date(nextDueDate).getTime() <= Date.now()) {
+        nextDueDate = advanceChoreDueDate(nextDueDate, chore.recurring);
+        recurrenceSteps += 1;
+      }
+
+      const activeMemberIds = roommates.map((roommate) => roommate.id);
+      const participants = resolveRoundRobinParticipants(chore, activeMemberIds);
+      const currentCursor = chore.roundRobinCursor ?? Math.max(
+        participants.indexOf(chore.assignedTo),
+        0,
+      );
+      const nextCursor = participants.length
+        ? (currentCursor + recurrenceSteps) % participants.length
+        : 0;
+      const nextId = makeId();
+      const nextOccurrence: Chore = {
+        ...chore,
+        id: nextId,
+        assignedTo:
+          chore.assignmentMode === "round-robin"
+            ? participants[nextCursor] ?? chore.assignedTo
+            : chore.assignedTo,
+        roundRobinParticipantIds: participants.length
+          ? participants
+          : chore.roundRobinParticipantIds,
+        roundRobinCursor: nextCursor,
+        dueDate: nextDueDate,
+        nextDueDate,
+        completed: false,
+        completedAt: undefined,
+        occurrenceIndex: (chore.occurrenceIndex ?? 0) + recurrenceSteps,
+        nextOccurrenceId: undefined,
+        createdAt: completedAt,
+        updatedAt: completedAt,
+      };
+      nextChores = choresRef.current.map((candidate) =>
+        candidate.id === id
+          ? {
+              ...candidate,
+              completed: true,
+              completedAt,
+              nextOccurrenceId: nextId,
+              updatedAt: completedAt,
+            }
+          : candidate,
+      );
+      nextChores.push(nextOccurrence);
+    } else {
+      nextChores = choresRef.current.map((candidate) =>
+        candidate.id === id
+          ? {
+              ...candidate,
+              completed: true,
+              completedAt,
+              updatedAt: completedAt,
+            }
+          : candidate,
+      );
+    }
+    choresRef.current = nextChores;
+    setChores(nextChores);
     setRoommates((prev) =>
       prev.map((r) =>
         r.id === chore.assignedTo
@@ -1706,37 +2252,58 @@ export function AppProvider({
           : r
       )
     );
-  }, [chores]);
+  }, [roommates]);
 
   const PICKUP_BONUS = 25;
 
   const pickUpChore = useCallback((choreId: string, completedById: string) => {
-    setChores((prev) =>
-      prev.map((c) =>
-        c.id === choreId
-          ? { ...c, completed: true, completedAt: new Date().toISOString() }
-          : c
-      )
-    );
+    const chore = choresRef.current.find((candidate) => candidate.id === choreId);
+    if (!chore || chore.completed) return;
+    completeChore(choreId);
     setRoommates((prev) =>
       prev.map((r) => {
         if (r.id === completedById) {
-          const chore = chores.find((c) => c.id === choreId);
-          const earned = (chore?.points ?? 0) + PICKUP_BONUS;
+          const earned =
+            r.id === chore.assignedTo ? PICKUP_BONUS : chore.points + PICKUP_BONUS;
           return {
             ...r,
             points: r.points + earned,
             weeklyPoints: r.weeklyPoints + earned,
           };
         }
+        if (r.id === chore.assignedTo) {
+          return {
+            ...r,
+            points: r.points - chore.points,
+            weeklyPoints: r.weeklyPoints - chore.points,
+          };
+        }
         return r;
       })
     );
-  }, [chores]);
+  }, [completeChore]);
 
-  const deleteChore = useCallback((id: string) => {
-    setChores((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+  const deleteChore = useCallback((
+    id: string,
+    scope: RecurringChoreDeleteScope = "occurrence",
+  ): boolean => {
+    const target = choresRef.current.find((chore) => chore.id === id);
+    if (!target || !canManageChore(target)) return false;
+    const seriesId = target.recurrenceSeriesId;
+    const occurrenceIndex = target.occurrenceIndex ?? 0;
+    const next = choresRef.current.filter((chore) => {
+      if (chore.id === id) return false;
+      if (!seriesId || chore.recurrenceSeriesId !== seriesId) return true;
+      if (scope === "series") return false;
+      if (scope === "future") {
+        return (chore.occurrenceIndex ?? 0) < occurrenceIndex;
+      }
+      return true;
+    });
+    choresRef.current = next;
+    setChores(next);
+    return true;
+  }, [canManageChore]);
 
   const addExpense = useCallback((expense: Omit<Expense, "id">) => {
     const id = makeId();
@@ -1776,15 +2343,48 @@ export function AppProvider({
     );
   }, []);
 
+  const recordShoppingVersions = useCallback((
+    kind: "list" | "item",
+    ids: string[],
+    deleted = false,
+  ) => {
+    if (!ids.length) return;
+    const actor = session?.user.id ?? "local";
+    const version = `${Date.now().toString().padStart(13, "0")}:${actor}:${Math.random()
+      .toString(36)
+      .slice(2, 9)}`;
+    const current = shoppingSyncMetaRef.current;
+    const versionKey = kind === "list" ? "listVersions" : "itemVersions";
+    const deletedKey = kind === "list" ? "deletedLists" : "deletedItems";
+    const next: ShoppingSyncMeta = {
+      ...current,
+      [versionKey]: { ...current[versionKey] },
+      [deletedKey]: { ...current[deletedKey] },
+    };
+    ids.forEach((id) => {
+      if (deleted) {
+        next[deletedKey][id] = version;
+        delete next[versionKey][id];
+      } else {
+        next[versionKey][id] = version;
+        delete next[deletedKey][id];
+      }
+    });
+    shoppingSyncMetaRef.current = next;
+    setShoppingSyncMeta(next);
+  }, [session?.user.id]);
+
   const addShoppingList = useCallback((name: string) => {
+    const id = makeId();
+    recordShoppingVersions("list", [id]);
     setShoppingLists((prev) => {
       // Insert at the TOP of the unpinned partition.
-      const newList: ShoppingList = { id: makeId(), name };
+      const newList: ShoppingList = { id, name };
       const pinned = prev.filter((l) => l.pinned);
       const unpinned = prev.filter((l) => !l.pinned);
       return [...pinned, newList, ...unpinned];
     });
-  }, []);
+  }, [recordShoppingVersions]);
 
   // Accept whatever id order the DraggableFlatList emits, then re-partition
   // pinned-first / unpinned-second while preserving the user's relative order
@@ -1792,6 +2392,7 @@ export function AppProvider({
   // rendered order — consumers pass it directly to DraggableFlatList (no
   // per-render re-sort).
   const reorderShoppingLists = useCallback((newIds: string[]) => {
+    recordShoppingVersions("list", newIds);
     setShoppingLists((prev) => {
       const byId = new Map(prev.map((l) => [l.id, l]));
       // Rebuild in the exact order the drag emitted, keeping every list.
@@ -1810,9 +2411,10 @@ export function AppProvider({
       const unpinnedArr = reordered.filter((l) => !l.pinned);
       return [...pinnedArr, ...unpinnedArr];
     });
-  }, []);
+  }, [recordShoppingVersions]);
 
   const pinShoppingList = useCallback((id: string, pinned: boolean) => {
+    recordShoppingVersions("list", [id]);
     setShoppingLists((prev) => {
       const target = prev.find((l) => l.id === id);
       if (!target) return prev;
@@ -1826,32 +2428,43 @@ export function AppProvider({
         ? [updated, ...pinnedArr, ...unpinnedArr]
         : [...pinnedArr, updated, ...unpinnedArr];
     });
-  }, []);
+  }, [recordShoppingVersions]);
 
   const deleteShoppingList = useCallback((id: string) => {
+    recordShoppingVersions("list", [id], true);
+    recordShoppingVersions(
+      "item",
+      shoppingItemsRef.current.filter((item) => item.listId === id).map((item) => item.id),
+      true,
+    );
     setShoppingLists((prev) => prev.filter((l) => l.id !== id));
     setShoppingItems((prev) => prev.filter((s) => s.listId !== id));
-  }, []);
+  }, [recordShoppingVersions]);
 
   const addShoppingItem = useCallback((item: Omit<ShoppingItem, "id">) => {
-    setShoppingItems((prev) => [...prev, { ...item, id: makeId() }]);
-  }, []);
+    const id = makeId();
+    recordShoppingVersions("item", [id]);
+    setShoppingItems((prev) => [...prev, { ...item, id }]);
+  }, [recordShoppingVersions]);
 
   const toggleShoppingItem = useCallback((id: string) => {
+    recordShoppingVersions("item", [id]);
     setShoppingItems((prev) =>
       prev.map((s) => (s.id === id ? { ...s, completed: !s.completed } : s))
     );
-  }, []);
+  }, [recordShoppingVersions]);
 
   const deleteShoppingItem = useCallback((id: string) => {
+    recordShoppingVersions("item", [id], true);
     setShoppingItems((prev) => prev.filter((s) => s.id !== id));
-  }, []);
+  }, [recordShoppingVersions]);
 
   // Accept the visible order emitted by NestableDraggableFlatList and rewrite
   // the items belonging to `listId` in that order, then enforce the unchecked-
   // first / checked-last partition so users can drag freely within either
   // partition without the sort snapping items back on the next render.
   const reorderShoppingItems = useCallback((listId: string, newIds: string[]) => {
+    recordShoppingVersions("item", newIds);
     setShoppingItems((prev) => {
       const inList = prev.filter((s) => s.listId === listId);
       const byId = new Map(inList.map((s) => [s.id, s]));
@@ -1878,9 +2491,10 @@ export function AppProvider({
         ...others.slice(firstIdx),
       ];
     });
-  }, []);
+  }, [recordShoppingVersions]);
 
   const assignShoppingList = useCallback((id: string, roommateId: string | null) => {
+    recordShoppingVersions("list", [id]);
     setShoppingLists((prev) =>
       prev.map((l) =>
         l.id === id
@@ -1888,25 +2502,28 @@ export function AppProvider({
           : l
       )
     );
-  }, []);
+  }, [recordShoppingVersions]);
 
   const assignShoppingItem = useCallback((id: string, roommateIds: string[]) => {
+    recordShoppingVersions("item", [id]);
     setShoppingItems((prev) =>
       prev.map((s) =>
         s.id === id ? { ...s, assignedTo: roommateIds.length > 0 ? roommateIds : undefined } : s
       )
     );
-  }, []);
+  }, [recordShoppingVersions]);
 
   const updateShoppingItemPrice = useCallback((id: string, price: number | null) => {
+    recordShoppingVersions("item", [id]);
     setShoppingItems((prev) =>
       prev.map((s) =>
         s.id === id ? { ...s, price: price ?? undefined } : s
       )
     );
-  }, []);
+  }, [recordShoppingVersions]);
 
   const linkShoppingItemsToExpense = useCallback((itemIds: string[], expenseId: string) => {
+    recordShoppingVersions("item", itemIds);
     const ids = new Set(itemIds);
     setShoppingItems((current) =>
       current.map((item) =>
@@ -1915,36 +2532,132 @@ export function AppProvider({
           : item,
       ),
     );
-  }, []);
+  }, [recordShoppingVersions]);
 
   const addBorrowItem = useCallback((item: Omit<BorrowItem, "id">) => {
-    setBorrowItems((prev) => [...prev, { ...item, id: makeId() }]);
-  }, []);
+    const owner = roommates.find((member) => member.id === item.borrowedFrom);
+    const borrower = roommates.find((member) => member.id === item.borrowedBy);
+    if (
+      !session?.user.id ||
+      !owner ||
+      !borrower ||
+      owner.id === borrower.id ||
+      !item.item.trim() ||
+      !Number.isFinite(new Date(item.borrowedAt).getTime()) ||
+      !Number.isFinite(new Date(item.dueDate).getTime()) ||
+      (item.householdId && item.householdId !== householdId)
+    ) {
+      return null;
+    }
+    const id = makeId();
+    const now = new Date().toISOString();
+    setBorrowItems((prev) => [...prev, {
+      ...item,
+      id,
+      householdId: householdId ?? undefined,
+      creatorId: session.user.id,
+      ownerName: owner.name,
+      borrowerName: borrower.name,
+      createdAt: now,
+      updatedAt: now,
+    }]);
+    return id;
+  }, [householdId, roommates, session?.user.id]);
 
   const updateBorrowItem = useCallback(
-    (id: string, updates: Partial<Omit<BorrowItem, "id">>) => {
+    (id: string, updates: Partial<Omit<BorrowItem, "id">>): boolean => {
+      const current = borrowItems.find((item) => item.id === id);
+      const canManageLegacy =
+        !current?.creatorId &&
+        (current?.borrowedBy === currentUserId || current?.borrowedFrom === currentUserId);
+      if (!current || (!isHost && current.creatorId !== currentUserId && !canManageLegacy)) return false;
+      const ownerId = updates.borrowedFrom ?? current.borrowedFrom;
+      const borrowerId = updates.borrowedBy ?? current.borrowedBy;
+      const owner = roommates.find((member) => member.id === ownerId);
+      const borrower = roommates.find((member) => member.id === borrowerId);
+      const nextItem = updates.item ?? current.item;
+      const borrowedAt = updates.borrowedAt ?? current.borrowedAt;
+      const dueDate = updates.dueDate ?? current.dueDate;
+      if (
+        !owner ||
+        !borrower ||
+        owner.id === borrower.id ||
+        !nextItem.trim() ||
+        !Number.isFinite(new Date(borrowedAt).getTime()) ||
+        !Number.isFinite(new Date(dueDate).getTime())
+      ) return false;
       setBorrowItems((prev) =>
-        prev.map((b) => (b.id === id ? { ...b, ...updates } : b))
+        prev.map((item) => item.id === id
+          ? {
+              ...item,
+              ...updates,
+              ownerName: owner.name,
+              borrowerName: borrower.name,
+              creatorId: item.creatorId ?? currentUserId,
+              householdId: item.householdId ?? householdId ?? undefined,
+              updatedAt: new Date().toISOString(),
+            }
+          : item)
       );
+      return true;
     },
-    []
+    [borrowItems, currentUserId, householdId, isHost, roommates],
   );
 
-  // Toggle: if the item was returned, un-return it (clear returnedAt);
-  // otherwise mark it returned with the current timestamp.
   const returnBorrowItem = useCallback((id: string) => {
+    const current = borrowItems.find((item) => item.id === id);
+    if (!current) return false;
+    const isOwner = current.borrowedFrom === currentUserId;
+    const isBorrower = current.borrowedBy === currentUserId;
+    if (!isOwner && !isBorrower && !isHost) return false;
+    const now = new Date().toISOString();
     setBorrowItems((prev) =>
       prev.map((b) => {
         if (b.id !== id) return b;
-        if (b.returned) return { ...b, returned: false, returnedAt: undefined };
-        return { ...b, returned: true, returnedAt: new Date().toISOString() };
+        const identity = {
+          creatorId: b.creatorId ?? currentUserId,
+          householdId: b.householdId ?? householdId ?? undefined,
+          ownerName: b.ownerName ?? roommates.find((member) => member.id === b.borrowedFrom)?.name,
+          borrowerName: b.borrowerName ?? roommates.find((member) => member.id === b.borrowedBy)?.name,
+        };
+        if (b.returned) {
+          if (!isOwner && !isHost) return b;
+          return {
+            ...b,
+            ...identity,
+            returned: false,
+            returnedAt: undefined,
+            returnRequestedAt: undefined,
+            returnConfirmedBy: undefined,
+            updatedAt: now,
+          };
+        }
+        if (isOwner || isHost) {
+          return {
+            ...b,
+            ...identity,
+            returned: true,
+            returnedAt: now,
+            returnRequestedAt: b.returnRequestedAt ?? now,
+            returnConfirmedBy: currentUserId,
+            updatedAt: now,
+          };
+        }
+        return { ...b, ...identity, returnRequestedAt: now, updatedAt: now };
       })
     );
-  }, []);
+    return true;
+  }, [borrowItems, currentUserId, householdId, isHost, roommates]);
 
   const deleteBorrowItem = useCallback((id: string) => {
+    const current = borrowItems.find((item) => item.id === id);
+    const canManageLegacy =
+      !current?.creatorId &&
+      (current?.borrowedBy === currentUserId || current?.borrowedFrom === currentUserId);
+    if (!current || (!isHost && current.creatorId !== currentUserId && !canManageLegacy)) return false;
     setBorrowItems((prev) => prev.filter((b) => b.id !== id));
-  }, []);
+    return true;
+  }, [borrowItems, currentUserId, isHost]);
 
   const setEssentialAssignee = useCallback((sectionKey: string, item: string, roommateId: string | null) => {
     setEssentialsAssignees((prev) => {
@@ -2373,6 +3086,8 @@ export function AppProvider({
     setPointsEnabled,
     plantEnabled,
     setPlantEnabled,
+    leaderboardPeriod,
+    setLeaderboardPeriod,
     householdId,
     householdName,
     inviteCode,
@@ -2395,7 +3110,9 @@ export function AppProvider({
     shoppingItems,
     borrowItems,
     nudges,
+    nudgesReady,
     addChore,
+    updateChore,
     addChores,
     completeChore,
     pickUpChore,
@@ -2454,12 +3171,12 @@ export function AppProvider({
     finishPreferencesOnboarding, quickGuideOpen, openQuickGuide,
     dismissQuickGuide, appAlerts, markAlertRead, markAllAlertsRead,
     householdComplete, setHouseholdComplete,
-    colorScheme, pointsEnabled, plantEnabled, householdId, householdName,
+    colorScheme, pointsEnabled, plantEnabled, leaderboardPeriod, householdId, householdName,
     inviteCode, householdLoading, membersLoading, currentMemberRole,
     refreshMembers, refreshHousehold, createHousehold, joinHousehold,
     deleteHousehold, removeRoommate, deleteOwnAccount, currentUserId,
     setCurrentUser, roommates, chores, expenses, shoppingLists, shoppingItems,
-    borrowItems, nudges, addChore, addChores, completeChore, pickUpChore, deleteChore,
+    borrowItems, nudges, nudgesReady, addChore, updateChore, addChores, completeChore, pickUpChore, deleteChore,
     addExpense, updateExpense, settleExpense, deleteExpense, markPersonPaid,
     addShoppingList, reorderShoppingLists, pinShoppingList, deleteShoppingList,
     addShoppingItem, toggleShoppingItem, deleteShoppingItem,

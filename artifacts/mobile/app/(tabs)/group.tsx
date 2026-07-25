@@ -11,7 +11,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -26,35 +25,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState } from "@/components/EmptyState";
 import { HeaderActions } from "@/components/HeaderActions";
 import { HomePlant } from "@/components/HomePlant";
+import { ManualChoreForm } from "@/components/ManualChoreForm";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import {
   useAppContextSelector,
   type ChoreAssignment,
-  type ChoreCategory,
+  type Chore,
 } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { error as hapticError, success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
-
-// ── Add-chore modal constants (same as My Home) ────────────────────────────
-const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feather.glyphMap }[] = [
-  { key: "cleaning", label: "Cleaning", icon: "wind" },
-  { key: "kitchen", label: "Kitchen", icon: "coffee" },
-  { key: "bathroom", label: "Bathroom", icon: "droplet" },
-  { key: "laundry", label: "Laundry", icon: "refresh-cw" },
-  { key: "outdoor", label: "Outdoor", icon: "sun" },
-  { key: "other", label: "Other", icon: "package" },
-];
-
-const POINTS_OPTIONS = ["5", "10", "15", "20", "25", "30"];
-
-function daysFromNow(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  d.setHours(23, 59, 0, 0);
-  return d.toISOString();
-}
+import { removeMappedReminderIfPresent } from "@/lib/externalTasks";
+import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
 
 function isOverdue(dateStr: string) {
   return new Date(dateStr) < new Date();
@@ -164,7 +147,7 @@ const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
 export default function GroupChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, choreChart, choreChartStartedAt, addChore, pointsEnabled, plantEnabled } =
+  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, choreChart, choreChartStartedAt, pointsEnabled, plantEnabled, isHost, deleteChore } =
     useAppContextSelector((context) => ({
       roommates: context.roommates,
       chores: context.chores,
@@ -178,9 +161,10 @@ export default function GroupChoresScreen() {
       setRoommateStatus: context.setRoommateStatus,
       choreChart: context.choreChart,
       choreChartStartedAt: context.choreChartStartedAt,
-      addChore: context.addChore,
       pointsEnabled: context.pointsEnabled,
       plantEnabled: context.plantEnabled,
+      isHost: context.isHost,
+      deleteChore: context.deleteChore,
     }));
 
   const { confirm, info } = useConfirm();
@@ -199,6 +183,8 @@ export default function GroupChoresScreen() {
 
   // ── Add-chore-to-any-roommate modal state ──
   const [showAddChoreModal, setShowAddChoreModal] = useState(false);
+  const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
+  const longPressedChoreRef = useRef<string | null>(null);
 
   // Full-screen slide-up animation for the Add Chore modal (matches New IOU).
   const addChoreTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -223,17 +209,16 @@ export default function GroupChoresScreen() {
       if (finished) {
         setShowAddChoreModal(false);
         setAddChoreTargetId(null);
+        setEditingChoreId(null);
       }
     });
   };
   const addChoreDragHandlers = useDraggableSheet(addChoreTranslateY, () => {
     setShowAddChoreModal(false);
     setAddChoreTargetId(null);
+    setEditingChoreId(null);
   });
   const [addChoreTargetId, setAddChoreTargetId] = useState<string | null>(null);
-  const [newChoreTitle, setNewChoreTitle] = useState("");
-  const [newChoreCategory, setNewChoreCategory] = useState<ChoreCategory>("cleaning");
-  const [newChorePoints, setNewChorePoints] = useState("20");
 
   // Which roommates' chore sections are expanded. By default, only the current
   // user is open — everyone else's section is collapsed and shows only the
@@ -253,25 +238,74 @@ export default function GroupChoresScreen() {
   };
 
   const openAddChoreFor = (roommateId: string) => {
+    setEditingChoreId(null);
     setAddChoreTargetId(roommateId);
-    setNewChoreTitle("");
-    setNewChoreCategory("cleaning");
-    setNewChorePoints("20");
     setShowAddChoreModal(true);
   };
 
-  const submitAddChore = () => {
-    if (!addChoreTargetId || !newChoreTitle.trim()) return;
-    addChore({
-      title: newChoreTitle.trim(),
-      assignedTo: addChoreTargetId,
-      dueDate: daysFromNow(1),
-      completed: false,
-      points: parseInt(newChorePoints, 10),
-      category: newChoreCategory,
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    closeAddChoreSheet();
+  const canManageChore = (chore: Chore) =>
+    isHost || chore.creatorId === currentUserId;
+  const editingChore = editingChoreId
+    ? chores.find((chore) => chore.id === editingChoreId)
+    : undefined;
+  const confirmDeleteChore = (chore: Chore) => {
+    const remove = (scope: "occurrence" | "future" | "series") => {
+      if (deleteChore(chore.id, scope)) {
+        void removeMappedReminderIfPresent(currentUserId, chore.id).catch((error) =>
+          reportRuntimeError("remove mapped reminder after chore deletion", error, {
+            choreId: chore.id,
+          }),
+        );
+      } else {
+        Alert.alert("Not allowed", "Only the chore creator or Sweet host can delete this chore.");
+      }
+    };
+    if (chore.recurrenceSeriesId || chore.recurring) {
+      Alert.alert(
+        "Delete recurring chore?",
+        "Completed history is preserved unless you delete the entire series.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "This occurrence", onPress: () => remove("occurrence") },
+          { text: "This and future", onPress: () => remove("future") },
+          { text: "Entire series", style: "destructive", onPress: () => remove("series") },
+        ],
+      );
+      return;
+    }
+    Alert.alert(
+      "Delete chore?",
+      "This will remove the chore for everyone in your Sweet.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => remove("occurrence") },
+      ],
+    );
+  };
+  const openChoreActions = (chore: Chore) => {
+    if (!canManageChore(chore)) return;
+    const edit = () => {
+      setEditingChoreId(chore.id);
+      setAddChoreTargetId(chore.assignedTo);
+      setShowAddChoreModal(true);
+    };
+    Alert.alert(
+      chore.title,
+      "Manage this chore",
+      Platform.OS === "android"
+        ? [
+            { text: "Edit / Reassign", onPress: edit },
+            { text: "Delete", style: "destructive", onPress: () => confirmDeleteChore(chore) },
+            { text: "Cancel", style: "cancel" },
+          ]
+        : [
+            { text: "Edit chore", onPress: edit },
+            { text: "Reassign chore", onPress: edit },
+            { text: "Change recurrence", onPress: edit },
+            { text: "Delete chore", style: "destructive", onPress: () => confirmDeleteChore(chore) },
+            { text: "Cancel", style: "cancel" },
+          ],
+    );
   };
 
   // Cycle a roommate's mood: home (😊) → asleep (😴) → away (🤫) → home
@@ -1001,9 +1035,19 @@ export default function GroupChoresScreen() {
                         >
                         <TouchableOpacity
                           activeOpacity={0.7}
-                          onPress={() =>
-                            handleChorePress(chore.id, chore.assignedTo, chore.title, chore.points)
-                          }
+                          delayLongPress={450}
+                          onLongPress={canManageChore(chore) ? () => {
+                            longPressedChoreRef.current = chore.id;
+                            openChoreActions(chore);
+                          } : undefined}
+                          onPress={() => {
+                            if (longPressedChoreRef.current === chore.id) {
+                              longPressedChoreRef.current = null;
+                              return;
+                            }
+                            handleChorePress(chore.id, chore.assignedTo, chore.title, chore.points);
+                          }}
+                          accessibilityLabel={`${chore.title}. ${canManageChore(chore) ? "Double tap to complete, or use the more actions button to manage." : "Double tap to complete."}`}
                           style={[
                             styles.choreRow,
                             {
@@ -1076,6 +1120,8 @@ export default function GroupChoresScreen() {
                               ]}
                             >
                               {formatDueDate(chore.dueDate)}
+                              {chore.recurring ? ` · ${chore.recurring}` : ""}
+                              {chore.assignmentMode === "round-robin" ? " · Round Robin" : ""}
                             </Text>
                           </View>
 
@@ -1111,6 +1157,17 @@ export default function GroupChoresScreen() {
                               >
                                 {nudged ? "Nudged" : "Nudge"}
                               </Text>
+                            </TouchableOpacity>
+                          )}
+                          {canManageChore(chore) && (
+                            <TouchableOpacity
+                              onPress={() => openChoreActions(chore)}
+                              accessibilityRole="button"
+                              accessibilityLabel={`More actions for ${chore.title}`}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              style={styles.nudgeBtn}
+                            >
+                              <Feather name="more-vertical" size={15} color={colors.mutedForeground} />
                             </TouchableOpacity>
                           )}
                         </TouchableOpacity>
@@ -1151,6 +1208,7 @@ export default function GroupChoresScreen() {
         >
           {/* Header: title + X close button */}
           <View
+            {...addChoreDragHandlers}
             style={[
               styles.addChoreHeaderRow,
               { paddingTop: insets.top + 10, borderBottomColor: colors.border },
@@ -1158,9 +1216,11 @@ export default function GroupChoresScreen() {
           >
             <View style={[styles.sheetHandle, { backgroundColor: colors.border, top: insets.top + 5 }]} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.addChoreHeaderTitle, { color: colors.foreground }]}>Add Chore</Text>
+              <Text style={[styles.addChoreHeaderTitle, { color: colors.foreground }]}>
+                {editingChore ? "Edit Chore" : "Add Chore"}
+              </Text>
               <Text style={[styles.addChoreHeaderSub, { color: colors.mutedForeground }]}>
-                Assign to any roommate — including yourself
+                {editingChore ? "Update assignment, schedule, or details" : "Assign to any Sweetmate — including yourself"}
               </Text>
             </View>
             <TouchableOpacity
@@ -1176,148 +1236,12 @@ export default function GroupChoresScreen() {
             behavior={Platform.OS === "ios" ? "padding" : undefined}
             style={{ flex: 1 }}
           >
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.addChoreBody}
-            >
-              {/* Assign to — pre-selected to whoever's + button was tapped */}
-              <Text style={[styles.addChoreLabel, { color: colors.mutedForeground }]}>Assign to</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
-                style={{ marginBottom: 6 }}
-              >
-                {roommates.map((r) => {
-                  const selected = addChoreTargetId === r.id;
-                  return (
-                    <TouchableOpacity
-                      key={r.id}
-                      style={[
-                        styles.addChoreRoommateChip,
-                        {
-                          backgroundColor: selected ? r.color + "22" : colors.muted,
-                          borderColor: selected ? r.color : colors.border,
-                        },
-                      ]}
-                      onPress={() => setAddChoreTargetId(r.id)}
-                    >
-                      <RoommateAvatar name={r.name} color={r.color} size={22} imageUri={r.avatarUri} />
-                      <Text
-                        style={{
-                          color: selected ? r.color : colors.mutedForeground,
-                          fontFamily: "Inter_600SemiBold",
-                          fontSize: 13,
-                          marginLeft: 6,
-                        }}
-                      >
-                        {r.id === currentUserId ? "You" : r.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              <Text style={[styles.addChoreLabel, { color: colors.mutedForeground }]}>Task Name</Text>
-              <TextInput
-                style={[styles.addChoreInput, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
-                placeholder="e.g. Clean bathroom"
-                placeholderTextColor={colors.mutedForeground}
-                value={newChoreTitle}
-                onChangeText={setNewChoreTitle}
-                autoFocus
-              />
-
-              <Text style={[styles.addChoreLabel, { color: colors.mutedForeground }]}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }} style={{ marginBottom: 6 }}>
-                {CATEGORIES.map((cat) => {
-                  const selected = newChoreCategory === cat.key;
-                  return (
-                    <TouchableOpacity
-                      key={cat.key}
-                      style={[
-                        styles.addChoreCatChip,
-                        {
-                          backgroundColor: selected ? colors.primary + "22" : colors.secondary,
-                          borderColor: selected ? colors.primary : colors.border,
-                        },
-                      ]}
-                      onPress={() => setNewChoreCategory(cat.key)}
-                    >
-                      <Feather name={cat.icon} size={14} color={selected ? colors.primary : colors.mutedForeground} />
-                      <Text
-                        style={{
-                          color: selected ? colors.primary : colors.mutedForeground,
-                          fontFamily: "Inter_600SemiBold",
-                          fontSize: 12,
-                          marginLeft: 4,
-                        }}
-                      >
-                        {cat.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {pointsEnabled && <><Text style={[styles.addChoreLabel, { color: colors.mutedForeground }]}>Points ({newChorePoints})</Text>
-              <View style={styles.addChorePointsRow}>
-                {POINTS_OPTIONS.map((p) => {
-                  const selected = newChorePoints === p;
-                  return (
-                    <TouchableOpacity
-                      key={p}
-                      style={[
-                        styles.addChorePointsChip,
-                        {
-                          backgroundColor: selected ? colors.primary : colors.secondary,
-                          borderColor: selected ? colors.primary : colors.border,
-                        },
-                      ]}
-                      onPress={() => setNewChorePoints(p)}
-                    >
-                      <Text
-                        style={{
-                          color: selected ? "#fff" : colors.mutedForeground,
-                          fontFamily: "Inter_600SemiBold",
-                          fontSize: 13,
-                        }}
-                      >
-                        {p}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View></>}
-            </ScrollView>
-
-            {/* Sticky footer — primary action */}
-            <View
-              style={[
-                styles.addChoreFooter,
-                {
-                  backgroundColor: colors.background,
-                  borderTopColor: colors.border,
-                  paddingBottom: Math.max(insets.bottom, 12) + 4,
-                },
-              ]}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.addChoreSubmit,
-                  {
-                    backgroundColor: newChoreTitle.trim() && addChoreTargetId ? colors.primary : colors.muted,
-                  },
-                ]}
-                disabled={!newChoreTitle.trim() || !addChoreTargetId}
-                onPress={submitAddChore}
-              >
-                <Text style={[styles.addChoreSubmitText, { color: newChoreTitle.trim() && addChoreTargetId ? "#fff" : colors.mutedForeground }]}>
-                  Add Chore
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <ManualChoreForm
+              key={editingChore?.id ?? `${showAddChoreModal}-${addChoreTargetId ?? "self"}`}
+              initialAssigneeId={addChoreTargetId ?? currentUserId}
+              initialChore={editingChore}
+              onCreated={closeAddChoreSheet}
+            />
           </KeyboardAvoidingView>
         </Animated.View>
       </Modal>

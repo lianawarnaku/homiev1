@@ -16,6 +16,8 @@ export type ExternalTaskChore = {
   title: string;
   dueDate: string;
   category?: string;
+  description?: string;
+  recurrence?: string;
   assignedToName?: string;
   points?: number;
   includePoints?: boolean;
@@ -122,6 +124,8 @@ function taskFingerprint(chore: ExternalTaskChore) {
     title: chore.title.trim(),
     dueDate: new Date(chore.dueDate).toISOString(),
     category: chore.category ?? "",
+    description: chore.description ?? "",
+    recurrence: chore.recurrence ?? "",
     assignedToName: chore.assignedToName ?? "",
   });
 }
@@ -131,6 +135,8 @@ function reminderDetails(chore: ExternalTaskChore): Calendar.Reminder {
     "Added from SweetMate",
     chore.assignedToName ? `Assigned to: ${chore.assignedToName}` : null,
     chore.category ? `Category: ${chore.category}` : null,
+    chore.recurrence ? `Repeats: ${chore.recurrence}` : null,
+    chore.description || null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -295,6 +301,51 @@ async function exportOne(
   return "created";
 }
 
+export async function updateMappedReminderIfPresent(
+  userScope: string,
+  chore: ExternalTaskChore,
+): Promise<boolean> {
+  if (Platform.OS !== "ios") return false;
+  const key = mappingKey(userScope, chore.id);
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) return false;
+  try {
+    const mapping = JSON.parse(raw) as StoredExternalTask;
+    if (mapping.provider !== "ios-reminders" || !mapping.externalId) return false;
+    const fingerprint = taskFingerprint(chore);
+    if (mapping.fingerprint === fingerprint) return true;
+    await Calendar.updateReminderAsync(mapping.externalId, reminderDetails(chore));
+    await AsyncStorage.setItem(key, JSON.stringify({ ...mapping, fingerprint }));
+    return true;
+  } catch (error) {
+    if (looksLikeMissingReminder(error)) {
+      await AsyncStorage.removeItem(key);
+      return false;
+    }
+    throw error;
+  }
+}
+
+export async function removeMappedReminderIfPresent(
+  userScope: string,
+  choreId: string,
+): Promise<boolean> {
+  if (Platform.OS !== "ios") return false;
+  const key = mappingKey(userScope, choreId);
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) return false;
+  try {
+    const mapping = JSON.parse(raw) as StoredExternalTask;
+    if (mapping.provider === "ios-reminders" && mapping.externalId) {
+      await Calendar.deleteReminderAsync(mapping.externalId);
+    }
+  } catch (error) {
+    if (!looksLikeMissingReminder(error)) throw error;
+  }
+  await AsyncStorage.removeItem(key);
+  return true;
+}
+
 export async function exportChoresToExternalTasks(
   userScope: string,
   chores: ExternalTaskChore[],
@@ -347,6 +398,8 @@ export async function openChoreInGoogleCalendar(chore: ExternalTaskChore) {
     "Added from SweetMate",
     chore.assignedToName ? `Assigned to: ${chore.assignedToName}` : null,
     chore.category ? `Category: ${chore.category}` : null,
+    chore.recurrence ? `Repeats: ${chore.recurrence}` : null,
+    chore.description || null,
     chore.includePoints && chore.points ? `Points: +${chore.points}` : null,
   ]
     .filter(Boolean)

@@ -13,7 +13,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -25,8 +24,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState } from "@/components/EmptyState";
 import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
+import { ManualChoreForm } from "@/components/ManualChoreForm";
 import {
   type ChoreCategory,
+  type Chore,
   useAppContextSelector,
 } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
@@ -36,6 +37,7 @@ import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import {
   exportChoreToDestinations,
   getExternalTaskDestination,
+  removeMappedReminderIfPresent,
   setExternalTaskDestination,
   type ExternalTaskDestination,
 } from "@/lib/externalTasks";
@@ -109,12 +111,15 @@ interface ChoreRowProps {
     completed: boolean;
     points: number;
     category: ChoreCategory;
+    recurring?: "daily" | "weekly" | "biweekly" | "monthly";
+    assignmentMode?: "specific-person" | "round-robin" | "unassigned";
   };
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
   onAddToCalendar: () => Promise<boolean>;
   onChangeCalendarDestination: () => void;
   calendarDestinationLabel: string;
+  onManage?: () => void;
 }
 
 function ChoreRow({
@@ -124,6 +129,7 @@ function ChoreRow({
   onAddToCalendar,
   onChangeCalendarDestination,
   calendarDestinationLabel,
+  onManage,
 }: ChoreRowProps) {
   const colors = useTheme();
   const pointsEnabled = useAppContextSelector(
@@ -279,7 +285,14 @@ function ChoreRow({
         <Feather name={cat.icon} size={14} color={colors.primary} />
       </View>
 
-      <View style={styles.choreInfo}>
+      <TouchableOpacity
+        style={styles.choreInfo}
+        activeOpacity={onManage ? 0.65 : 1}
+        delayLongPress={450}
+        onLongPress={onManage}
+        accessibilityRole={onManage ? "button" : undefined}
+        accessibilityLabel={onManage ? `Manage ${chore.title}` : undefined}
+      >
         <Text
           style={[
             styles.choreTitle,
@@ -295,15 +308,29 @@ function ChoreRow({
         <View style={styles.choreMeta}>
           <Text style={[styles.dueDateText, { color: dueDateColor }]}>
             {formatDueDate(chore.dueDate)}
+            {chore.recurring ? ` · ${chore.recurring}` : ""}
+            {chore.assignmentMode === "round-robin" ? " · Round Robin" : ""}
           </Text>
         </View>
-      </View>
+      </TouchableOpacity>
 
       {pointsEnabled && <View style={[styles.pointsBadge, { backgroundColor: colors.primary + "18" }]}>
         <Text style={[styles.pointsText, { color: colors.primary }]}>
           +{chore.points}
         </Text>
       </View>}
+
+      {onManage && (
+        <TouchableOpacity
+          onPress={onManage}
+          accessibilityRole="button"
+          accessibilityLabel={`More actions for ${chore.title}`}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={styles.calBtn}
+        >
+          <Feather name="more-vertical" size={17} color={colors.mutedForeground} />
+        </TouchableOpacity>
+      )}
 
       <TouchableOpacity
         onPress={handleCalendar}
@@ -366,20 +393,20 @@ export default function MyChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const { scrollBottomPadding } = useFloatingActionMetrics();
-  const { currentUserId, chores, roommates, completeChore, deleteChore, addChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled } =
+  const { currentUserId, chores, roommates, completeChore, deleteChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
     useAppContextSelector((context) => ({
       currentUserId: context.currentUserId,
       chores: context.chores,
       roommates: context.roommates,
       completeChore: context.completeChore,
       deleteChore: context.deleteChore,
-      addChore: context.addChore,
       essentialsAssignees: context.essentialsAssignees,
       setEssentialAssignee: context.setEssentialAssignee,
       shoppingLists: context.shoppingLists,
       shoppingItems: context.shoppingItems,
       toggleShoppingItem: context.toggleShoppingItem,
       pointsEnabled: context.pointsEnabled,
+      isHost: context.isHost,
     }));
 
   const currentUser = roommates.find((r) => r.id === currentUserId);
@@ -388,6 +415,7 @@ export default function MyChoresScreen() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
 
   // Full-screen slide-up animation for the Add Chore modal (matches New IOU).
   const addChoreTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -409,15 +437,16 @@ export default function MyChoresScreen() {
       duration: 260,
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished) setShowModal(false);
+      if (finished) {
+        setShowModal(false);
+        setEditingChoreId(null);
+      }
     });
   };
   const addChoreDragHandlers = useDraggableSheet(addChoreTranslateY, () => {
     setShowModal(false);
+    setEditingChoreId(null);
   });
-  const [newTitle, setNewTitle] = useState("");
-  const [newCategory, setNewCategory] = useState<ChoreCategory>("cleaning");
-  const [newPoints, setNewPoints] = useState("20");
   const [calendarDestination, setCalendarDestinationState] =
     useState<ExternalTaskDestination | null | undefined>(undefined);
 
@@ -589,6 +618,69 @@ export default function MyChoresScreen() {
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
+  const editingChore = editingChoreId
+    ? chores.find((chore) => chore.id === editingChoreId)
+    : undefined;
+  const canManageChore = (chore: Chore) =>
+    isHost || chore.creatorId === currentUserId;
+  const confirmDeleteChore = (chore: Chore) => {
+    const remove = (scope: "occurrence" | "future" | "series") => {
+      if (deleteChore(chore.id, scope)) {
+        void removeMappedReminderIfPresent(currentUserId, chore.id).catch((error) =>
+          reportRuntimeError("remove mapped reminder after chore deletion", error, {
+            choreId: chore.id,
+          }),
+        );
+      } else {
+        Alert.alert("Not allowed", "Only the chore creator or Sweet host can delete this chore.");
+      }
+    };
+    if (chore.recurrenceSeriesId || chore.recurring) {
+      Alert.alert(
+        "Delete recurring chore?",
+        "Choose how much of this recurring chore to remove. Completed history is preserved unless you delete the entire series.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "This occurrence", onPress: () => remove("occurrence") },
+          { text: "This and future", onPress: () => remove("future") },
+          { text: "Entire series", style: "destructive", onPress: () => remove("series") },
+        ],
+      );
+      return;
+    }
+    Alert.alert(
+      "Delete chore?",
+      "This will remove the chore for everyone in your Sweet.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => remove("occurrence") },
+      ],
+    );
+  };
+  const openChoreActions = (chore: Chore) => {
+    if (!canManageChore(chore)) return;
+    const edit = () => {
+      setEditingChoreId(chore.id);
+      setShowModal(true);
+    };
+    Alert.alert(
+      chore.title,
+      "Manage this chore",
+      Platform.OS === "android"
+        ? [
+            { text: "Edit / Reassign", onPress: edit },
+            { text: "Delete", style: "destructive", onPress: () => confirmDeleteChore(chore) },
+            { text: "Cancel", style: "cancel" },
+          ]
+        : [
+            { text: "Edit chore", onPress: edit },
+            { text: "Reassign chore", onPress: edit },
+            { text: "Change recurrence", onPress: edit },
+            { text: "Delete chore", style: "destructive", onPress: () => confirmDeleteChore(chore) },
+            { text: "Cancel", style: "cancel" },
+          ],
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -865,6 +957,7 @@ export default function MyChoresScreen() {
             onComplete={completeChore}
             onDelete={deleteChore}
             calendarDestinationLabel={calendarDestinationLabel}
+            onManage={canManageChore(item) ? () => openChoreActions(item) : undefined}
             onChangeCalendarDestination={() => {
               void chooseCalendarDestination(true);
             }}
@@ -887,6 +980,8 @@ export default function MyChoresScreen() {
                     title: item.title,
                     dueDate: item.dueDate,
                     category: item.category,
+                    description: item.description,
+                    recurrence: item.recurring,
                     assignedToName: currentUser?.name ?? "You",
                     points: item.points,
                     includePoints: pointsEnabled,
@@ -997,7 +1092,10 @@ export default function MyChoresScreen() {
 
       <FloatingActionButton
         accessibilityLabel="Add chore"
-        onPress={() => setShowModal(true)}
+        onPress={() => {
+          setEditingChoreId(null);
+          setShowModal(true);
+        }}
       />
 
       <Modal visible={showModal} transparent animationType="none" onRequestClose={closeAddChore}>
@@ -1017,9 +1115,11 @@ export default function MyChoresScreen() {
           >
             <View style={[styles.sheetHandle, { backgroundColor: colors.border, top: insets.top + 5 }]} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.addChoreHeaderTitle, { color: colors.foreground }]}>Add Chore</Text>
+              <Text style={[styles.addChoreHeaderTitle, { color: colors.foreground }]}>
+                {editingChore ? "Edit Chore" : "Add Chore"}
+              </Text>
               <Text style={[styles.addChoreHeaderSub, { color: colors.mutedForeground }]}>
-                Log something for yourself
+                {editingChore ? "Update assignment, schedule, or details" : "Assign it to yourself or a Sweetmate"}
               </Text>
             </View>
             <TouchableOpacity
@@ -1035,133 +1135,12 @@ export default function MyChoresScreen() {
             behavior={Platform.OS === "ios" ? "padding" : undefined}
             style={{ flex: 1 }}
           >
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.addChoreBody}
-            >
-              <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Task Name</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border },
-                ]}
-                placeholder="e.g. Clean bathroom"
-                placeholderTextColor={colors.mutedForeground}
-                value={newTitle}
-                onChangeText={setNewTitle}
-                autoFocus
-              />
-
-              <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Category</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.categoryScroll}
-              >
-                {CATEGORIES.map((cat) => {
-                  const selected = newCategory === cat.key;
-                  return (
-                    <TouchableOpacity
-                      key={cat.key}
-                      style={[
-                        styles.catChip,
-                        {
-                          backgroundColor: selected ? colors.primary + "22" : colors.secondary,
-                          borderColor: selected ? colors.primary : colors.border,
-                        },
-                      ]}
-                      onPress={() => setNewCategory(cat.key)}
-                    >
-                      <Feather
-                        name={cat.icon}
-                        size={14}
-                        color={selected ? colors.primary : colors.mutedForeground}
-                      />
-                      <Text
-                        style={[
-                          styles.catChipText,
-                          { color: selected ? colors.primary : colors.mutedForeground },
-                        ]}
-                      >
-                        {cat.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {pointsEnabled && <><Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-                Points ({newPoints})
-              </Text>
-              <View style={styles.pointsRow}>
-                {["5", "10", "15", "20", "25", "30"].map((p) => {
-                  const selected = newPoints === p;
-                  return (
-                    <TouchableOpacity
-                      key={p}
-                      style={[
-                        styles.pointsChip,
-                        {
-                          backgroundColor: selected ? colors.primary : colors.secondary,
-                          borderColor: selected ? colors.primary : colors.border,
-                        },
-                      ]}
-                      onPress={() => setNewPoints(p)}
-                    >
-                      <Text
-                        style={{
-                          color: selected ? "#fff" : colors.mutedForeground,
-                          fontFamily: "Inter_600SemiBold",
-                          fontSize: 13,
-                        }}
-                      >
-                        {p}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View></>}
-            </ScrollView>
-
-            {/* Sticky footer — primary action */}
-            <View
-              style={[
-                styles.addChoreFooter,
-                {
-                  backgroundColor: colors.background,
-                  borderTopColor: colors.border,
-                  paddingBottom: Math.max(insets.bottom, 12) + 4,
-                },
-              ]}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.addChoreSubmit,
-                  { backgroundColor: newTitle.trim() ? colors.primary : colors.muted },
-                ]}
-                disabled={!newTitle.trim()}
-                onPress={() => {
-                  addChore({
-                    title: newTitle.trim(),
-                    assignedTo: currentUserId,
-                    dueDate: daysFromNow(1),
-                    completed: false,
-                    points: parseInt(newPoints, 10),
-                    category: newCategory,
-                  });
-                  setNewTitle("");
-                  setNewCategory("cleaning");
-                  setNewPoints("20");
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                  closeAddChore();
-                }}
-              >
-                <Text style={[styles.addChoreSubmitText, { color: newTitle.trim() ? "#fff" : colors.mutedForeground }]}>
-                  Add Chore
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <ManualChoreForm
+              key={editingChore?.id ?? (showModal ? "new-open" : "new-closed")}
+              initialAssigneeId={editingChore?.assignedTo ?? currentUserId}
+              initialChore={editingChore}
+              onCreated={closeAddChore}
+            />
           </KeyboardAvoidingView>
         </Animated.View>
       </Modal>

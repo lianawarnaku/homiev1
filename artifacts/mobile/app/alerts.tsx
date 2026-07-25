@@ -26,21 +26,19 @@ export default function AlertsScreen() {
   const {
     currentProposedChart, chartApprovals, currentUserId, roommates,
     memberPreferences, approveProposedChart, forceApproveProposedChart,
-    proposeChart, isHost, nudges, chores, acknowledgeNudge,
+    proposeChart, isHost, acknowledgeNudge,
     appAlerts, markAlertRead, markAllAlertsRead,
   } = useAppContext();
   const [busy, setBusy] = useState(false);
-  const [dismissingNudgeId, setDismissingNudgeId] = useState<string | null>(null);
   const proposal = currentProposedChart?.status === "pending" ? currentProposedChart : null;
-  const unseenNudges = nudges.filter(
-    (nudge) => nudge.toRoommateId === currentUserId && !nudge.seen
+  const visibleAlerts = appAlerts.filter(
+    (alert) => !alert.recipientId || alert.recipientId === currentUserId,
   );
   const feedItems = [
     ...(proposal ? [{ type: "proposal" as const, id: proposal.id }] : []),
-    ...unseenNudges.map((nudge) => ({ type: "nudge" as const, id: nudge.id, nudge })),
-    ...appAlerts.map((alert) => ({ type: "informational" as const, id: alert.id, alert })),
+    ...visibleAlerts.map((alert) => ({ type: "informational" as const, id: alert.id, alert })),
   ];
-  const unreadCount = appAlerts.filter((alert) => !alert.readAt).length;
+  const unreadCount = visibleAlerts.filter((alert) => !alert.readAt).length;
   const myApproval = chartApprovals.find((approval) => approval.memberId === currentUserId);
   const tasks = proposal?.payload.generatedTasks ?? [];
 
@@ -67,19 +65,6 @@ export default function AlertsScreen() {
       });
       await proposeChart(payload);
     });
-  };
-
-  const dismissNudge = async (nudgeId: string) => {
-    setDismissingNudgeId(nudgeId);
-    try {
-      await acknowledgeNudge(nudgeId);
-      hapticSuccess();
-    } catch {
-      hapticError();
-      Alert.alert("Unable to dismiss nudge", "Please check your connection and try again.");
-    } finally {
-      setDismissingNudgeId(null);
-    }
   };
 
   return (
@@ -110,13 +95,22 @@ export default function AlertsScreen() {
                 feedItem.alert.type === "overdue-chore" ? "clock" :
                 feedItem.alert.type === "expense" ? "dollar-sign" :
                 feedItem.alert.type === "borrowing" ? "repeat" :
+                feedItem.alert.type === "nudge" ? "bell" :
                 feedItem.alert.type === "membership" ? "user-plus" : "info";
               return (
                 <TouchableOpacity
                   key={`information:${feedItem.id}`}
                   accessibilityRole="button"
                   accessibilityLabel={`${feedItem.alert.readAt ? "" : "Unread "}${feedItem.alert.title}`}
-                  onPress={() => markAlertRead(feedItem.id)}
+                  onPress={() => {
+                    markAlertRead(feedItem.id);
+                    if (feedItem.alert.type === "nudge") {
+                      const nudgeId = feedItem.alert.id.replace(/^nudge:/, "");
+                      void acknowledgeNudge(nudgeId).catch(() => {
+                        hapticError();
+                      });
+                    }
+                  }}
                   activeOpacity={0.78}
                   style={[styles.nudgeCard, { backgroundColor: colors.card, borderColor: feedItem.alert.readAt ? colors.border : colors.primary }]}
                 >
@@ -132,37 +126,6 @@ export default function AlertsScreen() {
                     <Text style={[styles.meta, { color: colors.mutedForeground }]}>{relativeTime(feedItem.alert.createdAt)}</Text>
                   </View>
                 </TouchableOpacity>
-              );
-            }
-            if (feedItem.type === "nudge") {
-              const chore = chores.find((value) => value.id === feedItem.nudge.choreId);
-              const dismissing = dismissingNudgeId === feedItem.id;
-              return (
-                <View
-                  key={`nudge:${feedItem.id}`}
-                  style={[styles.nudgeCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                >
-                  <View style={[styles.nudgeIcon, { backgroundColor: colors.primary + "14" }]}>
-                    <Feather name="bell" size={19} color={colors.primary} />
-                  </View>
-                  <View style={styles.nudgeCopy}>
-                    <Text style={[styles.nudgeTitle, { color: colors.foreground }]}>
-                      You&apos;ve been nudged about &quot;{chore?.title ?? "a chore"}&quot;
-                    </Text>
-                    <Text style={[styles.meta, { color: colors.mutedForeground }]}>
-                      {relativeTime(feedItem.nudge.sentAt)}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Dismiss nudge"
-                    disabled={dismissingNudgeId !== null}
-                    onPress={() => void dismissNudge(feedItem.id)}
-                    style={[styles.dismiss, { borderColor: colors.border, opacity: dismissing ? 0.55 : 1 }]}
-                  >
-                    <Feather name="check" size={16} color={colors.primary} />
-                  </TouchableOpacity>
-                </View>
               );
             }
             if (!proposal) return null;

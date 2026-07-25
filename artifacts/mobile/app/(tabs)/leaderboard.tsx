@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { Redirect } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   FlatList,
   Platform,
@@ -16,8 +16,6 @@ import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { HeaderActions } from "@/components/HeaderActions";
 import { useAppContextSelector } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
-
-type Period = "weekly" | "alltime";
 
 const MEDALS = ["#FFD700", "#C0C0C0", "#CD7F32"] as const;
 const MEDAL_LABELS = ["1st", "2nd", "3rd"] as const;
@@ -35,15 +33,17 @@ const HOME_ICONS: (keyof typeof Feather.glyphMap)[] = [
 export default function LeaderboardScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, currentUserId, pointsEnabled } =
+  const { roommates, chores, currentUserId, pointsEnabled, leaderboardPeriod, setLeaderboardPeriod } =
     useAppContextSelector((context) => ({
       roommates: context.roommates,
       chores: context.chores,
       currentUserId: context.currentUserId,
       pointsEnabled: context.pointsEnabled,
+      leaderboardPeriod: context.leaderboardPeriod,
+      setLeaderboardPeriod: context.setLeaderboardPeriod,
     }));
 
-  const [period, setPeriod] = useState<Period>("weekly");
+  const period = leaderboardPeriod;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
@@ -102,7 +102,7 @@ export default function LeaderboardScreen() {
           <HeaderActions />
         </View>
         <View style={styles.periodToggle}>
-          {(["weekly", "alltime"] as Period[]).map((p) => (
+          {(["weekly", "alltime"] as const).map((p) => (
             <TouchableOpacity
               key={p}
               style={[
@@ -112,7 +112,7 @@ export default function LeaderboardScreen() {
                     period === p ? colors.primary : "transparent",
                 },
               ]}
-              onPress={() => setPeriod(p)}
+              onPress={() => setLeaderboardPeriod(p)}
             >
               <Text
                 style={[

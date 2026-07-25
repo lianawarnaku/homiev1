@@ -43,6 +43,30 @@ function formatDue(dueDate: string) {
   return `Due in ${diff}d`;
 }
 
+function dateInput(daysFromToday = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromToday);
+  return date.toISOString().slice(0, 10);
+}
+
+function parseDateInput(value: string, endOfDay = false) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    endOfDay ? 23 : 12,
+    endOfDay ? 59 : 0,
+  );
+  return Number.isFinite(date.getTime()) &&
+    date.getFullYear() === Number(match[1]) &&
+    date.getMonth() === Number(match[2]) - 1 &&
+    date.getDate() === Number(match[3])
+    ? date.toISOString()
+    : null;
+}
+
 // The borrow screen? How it looks?
 
 export default function BorrowScreen() {
@@ -57,6 +81,7 @@ export default function BorrowScreen() {
     updateBorrowItem,
     returnBorrowItem,
     deleteBorrowItem,
+    isHost,
   } = useAppContextSelector((context) => ({
     borrowItems: context.borrowItems,
     roommates: context.roommates,
@@ -65,6 +90,7 @@ export default function BorrowScreen() {
     updateBorrowItem: context.updateBorrowItem,
     returnBorrowItem: context.returnBorrowItem,
     deleteBorrowItem: context.deleteBorrowItem,
+    isHost: context.isHost,
   }));
 
   const { confirm } = useConfirm();
@@ -73,10 +99,11 @@ export default function BorrowScreen() {
   // being edited; the same modal UI is reused for both flows.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [item, setItem] = useState("");
-  const [borrowedFrom, setBorrowedFrom] = useState(
-    roommates.find((r) => r.id !== currentUserId)?.id ?? ""
-  );
-  const [dueDays, setDueDays] = useState("7");
+  const [borrowedFrom, setBorrowedFrom] = useState("");
+  const [borrowedBy, setBorrowedBy] = useState(currentUserId);
+  const [borrowedDate, setBorrowedDate] = useState(() => dateInput());
+  const [dueDate, setDueDate] = useState(() => dateInput(7));
+  const [formError, setFormError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   // Collapse the "Returned" section into a single tile when there are more
   // than 3 returned items. Tap the tile to expand.
@@ -97,8 +124,11 @@ export default function BorrowScreen() {
   const resetForm = () => {
     setItem("");
     setNotes("");
-    setDueDays("7");
-    setBorrowedFrom(roommates.find((r) => r.id !== currentUserId)?.id ?? "");
+    setBorrowedFrom("");
+    setBorrowedBy(currentUserId);
+    setBorrowedDate(dateInput());
+    setDueDate(dateInput(7));
+    setFormError(null);
     setEditingId(null);
   };
 
@@ -107,58 +137,62 @@ export default function BorrowScreen() {
     resetForm();
   };
 
-  // Given an existing borrow's dueDate, pick the closest chip value so the
-  // "Return in Xd" row reflects the current schedule when the modal opens.
-  const nearestDueChip = (dueDate: string): string => {
-    const days = daysBetween(new Date().toISOString(), dueDate);
-    const options = [1, 3, 7, 14, 30];
-    let best = options[0];
-    let bestDiff = Math.abs(days - options[0]);
-    for (const o of options) {
-      const d = Math.abs(days - o);
-      if (d < bestDiff) {
-        bestDiff = d;
-        best = o;
-      }
-    }
-    return String(best);
-  };
-
   const openEdit = (b: BorrowItem) => {
     setEditingId(b.id);
     setItem(b.item);
     setBorrowedFrom(b.borrowedFrom);
-    setDueDays(nearestDueChip(b.dueDate));
+    setBorrowedBy(b.borrowedBy ?? currentUserId);
+    setBorrowedDate(new Date(b.borrowedAt).toISOString().slice(0, 10));
+    setDueDate(new Date(b.dueDate).toISOString().slice(0, 10));
     setNotes(b.notes ?? "");
     setShowModal(true);
   };
 
   const handleSave = () => {
+    const borrowedAt = parseDateInput(borrowedDate);
+    const due = parseDateInput(dueDate, true);
+    if (!item.trim() || !borrowedFrom || !borrowedBy) {
+      setFormError("Choose an owner, borrower, and item.");
+      return;
+    }
+    if (borrowedFrom === borrowedBy) {
+      setFormError("Owner and borrower must be different Sweetmates.");
+      return;
+    }
     if (
-      !item.trim() ||
-      !borrowedFrom ||
-      borrowedFrom === currentUserId ||
-      !roommates.some((member) => member.id === borrowedFrom)
-    ) return;
-    const due = new Date();
-    due.setDate(due.getDate() + parseInt(dueDays, 10));
+      !roommates.some((member) => member.id === borrowedFrom) ||
+      !roommates.some((member) => member.id === borrowedBy) ||
+      !borrowedAt ||
+      !due ||
+      new Date(due) < new Date(borrowedAt)
+    ) {
+      setFormError("Enter valid dates and active Sweetmates.");
+      return;
+    }
+    let saved: boolean;
     if (editingId) {
-      updateBorrowItem(editingId, {
+      saved = updateBorrowItem(editingId, {
         item: item.trim(),
         borrowedFrom,
-        dueDate: due.toISOString(),
+        borrowedBy,
+        borrowedAt,
+        dueDate: due,
         notes: notes.trim() || undefined,
       });
     } else {
-      addBorrowItem({
+      saved = Boolean(addBorrowItem({
         item: item.trim(),
-        borrowedBy: currentUserId,
+        borrowedBy,
         borrowedFrom,
-        borrowedAt: new Date().toISOString(),
-        dueDate: due.toISOString(),
+        borrowedAt,
+        dueDate: due,
         returned: false,
         notes: notes.trim() || undefined,
-      });
+      }));
+    }
+    if (!saved) {
+      setFormError("This borrowing record could not be saved.");
+      return;
     }
     closeModal();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -185,7 +219,7 @@ export default function BorrowScreen() {
             Borrowing
           </Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-            Never forget what you borrowed
+            Track shared items between Sweetmates
           </Text>
         </View>
         <View style={styles.headerButtons}>
@@ -228,8 +262,8 @@ export default function BorrowScreen() {
           returnedBorrows.length > 3 && !showAllReturned && activeBorrows.length === 0 ? null : (
             <EmptyState
               icon="repeat"
-              title="Nothing borrowed"
-              subtitle="Track items you borrow from roommates"
+            title="Nothing borrowed"
+            subtitle="Track an item between any two Sweetmates"
             />
           )
         }
@@ -290,11 +324,45 @@ export default function BorrowScreen() {
             index === activeBorrows.length &&
             returnedBorrows.length > 0;
           const owner = roommates.find((r) => r.id === borrow.borrowedFrom);
+          const borrower = roommates.find((r) => r.id === borrow.borrowedBy);
+          const ownerName = owner?.name ?? borrow.ownerName ?? "Former Sweetmate";
+          const borrowerName = borrower?.name ?? borrow.borrowerName ?? "Former Sweetmate";
           const isOverdueItem =
             !borrow.returned && new Date(borrow.dueDate) < new Date();
           const dueText = borrow.returned
             ? `Returned ${new Date(borrow.returnedAt ?? "").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
             : formatDue(borrow.dueDate);
+          const isOwner = borrow.borrowedFrom === currentUserId;
+          const isBorrower = borrow.borrowedBy === currentUserId;
+          const canManageLegacy =
+            !borrow.creatorId && (isOwner || isBorrower);
+          const canManage =
+            isHost || borrow.creatorId === currentUserId || canManageLegacy;
+          const canUndoReturn = borrow.returned && (isOwner || isHost);
+          const canConfirmReturn =
+            !borrow.returned &&
+            Boolean(borrow.returnRequestedAt) &&
+            (isOwner || isHost);
+          const canRequestReturn =
+            !borrow.returned &&
+            !borrow.returnRequestedAt &&
+            (isBorrower || isOwner || isHost);
+          const showReturnAction =
+            canUndoReturn || canConfirmReturn || canRequestReturn || (isBorrower && Boolean(borrow.returnRequestedAt));
+          const returnActionDisabled =
+            isBorrower &&
+            !isOwner &&
+            !isHost &&
+            Boolean(borrow.returnRequestedAt);
+          const returnLabel = borrow.returned
+            ? "Undo"
+            : canConfirmReturn
+              ? "Confirm"
+              : borrow.returnRequestedAt
+                ? "Awaiting owner"
+                : isOwner || isHost
+                  ? "Mark returned"
+                  : "Request return";
 
           return (
             <>
@@ -383,12 +451,12 @@ export default function BorrowScreen() {
                           { color: colors.mutedForeground },
                         ]}
                       >
-                        From {owner.name}
+                        {borrowerName} borrowed from {ownerName}
                       </Text>
                     </View>
                   ) : (
                     <Text style={[styles.ownerText, { color: colors.mutedForeground }]}>
-                      From Former Sweetmate
+                      {borrowerName} borrowed from {ownerName}
                     </Text>
                   )}
                   {borrow.notes ? (
@@ -419,9 +487,7 @@ export default function BorrowScreen() {
                 </View>
 
                 <View style={styles.cardActions}>
-                  {/* Toggle: shows "Return" for active items, "Undo" for
-                      already-returned items so the user can flip them back. */}
-                  <TouchableOpacity
+                  {showReturnAction && <TouchableOpacity
                     style={[
                       styles.returnBtn,
                       borrow.returned
@@ -429,6 +495,7 @@ export default function BorrowScreen() {
                         : { backgroundColor: colors.success + "18", borderColor: colors.success + "44" },
                     ]}
                     onPress={() => handleReturn(borrow.id)}
+                    disabled={returnActionDisabled}
                   >
                     <Feather
                       name={borrow.returned ? "rotate-ccw" : "check"}
@@ -441,17 +508,28 @@ export default function BorrowScreen() {
                         { color: borrow.returned ? colors.mutedForeground : colors.success },
                       ]}
                     >
-                      {borrow.returned ? "Undo" : "Return"}
+                      {returnLabel}
                     </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                  </TouchableOpacity>}
+                  {canManage && <TouchableOpacity
+                    onPress={() => openEdit(borrow)}
+                    accessibilityLabel={`Edit ${borrow.item}`}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="edit-2" size={15} color={colors.mutedForeground} />
+                  </TouchableOpacity>}
+                  {canManage && <TouchableOpacity
                     onPress={() =>
-                      confirm("delete_borrow", "Delete", "Remove this item?", () => deleteBorrowItem(borrow.id), { confirmText: "Delete", destructive: true })
+                      confirm("delete_borrow", "Delete", "Remove this item?", () => {
+                        if (!deleteBorrowItem(borrow.id)) {
+                          Alert.alert("Not allowed", "Only the record creator or Sweet host can delete it.");
+                        }
+                      }, { confirmText: "Delete", destructive: true })
                     }
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Feather name="trash-2" size={15} color={colors.mutedForeground} />
-                  </TouchableOpacity>
+                  </TouchableOpacity>}
                 </View>
               </View>
             </>
@@ -478,11 +556,11 @@ export default function BorrowScreen() {
         >
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
-            Log Borrowed Item
+            {editingId ? "Edit Borrowing Record" : "Log Borrowing Transaction"}
           </Text>
 
           <Text style={[styles.label, { color: colors.mutedForeground }]}>
-            What did you borrow?
+            Item
           </Text>
           <TextInput
             style={[
@@ -500,16 +578,14 @@ export default function BorrowScreen() {
           />
 
           <Text style={[styles.label, { color: colors.mutedForeground }]}>
-            Borrowed from
+            Owner
           </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
           >
-            {roommates
-              .filter((r) => r.id !== currentUserId)
-              .map((r) => (
+            {roommates.map((r) => (
                 <TouchableOpacity
                   key={r.id}
                   style={[
@@ -539,34 +615,62 @@ export default function BorrowScreen() {
           </ScrollView>
 
           <Text style={[styles.label, { color: colors.mutedForeground }]}>
-            Return in
+            Borrower
           </Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            {["1", "3", "7", "14", "30"].map((d) => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+          >
+            {roommates.map((r) => (
               <TouchableOpacity
-                key={d}
+                key={r.id}
                 style={[
-                  styles.dueChip,
+                  styles.roommateChip,
                   {
                     backgroundColor:
-                      dueDays === d ? colors.primary : colors.secondary,
+                      borrowedBy === r.id ? r.color + "22" : colors.secondary,
                     borderColor:
-                      dueDays === d ? colors.primary : colors.border,
+                      borrowedBy === r.id ? r.color : colors.border,
                   },
                 ]}
-                onPress={() => setDueDays(d)}
+                onPress={() => setBorrowedBy(r.id)}
               >
+                <RoommateAvatar name={r.name} color={r.color} size={22} imageUri={r.avatarUri} />
                 <Text
                   style={{
-                    color: dueDays === d ? "#fff" : colors.mutedForeground,
+                    color: borrowedBy === r.id ? r.color : colors.mutedForeground,
                     fontFamily: "Inter_600SemiBold",
-                    fontSize: 12,
+                    fontSize: 13,
                   }}
                 >
-                  {d}d
+                  {r.id === currentUserId ? `${r.name} (You)` : r.name}
                 </Text>
               </TouchableOpacity>
             ))}
+          </ScrollView>
+
+          <View style={styles.dateRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Borrowed date</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
+                value={borrowedDate}
+                onChangeText={setBorrowedDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.mutedForeground}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Due date</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
+                value={dueDate}
+                onChangeText={setDueDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.mutedForeground}
+              />
+            </View>
           </View>
 
           <Text style={[styles.label, { color: colors.mutedForeground }]}>
@@ -587,22 +691,30 @@ export default function BorrowScreen() {
             onChangeText={setNotes}
           />
 
+          {formError && (
+            <Text style={[styles.notesText, { color: colors.destructive }]}>
+              {formError}
+            </Text>
+          )}
+
           <TouchableOpacity
             style={[
               styles.saveBtn,
               {
                 backgroundColor:
                   item.trim() &&
-                  borrowedFrom !== currentUserId &&
-                  roommates.some((member) => member.id === borrowedFrom)
+                  borrowedFrom &&
+                  borrowedBy &&
+                  borrowedFrom !== borrowedBy
                     ? colors.primary
                     : colors.muted,
               },
             ]}
             disabled={
               !item.trim() ||
-              borrowedFrom === currentUserId ||
-              !roommates.some((member) => member.id === borrowedFrom)
+              !borrowedFrom ||
+              !borrowedBy ||
+              borrowedFrom === borrowedBy
             }
             onPress={handleSave}
           >
@@ -617,6 +729,7 @@ export default function BorrowScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  dateRow: { flexDirection: "row", gap: 10 },
   header: {
     flexDirection: "row",
     alignItems: "flex-start",
