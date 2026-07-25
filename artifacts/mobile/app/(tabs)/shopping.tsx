@@ -92,10 +92,12 @@ export default function ShoppingScreen() {
 
   const [shopName, setShopName] = useState("");
   const [shopQty, setShopQty] = useState("1");
+  const [shopNeededBy, setShopNeededBy] = useState("");
   const [targetListId, setTargetListId] = useState<string | null>(null);
   const [showShoppingModal, setShowShoppingModal] = useState(false);
   const [showNewListModal, setShowNewListModal] = useState(false);
   const [newListName, setNewListName] = useState("");
+  const [newListDate, setNewListDate] = useState("");
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [assignPickerListId, setAssignPickerListId] = useState<string | null>(null);
 
@@ -130,9 +132,11 @@ export default function ShoppingScreen() {
       addedBy: currentUserId,
       completed: false,
       listId: targetListId,
+      neededByDate: /^\d{4}-\d{2}-\d{2}$/.test(shopNeededBy.trim()) ? shopNeededBy.trim() : undefined,
     });
     setShopName("");
     setShopQty("1");
+    setShopNeededBy("");
     setShowShoppingModal(false);
     setTargetListId(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -140,8 +144,12 @@ export default function ShoppingScreen() {
 
   const handleAddList = () => {
     if (!newListName.trim()) return;
-    addShoppingList(newListName.trim());
+    addShoppingList(
+      newListName.trim(),
+      /^\d{4}-\d{2}-\d{2}$/.test(newListDate.trim()) ? newListDate.trim() : undefined,
+    );
     setNewListName("");
+    setNewListDate("");
     setShowNewListModal(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -726,6 +734,16 @@ export default function ShoppingScreen() {
               value={shopQty}
               onChangeText={setShopQty}
             />
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>Needed by (optional)</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.mutedForeground}
+              value={shopNeededBy}
+              onChangeText={setShopNeededBy}
+              keyboardType="numbers-and-punctuation"
+              accessibilityHint="Dated items appear on the in-app calendar"
+            />
             <TouchableOpacity
               style={[styles.addBtn, { backgroundColor: shopName.trim() ? colors.primary : colors.border, marginTop: 8 }]}
               disabled={!shopName.trim()}
@@ -759,6 +777,16 @@ export default function ShoppingScreen() {
               value={newListName}
               onChangeText={setNewListName}
               autoFocus
+            />
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>Planned date (optional)</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.mutedForeground}
+              value={newListDate}
+              onChangeText={setNewListDate}
+              keyboardType="numbers-and-punctuation"
+              accessibilityHint="Dated lists appear on the in-app calendar"
             />
             <TouchableOpacity
               style={[styles.addBtn, { backgroundColor: newListName.trim() ? colors.primary : colors.border, marginTop: 8 }]}

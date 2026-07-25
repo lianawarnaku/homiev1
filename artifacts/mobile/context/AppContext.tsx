@@ -114,6 +114,8 @@ export interface ShoppingList {
   name: string;
   assignedTo?: string;
   pinned?: boolean;
+  /** Optional local calendar day (YYYY-MM-DD) for a planned shopping trip. */
+  plannedDate?: string;
   // NOTE: no `order` field — the array position in `shoppingLists` IS the
   // display order. Mutators below preserve the invariant "pinned lists first,
   // then unpinned lists" so consumers can render `shoppingLists` directly.
@@ -133,6 +135,8 @@ export interface ShoppingItem {
   assignedTo?: string[] | string;
   price?: number;
   convertedExpenseId?: string;
+  /** Optional local calendar day (YYYY-MM-DD) by which the item is needed. */
+  neededByDate?: string;
 }
 
 interface ShoppingSyncMeta {
@@ -362,7 +366,7 @@ interface AppContextType {
   settleExpense: (id: string) => void;
   deleteExpense: (id: string) => void;
   markPersonPaid: (expenseId: string, personId: string) => void;
-  addShoppingList: (name: string) => void;
+  addShoppingList: (name: string, plannedDate?: string) => void;
   reorderShoppingLists: (newIds: string[]) => void;
   pinShoppingList: (id: string, pinned: boolean) => void;
   deleteShoppingList: (id: string) => void;
@@ -2374,12 +2378,12 @@ export function AppProvider({
     setShoppingSyncMeta(next);
   }, [session?.user.id]);
 
-  const addShoppingList = useCallback((name: string) => {
+  const addShoppingList = useCallback((name: string, plannedDate?: string) => {
     const id = makeId();
     recordShoppingVersions("list", [id]);
     setShoppingLists((prev) => {
       // Insert at the TOP of the unpinned partition.
-      const newList: ShoppingList = { id, name };
+      const newList: ShoppingList = { id, name, plannedDate };
       const pinned = prev.filter((l) => l.pinned);
       const unpinned = prev.filter((l) => !l.pinned);
       return [...pinned, newList, ...unpinned];

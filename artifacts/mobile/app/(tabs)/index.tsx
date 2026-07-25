@@ -32,7 +32,6 @@ import {
 } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { success as hapticSuccess } from "@/lib/haptics";
-import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import {
   exportChoreToDestinations,
@@ -42,6 +41,13 @@ import {
   type ExternalTaskDestination,
 } from "@/lib/externalTasks";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
+import {
+  deriveCalendarItems,
+  groupCalendarItemsByDate,
+  localDateKey,
+  type CalendarItem,
+  type CalendarItemType,
+} from "@/lib/calendarItems";
 
 const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feather.glyphMap }[] = [
   { key: "cleaning", label: "Cleaning", icon: "wind" },
@@ -115,7 +121,6 @@ interface ChoreRowProps {
     assignmentMode?: "specific-person" | "round-robin" | "unassigned";
   };
   onComplete: (id: string) => void;
-  onDelete: (id: string) => void;
   onAddToCalendar: () => Promise<boolean>;
   onChangeCalendarDestination: () => void;
   calendarDestinationLabel: string;
@@ -125,7 +130,6 @@ interface ChoreRowProps {
 function ChoreRow({
   chore,
   onComplete,
-  onDelete,
   onAddToCalendar,
   onChangeCalendarDestination,
   calendarDestinationLabel,
@@ -135,7 +139,6 @@ function ChoreRow({
   const pointsEnabled = useAppContextSelector(
     (context) => context.pointsEnabled,
   );
-  const { confirm } = useConfirm();
   const cat = CATEGORIES.find((c) => c.key === chore.category) ?? CATEGORIES[5];
   const overdue = isOverdue(chore.dueDate, chore.completed);
   const [calState, setCalState] = useState<
@@ -320,18 +323,6 @@ function ChoreRow({
         </Text>
       </View>}
 
-      {onManage && (
-        <TouchableOpacity
-          onPress={onManage}
-          accessibilityRole="button"
-          accessibilityLabel={`More actions for ${chore.title}`}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={styles.calBtn}
-        >
-          <Feather name="more-vertical" size={17} color={colors.mutedForeground} />
-        </TouchableOpacity>
-      )}
-
       <TouchableOpacity
         onPress={handleCalendar}
         onLongPress={onChangeCalendarDestination}
@@ -362,14 +353,17 @@ function ChoreRow({
         />
       </TouchableOpacity>
 
-      <TouchableOpacity
-        onPress={() =>
-          confirm("delete_chore", "Delete Chore", "Are you sure?", () => onDelete(chore.id), { confirmText: "Delete", destructive: true })
-        }
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
-        <Feather name="trash-2" size={16} color={colors.mutedForeground} />
-      </TouchableOpacity>
+      {onManage && (
+        <TouchableOpacity
+          onPress={onManage}
+          accessibilityRole="button"
+          accessibilityLabel="Task actions"
+          accessibilityHint={`Opens actions for ${chore.title}`}
+          style={styles.taskActionsButton}
+        >
+          <Feather name="more-vertical" size={19} color={colors.mutedForeground} />
+        </TouchableOpacity>
+      )}
       {/* Darkening overlay — fades in fast on top of the row so it darkens
           the instant the checkbox is tapped. */}
       <Animated.View
@@ -389,15 +383,100 @@ function ChoreRow({
   );
 }
 
+function CalendarDayDetails({
+  visible,
+  date,
+  items,
+  onClose,
+  onItemPress,
+}: {
+  visible: boolean;
+  date: Date;
+  items: CalendarItem[];
+  onClose: () => void;
+  onItemPress: (item: CalendarItem) => void;
+}) {
+  const colors = useTheme();
+  const groups: { type: CalendarItemType; title: string; items: CalendarItem[] }[] = [
+    { type: "chore", title: "Chores", items: items.filter((item) => item.type === "chore") },
+    { type: "shopping-item", title: "Shopping", items: items.filter((item) => item.type === "shopping-item" || item.type === "shopping-list") },
+    { type: "expense", title: "Expenses", items: items.filter((item) => item.type === "expense") },
+  ];
+  const icon = (type: CalendarItemType) =>
+    type === "chore" ? "check-square" : type === "expense" ? "dollar-sign" : "shopping-bag";
+  const formatAmount = (cents?: number) =>
+    cents === undefined ? "" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.dayModalBackdrop} activeOpacity={1} onPress={onClose} accessibilityLabel="Close scheduled items" />
+      <View style={[styles.dayModalSheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.dayModalHandle} />
+        <View style={styles.dayModalHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.dayModalTitle, { color: colors.foreground }]}>
+              {date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+            </Text>
+            <Text style={[styles.dayModalSubtitle, { color: colors.mutedForeground }]}>
+              {items.length === 0 ? "Nothing scheduled" : `${items.length} scheduled ${items.length === 1 ? "item" : "items"}`}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={[styles.dayModalClose, { backgroundColor: colors.muted }]} accessibilityLabel="Close">
+            <Feather name="x" size={18} color={colors.foreground} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={{ maxHeight: 430 }} contentContainerStyle={styles.dayModalContent}>
+          {items.length === 0 ? (
+            <View style={styles.dayEmpty}>
+              <Feather name="calendar" size={28} color={colors.mutedForeground} />
+              <Text style={[styles.previewEmpty, { color: colors.mutedForeground }]}>Nothing scheduled</Text>
+            </View>
+          ) : groups.filter((group) => group.items.length > 0).map((group) => (
+            <View key={group.type} style={styles.dayGroup}>
+              <Text style={[styles.dayGroupTitle, { color: colors.mutedForeground }]}>{group.title}</Text>
+              {group.items.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.dayItem, { borderColor: colors.border, backgroundColor: colors.background }]}
+                  onPress={() => onItemPress(item)}
+                  accessibilityLabel={`${group.title}: ${item.title}${item.completed ? ", completed" : ""}`}
+                >
+                  <View style={[styles.dayItemIcon, { backgroundColor: colors.secondary }]}>
+                    <Feather name={icon(item.type)} size={15} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.dayItemTitle, { color: colors.foreground, textDecorationLine: item.completed ? "line-through" : "none" }]}>
+                      {item.title}
+                    </Text>
+                    <Text style={[styles.dayItemDescription, { color: colors.mutedForeground }]} numberOfLines={2}>
+                      {[item.description, item.recurrenceLabel ? `Repeats ${item.recurrenceLabel}` : null].filter(Boolean).join(" · ")}
+                    </Text>
+                  </View>
+                  {item.amountCents !== undefined && (
+                    <Text style={[styles.dayItemAmount, { color: colors.foreground }]}>{formatAmount(item.amountCents)}</Text>
+                  )}
+                  <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
 export default function MyChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const { scrollBottomPadding } = useFloatingActionMetrics();
-  const { currentUserId, chores, roommates, completeChore, deleteChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
+  const { currentUserId, householdId, chores, roommates, expenses, completeChore, deleteChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
     useAppContextSelector((context) => ({
       currentUserId: context.currentUserId,
+      householdId: context.householdId,
       chores: context.chores,
       roommates: context.roommates,
+      expenses: context.expenses,
       completeChore: context.completeChore,
       deleteChore: context.deleteChore,
       essentialsAssignees: context.essentialsAssignees,
@@ -414,6 +493,7 @@ export default function MyChoresScreen() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [weekOffset, setWeekOffset] = useState(0);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
+  const [dayDetailsOpen, setDayDetailsOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
 
@@ -501,9 +581,32 @@ export default function MyChoresScreen() {
   );
 
   const myChores = useMemo(
-    () => chores.filter((chore) => chore.assignedTo === currentUserId),
-    [chores, currentUserId],
+    () => {
+      const personalChores = chores.filter(
+        (chore) =>
+          chore.assignedTo === currentUserId &&
+          (!householdId ||
+            !chore.householdId ||
+            chore.householdId === householdId),
+      );
+      return Array.from(
+        new Map(personalChores.map((chore) => [chore.id, chore])).values(),
+      );
+    },
+    [chores, currentUserId, householdId],
   );
+  const activePersonalChoreCount = useMemo(
+    () => myChores.reduce((count, chore) => count + (chore.completed ? 0 : 1), 0),
+    [myChores],
+  );
+  const displayedPersonalChoreCount =
+    activePersonalChoreCount > 99 ? "99+" : String(activePersonalChoreCount);
+  const personalChoreCountAccessibilityLabel =
+    activePersonalChoreCount === 0
+      ? "No incomplete chores in My Chart"
+      : `${activePersonalChoreCount} incomplete ${
+          activePersonalChoreCount === 1 ? "chore" : "chores"
+        } in My Chart`;
   const chooseCalendarDestination = (
     showSavedConfirmation = false,
   ): Promise<ExternalTaskDestination | null> =>
@@ -570,21 +673,6 @@ export default function MyChoresScreen() {
       return date;
     });
   }, [weekOffset]);
-  const selectedOpenCount = useMemo(
-    () =>
-      myChores.filter(
-        (chore) => !chore.completed && isSameDay(chore.dueDate, selectedDate),
-      ).length,
-    [myChores, selectedDate],
-  );
-  const selectedHouseholdChores = useMemo(
-    () => chores.filter((chore) => isSameDay(chore.dueDate, selectedDate)),
-    [chores, selectedDate],
-  );
-  const selectedHouseholdOpenCount = useMemo(
-    () => selectedHouseholdChores.filter((chore) => !chore.completed).length,
-    [selectedHouseholdChores],
-  );
   const monthDays = useMemo(() => {
     const first = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1, 12);
     const start = new Date(first);
@@ -595,6 +683,39 @@ export default function MyChoresScreen() {
       return date;
     });
   }, [selectedDate]);
+  const calendarRange = useMemo(() => {
+    const dates = [...weekDays, ...monthDays];
+    return {
+      start: new Date(Math.min(...dates.map((date) => date.getTime()))),
+      end: new Date(Math.max(...dates.map((date) => date.getTime()))),
+    };
+  }, [monthDays, weekDays]);
+  const calendarItems = useMemo(
+    () =>
+      deriveCalendarItems(
+        { chores, shoppingItems, shoppingLists, expenses, roommates, currentUserId, householdId },
+        calendarRange.start,
+        calendarRange.end,
+      ),
+    [calendarRange, chores, currentUserId, expenses, householdId, roommates, shoppingItems, shoppingLists],
+  );
+  const calendarItemsByDate = useMemo(
+    () => groupCalendarItemsByDate(calendarItems),
+    [calendarItems],
+  );
+  const selectedCalendarItems = calendarItemsByDate.get(localDateKey(selectedDate)) ?? [];
+  const selectCalendarDate = (date: Date) => {
+    setSelectedDate(date);
+    setFilter("day");
+    setDayDetailsOpen(true);
+    Haptics.selectionAsync();
+  };
+  const markerColor = (type: CalendarItemType, selected: boolean) => {
+    if (selected) return colors.primaryForeground;
+    if (type === "chore") return colors.warning;
+    if (type === "expense") return colors.destructive;
+    return colors.success;
+  };
   const filtered = useMemo(
     () =>
       myChores
@@ -754,10 +875,15 @@ export default function MyChoresScreen() {
                     <Feather name={calendarExpanded ? "chevron-up" : "chevron-down"} size={11} color={colors.mutedForeground} />
                   </View>
                 </TouchableOpacity>
-                <View style={[styles.todoBadge, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "35" }]}>
+                <View
+                  accessible
+                  accessibilityRole="text"
+                  accessibilityLabel={personalChoreCountAccessibilityLabel}
+                  style={[styles.todoBadge, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "35" }]}
+                >
                   <Feather name="check-circle" size={16} color={colors.primary} />
                   <Text style={[styles.todoBadgeText, { color: colors.primary }]}>
-                    {calendarExpanded ? selectedHouseholdOpenCount : selectedOpenCount} to-do
+                    {displayedPersonalChoreCount} to-do
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -780,8 +906,7 @@ export default function MyChoresScreen() {
                   {weekDays.map((date) => {
                   const selected = isSameDay(date, selectedDate);
                   const today = isSameDay(date, new Date());
-                  const dayChores = myChores.filter((chore) => isSameDay(chore.dueDate, date));
-                  const hasOpen = dayChores.some((chore) => !chore.completed);
+                  const dayItems = calendarItemsByDate.get(localDateKey(date)) ?? [];
                   return (
                     <TouchableOpacity
                       key={date.toISOString()}
@@ -790,17 +915,35 @@ export default function MyChoresScreen() {
                         selected && { backgroundColor: colors.primary },
                         !selected && today && { backgroundColor: colors.secondary },
                       ]}
-                      onPress={() => {
-                        setSelectedDate(date);
-                        setFilter("day");
-                        Haptics.selectionAsync();
-                      }}
+                      onPress={() => selectCalendarDate(date)}
+                      accessibilityLabel={`${date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}, ${dayItems.length} scheduled ${dayItems.length === 1 ? "item" : "items"}`}
                     >
                       <Text style={[styles.calendarWeekday, { color: selected ? "#fff" : colors.mutedForeground }]}>
                         {date.toLocaleDateString("en-US", { weekday: "short" }).slice(0, 2)}
                       </Text>
                       <Text style={[styles.calendarDate, { color: selected ? "#fff" : colors.foreground }]}>{date.getDate()}</Text>
-                      <View style={[styles.calendarDot, { backgroundColor: hasOpen ? (selected ? "#fff" : colors.warning) : "transparent" }]} />
+                      <View style={styles.calendarMarkers}>
+                        {dayItems.slice(0, 3).map((item) => (
+                          <View
+                            key={item.id}
+                            accessibilityLabel={`${item.type}: ${item.title}`}
+                            style={[
+                              styles.calendarDot,
+                              {
+                                backgroundColor: markerColor(item.type, selected),
+                                opacity: item.completed ? 0.42 : 1,
+                                borderWidth: item.completed ? 1 : 0,
+                                borderColor: selected ? colors.primary : colors.mutedForeground,
+                              },
+                            ]}
+                          />
+                        ))}
+                        {dayItems.length > 3 && (
+                          <Text style={[styles.markerMore, { color: selected ? colors.primaryForeground : colors.mutedForeground }]}>
+                            +{dayItems.length - 3}
+                          </Text>
+                        )}
+                      </View>
                     </TouchableOpacity>
                   );
                   })}
@@ -816,16 +959,13 @@ export default function MyChoresScreen() {
                     {monthDays.map((date) => {
                       const selected = isSameDay(date, selectedDate);
                       const inMonth = date.getMonth() === selectedDate.getMonth();
-                      const dayChores = chores.filter((chore) => isSameDay(chore.dueDate, date));
+                      const dayItems = calendarItemsByDate.get(localDateKey(date)) ?? [];
                       return (
                         <TouchableOpacity
                           key={date.toISOString()}
                           style={[styles.monthDay, selected && { backgroundColor: colors.primary }]}
-                          onPress={() => {
-                            setSelectedDate(date);
-                            setFilter("day");
-                            Haptics.selectionAsync();
-                          }}
+                          onPress={() => selectCalendarDate(date)}
+                          accessibilityLabel={`${date.toLocaleDateString("en-US", { month: "long", day: "numeric" })}, ${dayItems.length} scheduled items`}
                         >
                           <Text style={{
                             color: selected ? "#fff" : inMonth ? colors.foreground : colors.mutedForeground,
@@ -836,10 +976,9 @@ export default function MyChoresScreen() {
                             {date.getDate()}
                           </Text>
                           <View style={styles.monthDots}>
-                            {dayChores.slice(0, 3).map((chore) => {
-                              const owner = roommates.find((roommate) => roommate.id === chore.assignedTo);
-                              return <View key={chore.id} style={[styles.monthDot, { backgroundColor: owner?.color ?? colors.primary }]} />;
-                            })}
+                            {dayItems.slice(0, 3).map((item) => (
+                              <View key={item.id} style={[styles.monthDot, { backgroundColor: markerColor(item.type, selected), opacity: item.completed ? 0.42 : 1 }]} />
+                            ))}
                           </View>
                         </TouchableOpacity>
                       );
@@ -847,26 +986,25 @@ export default function MyChoresScreen() {
                   </View>
 
                   <View style={[styles.householdPreview, { borderTopColor: colors.border }]}>
-                    <Text style={[styles.previewTitle, { color: colors.foreground }]}>Household chores</Text>
-                    {selectedHouseholdChores.length === 0 ? (
-                      <Text style={[styles.previewEmpty, { color: colors.mutedForeground }]}>Nothing assigned for this day</Text>
+                    <Text style={[styles.previewTitle, { color: colors.foreground }]}>Scheduled</Text>
+                    {selectedCalendarItems.length === 0 ? (
+                      <Text style={[styles.previewEmpty, { color: colors.mutedForeground }]}>Nothing scheduled</Text>
                     ) : (
-                      selectedHouseholdChores.slice(0, 5).map((chore) => {
-                        const owner = roommates.find((roommate) => roommate.id === chore.assignedTo);
+                      selectedCalendarItems.slice(0, 5).map((item) => {
                         return (
-                          <View key={chore.id} style={styles.previewRow}>
-                            <View style={[styles.previewOwnerDot, { backgroundColor: owner?.color ?? colors.primary }]} />
-                            <Text style={[styles.previewChore, { color: colors.foreground }]} numberOfLines={1}>{chore.title}</Text>
+                          <View key={item.id} style={styles.previewRow}>
+                            <Feather name={item.type === "chore" ? "check-square" : item.type === "expense" ? "dollar-sign" : "shopping-bag"} size={13} color={markerColor(item.type, false)} />
+                            <Text style={[styles.previewChore, { color: colors.foreground }]} numberOfLines={1}>{item.title}</Text>
                             <Text style={[styles.previewOwner, { color: colors.mutedForeground }]} numberOfLines={1}>
-                              {owner?.id === currentUserId ? "You" : owner?.name ?? "Unassigned"}
+                              {item.type.replace("-", " ")}
                             </Text>
-                            <Feather name={chore.completed ? "check-circle" : "circle"} size={14} color={chore.completed ? colors.success : colors.mutedForeground} />
+                            <Feather name={item.completed ? "check-circle" : "circle"} size={14} color={item.completed ? colors.success : colors.mutedForeground} />
                           </View>
                         );
                       })
                     )}
-                    {selectedHouseholdChores.length > 5 && (
-                      <Text style={[styles.previewMore, { color: colors.primary }]}>+{selectedHouseholdChores.length - 5} more</Text>
+                    {selectedCalendarItems.length > 5 && (
+                      <Text style={[styles.previewMore, { color: colors.primary }]}>+{selectedCalendarItems.length - 5} more</Text>
                     )}
                   </View>
                 </View>
@@ -876,6 +1014,24 @@ export default function MyChoresScreen() {
                 {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
               </Text>
             </View>
+
+            <CalendarDayDetails
+              visible={dayDetailsOpen}
+              date={selectedDate}
+              items={selectedCalendarItems}
+              onClose={() => setDayDetailsOpen(false)}
+              onItemPress={(item) => {
+                setDayDetailsOpen(false);
+                if (item.type === "chore") {
+                  const chore = chores.find((candidate) => candidate.id === item.sourceId);
+                  if (chore && canManageChore(chore)) openChoreActions(chore);
+                } else if (item.type === "expense") {
+                  router.push("/(tabs)/expenses");
+                } else {
+                  router.push("/(tabs)/shopping");
+                }
+              }}
+            />
 
             <View
               style={[
@@ -955,7 +1111,6 @@ export default function MyChoresScreen() {
           <ChoreRow
             chore={item}
             onComplete={completeChore}
-            onDelete={deleteChore}
             calendarDestinationLabel={calendarDestinationLabel}
             onManage={canManageChore(item) ? () => openChoreActions(item) : undefined}
             onChangeCalendarDestination={() => {
@@ -1210,8 +1365,10 @@ const styles = StyleSheet.create({
   todoBadge: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
     paddingHorizontal: 9,
+    minWidth: 78,
     height: 32,
     borderRadius: 16,
     borderWidth: 1,
@@ -1228,7 +1385,9 @@ const styles = StyleSheet.create({
   },
   calendarWeekday: { fontFamily: "Inter_500Medium", fontSize: 10, textTransform: "uppercase" },
   calendarDate: { fontFamily: "Inter_700Bold", fontSize: 18, marginTop: 2 },
-  calendarDot: { width: 5, height: 5, borderRadius: 3, marginTop: 3 },
+  calendarMarkers: { height: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2, marginTop: 2 },
+  calendarDot: { width: 5, height: 5, borderRadius: 3 },
+  markerMore: { fontFamily: "Inter_600SemiBold", fontSize: 7, lineHeight: 9 },
   selectedDateLabel: { fontFamily: "Inter_600SemiBold", fontSize: 14, marginTop: 11 },
   monthView: { marginTop: 10 },
   monthWeekdays: { flexDirection: "row" },
@@ -1245,6 +1404,22 @@ const styles = StyleSheet.create({
   previewChore: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 12 },
   previewOwner: { maxWidth: 72, fontFamily: "Inter_400Regular", fontSize: 11 },
   previewMore: { fontFamily: "Inter_600SemiBold", fontSize: 11, marginLeft: 16 },
+  dayModalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)" },
+  dayModalSheet: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingBottom: Platform.OS === "ios" ? 28 : 16 },
+  dayModalHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: "#9CA3AF", opacity: 0.55, alignSelf: "center", marginTop: 9 },
+  dayModalHeader: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10 },
+  dayModalTitle: { fontFamily: "Inter_700Bold", fontSize: 18 },
+  dayModalSubtitle: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  dayModalClose: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  dayModalContent: { paddingHorizontal: 18, paddingBottom: 12, gap: 16 },
+  dayEmpty: { alignItems: "center", gap: 8, paddingVertical: 32 },
+  dayGroup: { gap: 7 },
+  dayGroupTitle: { fontFamily: "Inter_700Bold", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 },
+  dayItem: { minHeight: 62, borderRadius: 14, borderWidth: 1, padding: 10, flexDirection: "row", alignItems: "center", gap: 10 },
+  dayItemIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  dayItemTitle: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  dayItemDescription: { fontFamily: "Inter_400Regular", fontSize: 11, lineHeight: 15, marginTop: 2 },
+  dayItemAmount: { fontFamily: "Inter_700Bold", fontSize: 12 },
   progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1328,6 +1503,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   pointsText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  taskActionsButton: {
+    width: 44,
+    height: 44,
+    marginVertical: -8,
+    marginRight: -8,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
   fab: {
     position: "absolute",
     right: 20,
