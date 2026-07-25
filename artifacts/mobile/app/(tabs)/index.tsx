@@ -69,9 +69,44 @@ const SECTION_NAMES: Record<string, string> = {
 };
 
 type Filter = "all" | "today" | "done" | "day";
+type HomeSectionId = "my-chores" | "to-buy" | "shopping";
 
 // Lighter tan brown revealed behind a chore row while it slides out on complete.
 const COMPLETE_REVEAL_BROWN = "#A87C50";
+
+function CollapsibleSectionHeader({
+  title,
+  count,
+  icon,
+  expanded,
+  onToggle,
+}: {
+  title: string;
+  count: number;
+  icon: keyof typeof Feather.glyphMap;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const colors = useTheme();
+  return (
+    <TouchableOpacity
+      style={[styles.sectionTitleRow, { borderBottomColor: colors.primary }]}
+      onPress={onToggle}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      accessibilityLabel={`${expanded ? "Collapse" : "Expand"} ${title}, ${count} ${count === 1 ? "item" : "items"}`}
+    >
+      <Feather name={icon} size={15} color={colors.primary} />
+      <Text style={[styles.sectionTitleText, { color: colors.foreground }]}>{title}</Text>
+      <Text style={[styles.sectionTitleCount, { color: colors.mutedForeground }]}>
+        · {count} item{count !== 1 ? "s" : ""}
+      </Text>
+      <View style={styles.sectionTitleSpacer} />
+      <Feather name={expanded ? "chevron-down" : "chevron-right"} size={18} color={colors.mutedForeground} />
+    </TouchableOpacity>
+  );
+}
 
 function isToday(dateStr: string) {
   const d = new Date(dateStr);
@@ -494,6 +529,9 @@ export default function MyChoresScreen() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
   const [dayDetailsOpen, setDayDetailsOpen] = useState(false);
+  const [expandedHomeSections, setExpandedHomeSections] = useState<
+    Record<HomeSectionId, boolean>
+  >({ "my-chores": true, "to-buy": true, shopping: true });
   const [showModal, setShowModal] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
 
@@ -716,6 +754,13 @@ export default function MyChoresScreen() {
     if (type === "expense") return colors.destructive;
     return colors.success;
   };
+  const toggleHomeSection = (sectionId: HomeSectionId) => {
+    setExpandedHomeSections((current) => ({
+      ...current,
+      [sectionId]: !current[sectionId],
+    }));
+    Haptics.selectionAsync();
+  };
   const filtered = useMemo(
     () =>
       myChores
@@ -806,7 +851,7 @@ export default function MyChoresScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
-        data={filtered}
+        data={expandedHomeSections["my-chores"] ? filtered : []}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.listContent,
@@ -1060,15 +1105,15 @@ export default function MyChoresScreen() {
               </View>
             </View>
 
-            <View style={[styles.sectionTitleRow, { borderBottomColor: colors.primary }]}>
-              <Feather name="check-square" size={15} color={colors.primary} />
-              <Text style={[styles.sectionTitleText, { color: colors.foreground }]}>My Chores</Text>
-              <Text style={[styles.sectionTitleCount, { color: colors.mutedForeground }]}>
-                · {filtered.length} item{filtered.length !== 1 ? "s" : ""}
-              </Text>
-            </View>
+            <CollapsibleSectionHeader
+              title="My Chores"
+              count={filtered.length}
+              icon="check-square"
+              expanded={expandedHomeSections["my-chores"]}
+              onToggle={() => toggleHomeSection("my-chores")}
+            />
 
-            <View style={styles.filterRow}>
+            {expandedHomeSections["my-chores"] && <View style={styles.filterRow}>
               {(["all", "today", "done"] as Filter[]).map((f) => (
                 <TouchableOpacity
                   key={f}
@@ -1093,10 +1138,10 @@ export default function MyChoresScreen() {
                   </Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </View>}
           </>
         }
-        ListEmptyComponent={
+        ListEmptyComponent={expandedHomeSections["my-chores"] ? (
           <EmptyState
             icon="check-circle"
             title={filter === "done" ? "No completed chores yet" : "No chores here"}
@@ -1106,7 +1151,7 @@ export default function MyChoresScreen() {
                 : "Tap + to add your first chore"
             }
           />
-        }
+        ) : null}
         renderItem={({ item }) => (
           <ChoreRow
             chore={item}
@@ -1157,15 +1202,17 @@ export default function MyChoresScreen() {
         )}
         ListFooterComponent={
           <>
-            {myToBuyItems.length > 0 && (
-              <>
-                <View style={[styles.sectionTitleRow, { borderBottomColor: colors.primary }]}>
-                  <Feather name="shopping-bag" size={15} color={colors.primary} />
-                  <Text style={[styles.sectionTitleText, { color: colors.foreground }]}>To Buy</Text>
-                  <Text style={[styles.sectionTitleCount, { color: colors.mutedForeground }]}>
-                    · {myToBuyItems.length} item{myToBuyItems.length !== 1 ? "s" : ""}
-                  </Text>
-                </View>
+            <>
+                <CollapsibleSectionHeader
+                  title="To Buy"
+                  count={myToBuyItems.length}
+                  icon="shopping-bag"
+                  expanded={expandedHomeSections["to-buy"]}
+                  onToggle={() => toggleHomeSection("to-buy")}
+                />
+                {expandedHomeSections["to-buy"] && (myToBuyItems.length === 0 ? (
+                  <Text style={[styles.sectionEmpty, { color: colors.mutedForeground }]}>Nothing to buy</Text>
+                ) : (
                 <View
                   style={[
                     styles.toBuyCard,
@@ -1195,18 +1242,20 @@ export default function MyChoresScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
+                ))}
               </>
-            )}
 
-            {myShoppingItems.length > 0 && (
               <>
-                <View style={[styles.sectionTitleRow, { borderBottomColor: colors.primary }]}>
-                  <Feather name="shopping-cart" size={15} color={colors.primary} />
-                  <Text style={[styles.sectionTitleText, { color: colors.foreground }]}>Shopping</Text>
-                  <Text style={[styles.sectionTitleCount, { color: colors.mutedForeground }]}>
-                    · {myShoppingItems.length} item{myShoppingItems.length !== 1 ? "s" : ""}
-                  </Text>
-                </View>
+                <CollapsibleSectionHeader
+                  title="Shopping"
+                  count={myShoppingItems.length}
+                  icon="shopping-cart"
+                  expanded={expandedHomeSections.shopping}
+                  onToggle={() => toggleHomeSection("shopping")}
+                />
+                {expandedHomeSections.shopping && (myShoppingItems.length === 0 ? (
+                  <Text style={[styles.sectionEmpty, { color: colors.mutedForeground }]}>No active shopping items</Text>
+                ) : (
                 <View
                   style={[
                     styles.toBuyCard,
@@ -1239,8 +1288,8 @@ export default function MyChoresScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
+                ))}
               </>
-            )}
           </>
         }
       />
@@ -1454,8 +1503,14 @@ const styles = StyleSheet.create({
   sectionTitleCount: {
     fontFamily: "Inter_500Medium",
     fontSize: 12,
-    marginLeft: "auto",
-    textAlign: "right",
+    flexShrink: 1,
+  },
+  sectionTitleSpacer: { flex: 1, minWidth: 8 },
+  sectionEmpty: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
   },
   filterRow: {
     flexDirection: "row",
