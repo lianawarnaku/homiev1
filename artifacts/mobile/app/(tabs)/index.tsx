@@ -352,53 +352,63 @@ function ChoreRow({
         </View>
       </TouchableOpacity>
 
-      {pointsEnabled && <View style={[styles.pointsBadge, { backgroundColor: colors.primary + "18" }]}>
-        <Text style={[styles.pointsText, { color: colors.primary }]}>
-          +{chore.points}
-        </Text>
-      </View>}
+      <View style={styles.trailingActions}>
+        {pointsEnabled && (
+          <View
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel={`${chore.points} points`}
+            style={[styles.pointsBadge, { backgroundColor: colors.primary + "18" }]}
+          >
+            <Text style={[styles.pointsText, { color: colors.primary }]}>
+              +{chore.points}
+            </Text>
+          </View>
+        )}
 
-      <TouchableOpacity
-        onPress={handleCalendar}
-        onLongPress={onChangeCalendarDestination}
-        disabled={calState === "loading"}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        style={[
-          styles.calBtn,
-          {
-            backgroundColor:
-              calState === "done"
-                ? colors.success + "18"
-                : calState === "loading"
-                  ? colors.muted
-                  : colors.primary + "14",
-            borderColor:
-              calState === "done"
-                ? colors.success + "55"
-                : colors.primary + "30",
-          },
-        ]}
-        accessibilityLabel={`Add to ${calendarDestinationLabel}`}
-        accessibilityHint="Long press to change the saved destination"
-      >
-        <Feather
-          name={calState === "done" ? "check" : "calendar"}
-          size={13}
-          color={calColor}
-        />
-      </TouchableOpacity>
-
-      {onManage && (
         <TouchableOpacity
-          onPress={onManage}
-          accessibilityRole="button"
-          accessibilityLabel="Task actions"
-          accessibilityHint={`Opens actions for ${chore.title}`}
-          style={styles.taskActionsButton}
+          onPress={handleCalendar}
+          onLongPress={onChangeCalendarDestination}
+          disabled={calState === "loading"}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[
+            styles.calBtn,
+            {
+              backgroundColor:
+                calState === "done"
+                  ? colors.success + "18"
+                  : calState === "loading"
+                    ? colors.muted
+                    : colors.primary + "14",
+              borderColor:
+                calState === "done"
+                  ? colors.success + "55"
+                  : colors.primary + "30",
+            },
+          ]}
+          accessibilityLabel={`Add to ${calendarDestinationLabel}`}
+          accessibilityHint="Long press to change the saved destination"
         >
-          <Feather name="more-vertical" size={19} color={colors.mutedForeground} />
+          <Feather
+            name={calState === "done" ? "check" : "calendar"}
+            size={13}
+            color={calColor}
+          />
         </TouchableOpacity>
-      )}
+
+        {onManage && (
+          <TouchableOpacity
+            onPress={onManage}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            accessibilityRole="button"
+            accessibilityLabel="Task actions"
+            accessibilityHint={`Opens actions for ${chore.title}`}
+            style={styles.taskActionsButton}
+          >
+            <Feather name="more-vertical" size={19} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        )}
+      </View>
       {/* Darkening overlay — fades in fast on top of the row so it darkens
           the instant the checkbox is tapped. */}
       <Animated.View
@@ -1548,7 +1558,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  choreInfo: { flex: 1 },
+  choreInfo: { flex: 1, minWidth: 0 },
   choreTitle: { fontFamily: "Inter_500Medium", fontSize: 15 },
   choreMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
   dueDateText: { fontFamily: "Inter_400Regular", fontSize: 12 },
@@ -1558,11 +1568,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   pointsText: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  trailingActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
+  },
   taskActionsButton: {
-    width: 44,
-    height: 44,
-    marginVertical: -8,
-    marginRight: -8,
+    width: 32,
+    height: 32,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
@@ -1679,7 +1693,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 6,
+    flexShrink: 0,
   },
   toBuyCard: {
     borderRadius: 22,
