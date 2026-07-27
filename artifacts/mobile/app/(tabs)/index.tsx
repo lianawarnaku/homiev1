@@ -49,6 +49,10 @@ import {
   type CalendarItem,
   type CalendarItemType,
 } from "@/lib/calendarItems";
+import {
+  choreLocalDateKey,
+  isChoreActiveOnDay,
+} from "@/lib/choreOccurrences";
 
 const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feather.glyphMap }[] = [
   { key: "cleaning", label: "Cleaning", icon: "wind" },
@@ -138,8 +142,13 @@ function formatDueDate(dateStr: string) {
   const d = new Date(dateStr);
   const now = new Date();
   const diff = Math.round((d.getTime() - now.getTime()) / 86400000);
-  if (diff < -1) return `${Math.abs(diff)}d overdue`;
-  if (diff === -1) return "Yesterday";
+  if (choreLocalDateKey(d) < choreLocalDateKey(now)) {
+    return `Carried over · originally due ${d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    })}`;
+  }
   if (isToday(dateStr)) return "Today";
   if (diff === 1) return "Tomorrow";
   return `${diff}d left`;
@@ -780,9 +789,9 @@ export default function MyChoresScreen() {
     () =>
       myChores
         .filter((chore) => {
-          if (filter === "today") return isToday(chore.dueDate) && !chore.completed;
+          if (filter === "today") return isChoreActiveOnDay(chore, new Date());
           if (filter === "done") return chore.completed;
-          if (filter === "day") return isSameDay(chore.dueDate, selectedDate);
+          if (filter === "day") return isChoreActiveOnDay(chore, selectedDate);
           return true;
         })
         // Completed chores auto-move to the bottom of the visible list.

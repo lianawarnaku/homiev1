@@ -15,7 +15,7 @@ SweetMate has three related but distinct systems:
 
 1. `PlanningScreen` generates `GeneratedTask` objects from the household profile and custom tasks, balances them with `buildBalancedChart`, and converts them into `Chore` records.
 2. `ManualChoreForm` creates or edits an individual `Chore`, including a fixed assignee or round-robin assignment and one of four recurrence intervals.
-3. `AppContext` is the authoritative runtime store. It validates mutations, creates the next recurring record when a recurring chore is completed, awards points, and persists the entire household state as one JSON document.
+3. `AppContext` is the authoritative runtime store. It validates mutations, reconciles independently dated recurring occurrences through the current local day, awards points, and persists the entire household state as one JSON document.
 
 There is also a proposal/approval subsystem (`proposed_charts`, approvals, alerts, and RPCs). It is not the persistence model for actual chores. `alerts.tsx` can propose a balanced chart, but the current planner directly calls `addChores`; approved proposals do not themselves create dated chores.
 
@@ -76,7 +76,7 @@ There is no React Query, query-key registry, server action, chore API endpoint, 
 | `category` | cleaning, kitchen, bathroom, laundry, outdoor, or other |
 | `recurring?` | daily, weekly, biweekly, or monthly |
 | `recurrenceSeriesId?` | Series identity; initialized to the first record ID |
-| `occurrenceIndex?` | Integer index; jumps when missed dates are skipped |
+| `occurrenceIndex?` | Integer schedule index inside a recurring series |
 | `nextOccurrenceId?` | Link from a completed occurrence to its generated successor |
 | `sourceKey?` | Deduplication identity for generated/template chores |
 | `createdAt?`, `updatedAt?` | Client UTC timestamps |
@@ -87,7 +87,7 @@ There are no explicit scheduled-date versus due-date fields, recurrence weekdays
 
 The app uses a combination:
 
-- **Persisted instances:** completion of a recurring `Chore` creates a new independently dated record and links it through `nextOccurrenceId`.
+- **Persisted instances:** current/past scheduled dates are reconciled into independently dated records; completion also ensures a future successor exists.
 - **Dynamic projection:** `deriveCalendarItems` projects dates from `initialDueDate` even when no persisted instance exists.
 - **No independent template:** every generated instance retains the recurrence rule and most series data.
 
@@ -105,7 +105,7 @@ Therefore it is not a clean template/instance model. Historical completion is pr
 
 There is no database uniqueness constraint for chore IDs, occurrence `(series, index/date)`, or generated `sourceKey`.
 
-`addChore` enriches records with household, creator, series, index, and timestamps. `addChores`, used by Planning and household setup, does not perform that enrichment; it only assigns an ID and deduplicates. Generated recurring chores can therefore lack `householdId`, `creatorId`, `initialDueDate`, `recurrenceSeriesId`, `occurrenceIndex`, and timestamps until later mutations. This also means “future”/“series” deletion cannot find sibling records when a generated series lacks `recurrenceSeriesId`.
+Both `addChore` and `addChores` enrich records with household, creator, series, index, and timestamps. Legacy linked recurring records without a series ID are normalized during occurrence reconciliation.
 
 ## 4. One-off chore lifecycle
 
@@ -124,10 +124,10 @@ Calendar retention of a completed one-off and household isolation are **Tested**
 ## 5. Recurring chore lifecycle
 
 1. Manual recurrence supports daily, weekly, biweekly, and monthly only. There is no weekday multi-selector, start/end range, skip action, or “edit occurrence vs series” choice.
-2. Before completion, calendar projection calculates future occurrences from `initialDueDate`. Lists display only persisted records.
-3. Completing the record marks it complete and calculates the next due timestamp.
-4. If calculated dates are at or before `Date.now()`, the client skips forward until the next future timestamp. Missed occurrences are not materialized.
-5. It appends one unchecked next record. Round-robin cursor advances by the number of skipped recurrence steps.
+2. Calendar projection calculates future occurrences from `initialDueDate`; an idempotent reconciliation pass materializes every scheduled occurrence through the current local day.
+3. Incomplete persisted occurrences remain active on later selected days without changing their original `dueDate`.
+4. Completing one record marks only that occurrence complete and ensures one future successor exists, reusing a matching series/date occurrence when present.
+5. Reconciled occurrences begin unchecked. Round-robin occurrence assignment advances by occurrence index.
 6. Uncompleting the preceding record deletes its generated successor only when the successor is still incomplete. If the successor is complete, history remains linked.
 7. Editing changes only the selected incomplete persisted record, although the form labels it generically as “Save Changes.” It can retain the old `initialDueDate`, so changing the due date may not change dynamic calendar projection as expected.
 8. Delete scopes:
@@ -146,7 +146,7 @@ Calendar retention of a completed one-off and household isolation are **Tested**
 - Completed records cannot be edited, preserving their stored assignee for leaderboard attribution.
 - Round robin stores ordered participant IDs. Inactive/excluded members are removed; all-members rotation appends newly active member IDs sorted by ID.
 - Member removal rewrites open chores: rotations choose a remaining participant, while specific-person chores become unassigned. It clears proposal state.
-- There is no UI/API for changing only a dynamically projected future occurrence because it does not yet exist as a persisted record.
+- The creator/host can edit a materialized current or overdue occurrence independently; future projected dates are not editable until materialized.
 - Household switching clears chore state before loading the selected household cache/snapshot.
 
 Participant filtering and household calendar isolation are **Tested**. Multi-account reassignment and removal sync are **Unverified**.
@@ -225,18 +225,17 @@ Severity is an audit judgment, not a production incident claim.
 ### High
 
 1. **Whole-snapshot lost updates:** chores and points have last-writer-wins JSON persistence; concurrent users can overwrite each other.
-2. **No occurrence uniqueness/idempotency:** rapid/concurrent completion can produce duplicate successors across clients.
+2. **No database occurrence uniqueness:** client reconciliation is idempotent by household/series/date, but concurrent whole-snapshot writers still lack a database unique constraint.
 3. **Hybrid recurrence sources:** dynamic calendar projection and persisted instances can disagree about completion, assignee, or edited schedule.
 4. **Series deletion contradicts history language:** “series” hard-deletes completed history.
 5. **No persisted completion actor:** pickup completion ownership and leaderboard attribution are inaccurate after reload.
-6. **Bulk-created chores bypass lifecycle initialization:** planner/setup records omit series and ownership metadata, breaking series-aware behavior and weakening household/permission checks.
 
 ### Medium
 
 1. Generated `everyOtherDay` becomes daily; generated biweekly becomes weekly.
 2. Editing a recurring due date retains `initialDueDate`, potentially leaving calendar projection anchored to the old date.
 3. No household timezone and inconsistent UTC/local conversions.
-4. Missed recurrences are silently skipped rather than recorded overdue/missed.
+4. A very old high-frequency series may materialize many independently actionable overdue occurrences; the reconciliation guard caps one pass at 1,000 dates.
 5. External exports represent the rule on one task but are not synchronized with generated successor IDs.
 6. Planner, proposal workflow, legacy `choreChart`, and actual `Chore[]` are multiple partially connected chart concepts.
 7. Optimistic sync errors have no rollback or retry queue.

@@ -40,6 +40,7 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import { removeMappedReminderIfPresent } from "@/lib/externalTasks";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
+import { choreLocalDateKey } from "@/lib/choreOccurrences";
 
 function isOverdue(dateStr: string) {
   return new Date(dateStr) < new Date();
@@ -49,8 +50,13 @@ function formatDueDate(dateStr: string) {
   const d = new Date(dateStr);
   const now = new Date();
   const diff = Math.round((d.getTime() - now.getTime()) / 86400000);
-  if (diff < -1) return `${Math.abs(diff)}d overdue`;
-  if (diff === -1) return "Yesterday";
+  if (choreLocalDateKey(d) < choreLocalDateKey(now)) {
+    return `Carried over · originally due ${d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    })}`;
+  }
   if (diff === 0) return "Today";
   if (diff === 1) return "Tomorrow";
   return `${diff}d left`;
