@@ -34,7 +34,7 @@ const ITEM_SECTIONS = [
   { key: "other", title: "Other", icon: "more-horizontal", items: ["Floor", "Trash can"] },
 ] as const;
 
-export function HouseholdSetupScreen() {
+export function HouseholdSetupScreen({ onComplete }: { onComplete?: () => void } = {}) {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const { createHousehold, joinHousehold, setHomeProfile, addChores } = useAppContext();
@@ -111,6 +111,7 @@ export function HouseholdSetupScreen() {
     try {
       await joinHousehold(inviteCode, displayName, color);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onComplete?.();
     } catch (e) {
       reportRuntimeError("join household", e);
       hapticError();
@@ -123,14 +124,15 @@ export function HouseholdSetupScreen() {
     setLoading(true);
     setError(null);
     try {
+      const createdSweetId = await createHousehold(householdName, displayName, color, createInviteCode);
       setHomeProfile({ housingType, items, additionalChores: chores, roomCounts: { bathroom: bathroomCount, bedroom: bedroomCount } });
-      await createHousehold(householdName, displayName, color, createInviteCode);
       const assigneeId = session?.user.id;
       if (!assigneeId) throw new Error("Your session expired before chores could be created.");
       const now = Date.now();
       addChores([
         ...generatedPlan.map((chore) => ({
           title: chore.title,
+          householdId: createdSweetId,
           assignedTo: assigneeId,
           dueDate: new Date(now + (chore.persistedRecurrence === "daily" ? 1 : chore.persistedRecurrence === "weekly" ? 7 : 30) * 86_400_000).toISOString(),
           completed: false,
@@ -147,6 +149,7 @@ export function HouseholdSetupScreen() {
           };
           return {
             title,
+            householdId: createdSweetId,
             assignedTo: assigneeId,
             dueDate: new Date(now + (settings.recurrence === "daily" ? 1 : settings.recurrence === "weekly" ? 7 : 30) * 86_400_000).toISOString(),
             completed: false,
@@ -157,6 +160,7 @@ export function HouseholdSetupScreen() {
         }),
       ]);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onComplete?.();
     } catch (e) {
       reportRuntimeError("create household", e);
       hapticError();

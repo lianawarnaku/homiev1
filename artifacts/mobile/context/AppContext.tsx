@@ -57,6 +57,18 @@ export interface Roommate {
   avatarUri?: string;
 }
 
+export interface SweetMembership {
+  id: string;
+  sweetId: string;
+  userId: string;
+  name: string;
+  role: "owner" | "member";
+  status: "active" | "invited" | "left" | "removed";
+  joinedAt: string;
+  memberCount?: number;
+  inviteCode?: string;
+}
+
 export interface Chore {
   id: string;
   householdId?: string;
@@ -333,6 +345,9 @@ interface AppContextType {
   leaderboardPeriod: LeaderboardPeriod;
   setLeaderboardPeriod: (period: LeaderboardPeriod) => void;
   householdId: string | null;
+  memberships: SweetMembership[];
+  activeSweetId: string | null;
+  activeSweet: SweetMembership | null;
   householdName: string | null;
   inviteCode: string | null;
   householdLoading: boolean;
@@ -340,8 +355,10 @@ interface AppContextType {
   currentMemberRole: "owner" | "member";
   refreshMembers: () => Promise<void>;
   refreshHousehold: () => void;
-  createHousehold: (householdName: string, displayName: string, color: string, inviteCode: string) => Promise<void>;
+  createHousehold: (householdName: string, displayName: string, color: string, inviteCode: string) => Promise<string>;
   joinHousehold: (inviteCode: string, displayName: string, color: string) => Promise<void>;
+  switchSweet: (sweetId: string) => void;
+  leaveSweet: (sweetId: string) => Promise<void>;
   deleteHousehold: () => Promise<void>;
   removeRoommate: (roommateId: string) => Promise<void>;
   deleteOwnAccount: () => Promise<void>;
@@ -513,6 +530,12 @@ const PREFERENCES_KEY = "homie_user_preferences_v1";
 const USER_PREFERENCES_KEY_PREFIX = "sweetmate:user-preferences:v1";
 const userPreferencesKey = (userId: string) =>
   `${USER_PREFERENCES_KEY_PREFIX}:${userId}`;
+const activeSweetKey = (userId: string) =>
+  `sweetmate:user:${userId}:active-sweet`;
+const sweetStateKey = (userId: string, sweetId: string) =>
+  `sweetmate:user:${userId}:sweet:${sweetId}:state`;
+const userStateKey = (userId: string) =>
+  `sweetmate:user:${userId}:state`;
 const QUICK_GUIDE_VERSION = 2;
 const EMPTY_SHOPPING_SYNC_META: ShoppingSyncMeta = {
   listVersions: {},
@@ -575,6 +598,7 @@ export function AppProvider({
   session: Session | null;
 }) {
   const [householdId, setHouseholdId] = useState<string | null>(null);
+  const [memberships, setMemberships] = useState<SweetMembership[]>([]);
   const [householdName, setHouseholdName] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [householdLoading, setHouseholdLoading] = useState(true);
@@ -632,6 +656,8 @@ export function AppProvider({
   const [householdComplete, setHouseholdCompleteState] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
+  const membershipLoadGenerationRef = useRef(0);
+  const sweetDataCacheRef = useRef<Record<string, SharedHouseholdState>>({});
   const applyingRemoteRef = useRef(false);
   const memberMetadataRef = useRef<Map<string, Roommate>>(new Map());
   const previousMemberIdsRef = useRef<{ householdId: string | null; ids: Set<string> }>({
@@ -968,6 +994,7 @@ export function AppProvider({
   useEffect(() => {
     const userId = session?.user.id;
     if (!userId) {
+      setMemberships([]);
       setHouseholdId(null);
       setHouseholdName(null);
       setInviteCode(null);
@@ -975,34 +1002,43 @@ export function AppProvider({
       return;
     }
     let active = true;
+    const generation = ++membershipLoadGenerationRef.current;
     setHouseholdLoading(true);
     (async () => {
-      const { data: membership, error } = await supabase
+      const { data: membershipRows, error } = await supabase
         .from("household_members")
-        .select("household_id, display_name, color, role")
+        .select("household_id, user_id, role, status, joined_at")
         .eq("user_id", userId)
-        .maybeSingle();
-      if (!active) return;
-      if (error || !membership) {
+        .eq("status", "active")
+        .order("joined_at", { ascending: true });
+      if (!active || generation !== membershipLoadGenerationRef.current) return;
+      if (error || !membershipRows?.length) {
         if (error) {
-          reportSupabaseError("load current household membership", error, { userId });
+          reportSupabaseError("load Sweet memberships", error, { userId });
         }
+        setMemberships([]);
         setHouseholdId(null);
         setHouseholdName(null);
         setInviteCode(null);
         setHouseholdLoading(false);
         return;
       }
-      const { data: household, error: householdError } = await supabase
+      const sweetIds = membershipRows.map((row) => row.household_id);
+      const [{ data: households, error: householdError }, { data: memberRows }] = await Promise.all([
+        supabase
         .from("households")
-        .select("name, invite_code")
-        .eq("id", membership.household_id)
-        .single();
+        .select("id, name, invite_code")
+        .in("id", sweetIds),
+        supabase
+          .from("household_members")
+          .select("household_id")
+          .in("household_id", sweetIds)
+          .eq("status", "active"),
+      ]);
       if (householdError) {
-        reportSupabaseError("load current household", householdError, {
-          householdId: membership.household_id,
-        });
+        reportSupabaseError("load Sweets", householdError, { sweetIds });
         if (active) {
+          setMemberships([]);
           setHouseholdId(null);
           setHouseholdName(null);
           setInviteCode(null);
@@ -1010,13 +1046,95 @@ export function AppProvider({
         }
         return;
       }
-      if (!active) return;
+      if (!active || generation !== membershipLoadGenerationRef.current) return;
+      const householdById = new Map((households ?? []).map((household) => [household.id, household]));
+      const counts = new Map<string, number>();
+      (memberRows ?? []).forEach((row) =>
+        counts.set(row.household_id, (counts.get(row.household_id) ?? 0) + 1),
+      );
+      const nextMemberships: SweetMembership[] = membershipRows.flatMap((row) => {
+        const sweet = householdById.get(row.household_id);
+        if (!sweet) return [];
+        return [{
+          id: `${row.household_id}:${userId}`,
+          sweetId: row.household_id,
+          userId,
+          name: sweet.name,
+          role: row.role === "owner" ? "owner" : "member",
+          status: "active",
+          joinedAt: row.joined_at,
+          memberCount: counts.get(row.household_id) ?? 1,
+          inviteCode: sweet.invite_code,
+        }];
+      });
+      const storedActiveSweetId = await AsyncStorage.getItem(activeSweetKey(userId));
+      if (!active || generation !== membershipLoadGenerationRef.current) return;
+      const selected =
+        nextMemberships.find((membership) => membership.sweetId === storedActiveSweetId) ??
+        nextMemberships[0];
+      const selectedHousehold = selected ? householdById.get(selected.sweetId) : null;
+      if (selected && selected.sweetId !== householdId) {
+        setCloudReady(false);
+        setRoommates([]);
+        choresRef.current = [];
+        setChores([]);
+        setExpenses([]);
+        setShoppingLists([]);
+        setShoppingItems([]);
+        setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
+        setBorrowItems([]);
+        setNudges([]);
+        setNudgesReady(false);
+        setEssentialsAssignees({});
+        setRoommateStatusesState({});
+        setSleepStartedAtState({});
+        setHomeLocationState(null);
+        setChoreChartState(null);
+        setChoreChartStartedAtState(null);
+        setHomeProfileState(null);
+        setLiveChartState(null);
+        setCustomTasks([]);
+      }
+      const cachedRaw = selected
+        ? await AsyncStorage.getItem(sweetStateKey(userId, selected.sweetId))
+        : null;
+      if (!active || generation !== membershipLoadGenerationRef.current) return;
+      if (selected && cachedRaw) {
+        try {
+          const cached = JSON.parse(cachedRaw) as SharedHouseholdState;
+          sweetDataCacheRef.current[selected.sweetId] = cached;
+          if (Array.isArray(cached.chores)) {
+            choresRef.current = cached.chores;
+            setChores(cached.chores);
+          }
+          if (Array.isArray(cached.expenses)) setExpenses(cached.expenses);
+          if (Array.isArray(cached.shoppingLists)) setShoppingLists(cached.shoppingLists);
+          if (Array.isArray(cached.shoppingItems)) setShoppingItems(cached.shoppingItems);
+          if (cached.shoppingSyncMeta) setShoppingSyncMeta(cached.shoppingSyncMeta);
+          if (Array.isArray(cached.borrowItems)) setBorrowItems(cached.borrowItems);
+          if (cached.essentialsAssignees) setEssentialsAssignees(cached.essentialsAssignees);
+          if (cached.roommateStatuses) setRoommateStatusesState(cached.roommateStatuses);
+          if (cached.sleepStartedAt) setSleepStartedAtState(cached.sleepStartedAt);
+          setHomeLocationState(cached.homeLocation ?? null);
+          setChoreChartState(cached.choreChart ?? null);
+          setChoreChartStartedAtState(cached.choreChartStartedAt ?? null);
+          setHomeProfileState(cached.homeProfile ?? null);
+          setLiveChartState(cached.liveChart ?? null);
+          if (Array.isArray(cached.customTasks)) setCustomTasks(cached.customTasks);
+        } catch (cacheError) {
+          reportRuntimeError("parse cached Sweet state", cacheError, { sweetId: selected.sweetId });
+        }
+      }
       setCurrentUserIdState(userId);
-      setCurrentMemberRole(membership.role === "owner" ? "owner" : "member");
-      setHouseholdId(membership.household_id);
-      setHouseholdName(household?.name ?? "My household");
-      setInviteCode(household?.invite_code ?? null);
+      setMemberships(nextMemberships);
+      setCurrentMemberRole(selected?.role ?? "member");
+      setHouseholdId(selected?.sweetId ?? null);
+      setHouseholdName(selected?.name ?? null);
+      setInviteCode(selectedHousehold?.invite_code ?? null);
       setHouseholdLoading(false);
+      if (selected && selected.sweetId !== storedActiveSweetId) {
+        void AsyncStorage.setItem(activeSweetKey(userId), selected.sweetId);
+      }
     })().catch((error) => {
       reportRuntimeError("load current household", error, { userId });
       if (active) {
@@ -1028,6 +1146,81 @@ export function AppProvider({
     });
     return () => { active = false; };
   }, [session?.user.id, membershipVersion]);
+
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId) return;
+    const channel = supabase
+      .channel(`my-sweet-memberships:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "household_members",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => setMembershipVersion((value) => value + 1),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [session?.user.id]);
+
+  const switchSweet = useCallback((sweetId: string) => {
+    const membership = memberships.find((item) => item.sweetId === sweetId);
+    const userId = session?.user.id;
+    if (!membership || !userId || sweetId === householdId) return;
+    setCloudReady(false);
+    setRoommates([]);
+    setChores([]);
+    setExpenses([]);
+    setShoppingLists([]);
+    setShoppingItems([]);
+    setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
+    setBorrowItems([]);
+    setNudges([]);
+    setNudgesReady(false);
+    setEssentialsAssignees({});
+    setRoommateStatusesState({});
+    setSleepStartedAtState({});
+    setHomeLocationState(null);
+    setChoreChartState(null);
+    setChoreChartStartedAtState(null);
+    setHomeProfileState(null);
+    setLiveChartState(null);
+    setCustomTasks([]);
+    setItemDifficulties([]);
+    setMemberPreferences([]);
+    setCurrentProposedChartState(null);
+    setChartApprovals([]);
+    setHouseholdPreferencesReady(false);
+    const cached = sweetDataCacheRef.current[membership.sweetId];
+    if (cached) {
+      setChores(cached.chores);
+      choresRef.current = cached.chores;
+      setExpenses(cached.expenses);
+      setShoppingLists(cached.shoppingLists);
+      setShoppingItems(cached.shoppingItems);
+      setShoppingSyncMeta(cached.shoppingSyncMeta);
+      setBorrowItems(cached.borrowItems);
+      setEssentialsAssignees(cached.essentialsAssignees);
+      setRoommateStatusesState(cached.roommateStatuses);
+      setSleepStartedAtState(cached.sleepStartedAt);
+      setHomeLocationState(cached.homeLocation);
+      setChoreChartState(cached.choreChart);
+      setChoreChartStartedAtState(cached.choreChartStartedAt);
+      setHomeProfileState(cached.homeProfile);
+      setLiveChartState(cached.liveChart);
+      setCustomTasks(cached.customTasks);
+    }
+    setCurrentMemberRole(membership.role);
+    setHouseholdId(membership.sweetId);
+    setHouseholdName(membership.name);
+    setInviteCode(membership.inviteCode ?? null);
+    void AsyncStorage.setItem(activeSweetKey(userId), membership.sweetId);
+  }, [householdId, memberships, session?.user.id]);
 
   const refreshMembers = useCallback(async () => {
     if (!householdId) {
@@ -1102,7 +1295,7 @@ export function AppProvider({
   }, [householdId, refreshMembers]);
 
   const createHousehold = useCallback(async (name: string, displayName: string, color: string, code: string) => {
-    const { error } = await supabase.rpc("create_household", {
+    const { data, error } = await supabase.rpc("create_household", {
       household_name: name.trim(), member_name: displayName.trim(), member_color: color,
       requested_invite_code: code,
     });
@@ -1111,45 +1304,103 @@ export function AppProvider({
       throw error;
     }
     const userId = session?.user.id;
+    const createdSweetId = Array.isArray(data) ? data[0]?.household_id : undefined;
+    if (!createdSweetId) throw new Error("The new Sweet was created without an identifier.");
+    const isFirstSweet = memberships.length === 0;
     if (userId) {
-      await AsyncStorage.mergeItem(
-        userPreferencesKey(userId),
-        JSON.stringify({ onboardingPending: true }),
-      );
+      await AsyncStorage.setItem(activeSweetKey(userId), createdSweetId);
+      if (isFirstSweet) {
+        await AsyncStorage.mergeItem(
+          userPreferencesKey(userId),
+          JSON.stringify({ onboardingPending: true }),
+        );
+      }
     }
-    setPreferencesOnboardingPending(true);
+    if (isFirstSweet) setPreferencesOnboardingPending(true);
     setHouseholdCompleteState(false);
     if (userId) {
       setRoommates([{ id: userId, name: displayName.trim(), color, points: 0, weeklyPoints: 0 }]);
+      choresRef.current = [];
       setChores([]); setExpenses([]); setShoppingLists([]); setShoppingItems([]);
       setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
       setBorrowItems([]); setNudges([]); setCurrentUserIdState(userId);
+      setHouseholdId(createdSweetId);
+      setHouseholdName(name.trim());
+      setInviteCode(code);
+      setCurrentMemberRole("owner");
+      setMemberships((current) => [
+        ...current.filter((membership) => membership.sweetId !== createdSweetId),
+        {
+          id: `${createdSweetId}:${userId}`,
+          sweetId: createdSweetId,
+          userId,
+          name: name.trim(),
+          role: "owner",
+          status: "active",
+          joinedAt: new Date().toISOString(),
+          memberCount: 1,
+          inviteCode: code,
+        },
+      ]);
     }
     setMembershipVersion((value) => value + 1);
-  }, [session?.user.id]);
+    return createdSweetId;
+  }, [memberships.length, session?.user.id]);
 
   const refreshHousehold = useCallback(() => {
     setMembershipVersion((value) => value + 1);
   }, []);
 
   const joinHousehold = useCallback(async (code: string, displayName: string, color: string) => {
-    const { error } = await supabase.rpc("join_household", {
+    const { data, error } = await supabase.rpc("join_household", {
       code: code.trim(), member_name: displayName.trim(), member_color: color,
     });
     if (error) {
       reportSupabaseError("join household", error);
       throw error;
     }
+    const isFirstSweet = memberships.length === 0;
     if (session?.user.id) {
-      await AsyncStorage.mergeItem(
-        userPreferencesKey(session.user.id),
-        JSON.stringify({ onboardingPending: true }),
-      );
+      if (typeof data === "string") {
+        await AsyncStorage.setItem(activeSweetKey(session.user.id), data);
+      }
+      if (isFirstSweet) {
+        await AsyncStorage.mergeItem(
+          userPreferencesKey(session.user.id),
+          JSON.stringify({ onboardingPending: true }),
+        );
+      }
     }
-    setPreferencesOnboardingPending(true);
+    if (isFirstSweet) setPreferencesOnboardingPending(true);
     if (session?.user.id) setCurrentUserIdState(session.user.id);
     setMembershipVersion((value) => value + 1);
-  }, [session?.user.id]);
+  }, [memberships.length, session?.user.id]);
+
+  const leaveSweet = useCallback(async (sweetId: string) => {
+    const { error } = await supabase.rpc("leave_household", {
+      target_household_id: sweetId,
+    });
+    if (error) {
+      reportSupabaseError("leave Sweet", error, { sweetId });
+      throw error;
+    }
+    const remaining = memberships.filter((membership) => membership.sweetId !== sweetId);
+    if (session?.user.id) {
+      const fallback = remaining[0]?.sweetId;
+      if (fallback) await AsyncStorage.setItem(activeSweetKey(session.user.id), fallback);
+      else await AsyncStorage.removeItem(activeSweetKey(session.user.id));
+    }
+    if (sweetId === householdId) {
+      if (remaining[0]) switchSweet(remaining[0].sweetId);
+      else {
+        setMemberships([]);
+        setHouseholdId(null);
+        setHouseholdName(null);
+        setInviteCode(null);
+      }
+    }
+    setMembershipVersion((value) => value + 1);
+  }, [householdId, memberships, session?.user.id, switchSweet]);
 
   const deleteHousehold = useCallback(async () => {
     if (!householdId) throw new Error("No household is selected.");
@@ -1180,6 +1431,20 @@ export function AppProvider({
       };
       console.error("Supabase household delete failed", failure);
       throw new Error(failure.message);
+    }
+
+    const remainingMemberships = memberships.filter(
+      (membership) => membership.sweetId !== householdId,
+    );
+    if (remainingMemberships[0] && session?.user.id) {
+      setMemberships(remainingMemberships);
+      await AsyncStorage.setItem(
+        activeSweetKey(session.user.id),
+        remainingMemberships[0].sweetId,
+      );
+      switchSweet(remainingMemberships[0].sweetId);
+      setMembershipVersion((value) => value + 1);
+      return;
     }
 
     await AsyncStorage.removeItem(STORAGE_KEY);
@@ -1222,7 +1487,7 @@ export function AppProvider({
     setChartApprovals([]);
     setPendingIouDraftState(null);
     setMembershipVersion((value) => value + 1);
-  }, [householdId, isHost, session?.user.id]);
+  }, [householdId, isHost, memberships, session?.user.id, switchSweet]);
 
   const removeRoommate = useCallback(async (roommateId: string) => {
     if (!householdId) throw new Error("No household is selected.");
@@ -1305,66 +1570,21 @@ export function AppProvider({
   }, [session?.user.id]);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
+    const userId = session?.user.id;
+    if (!userId) {
+      setLoaded(true);
+      return;
+    }
+    setLoaded(false);
+    AsyncStorage.getItem(userStateKey(userId))
       .then((raw) => {
         if (raw) {
           try {
           const data = JSON.parse(raw);
-          // Membership rows in Supabase are authoritative. Cached roommates
-          // must never overwrite a newer server roster.
-          if (data.chores) setChores(data.chores);
-          if (data.expenses) setExpenses(data.expenses);
-          const cachedShoppingMeta: ShoppingSyncMeta =
-            data.shoppingSyncMeta ?? EMPTY_SHOPPING_SYNC_META;
-          const localShoppingMeta = shoppingSyncMetaRef.current;
-          if (Array.isArray(data.shoppingLists)) {
-            setShoppingLists((local) => mergeVersionedShopping(
-              local,
-              data.shoppingLists,
-              localShoppingMeta.listVersions,
-              cachedShoppingMeta.listVersions,
-              localShoppingMeta.deletedLists,
-              cachedShoppingMeta.deletedLists,
-            ));
-          }
-          if (Array.isArray(data.shoppingItems)) {
-            setShoppingItems((local) => mergeVersionedShopping(
-              local,
-              data.shoppingItems,
-              localShoppingMeta.itemVersions,
-              cachedShoppingMeta.itemVersions,
-              localShoppingMeta.deletedItems,
-              cachedShoppingMeta.deletedItems,
-            ));
-          }
-          const mergeCachedVersions = (
-            local: Record<string, string>,
-            cached: Record<string, string>,
-          ) => Object.fromEntries(
-            [...new Set([...Object.keys(local), ...Object.keys(cached)])].map((id) => [
-              id,
-              local[id] > (cached[id] ?? "") ? local[id] : cached[id],
-            ]),
-          );
-          const hydratedShoppingMeta: ShoppingSyncMeta = {
-            listVersions: mergeCachedVersions(localShoppingMeta.listVersions, cachedShoppingMeta.listVersions),
-            itemVersions: mergeCachedVersions(localShoppingMeta.itemVersions, cachedShoppingMeta.itemVersions),
-            deletedLists: mergeCachedVersions(localShoppingMeta.deletedLists, cachedShoppingMeta.deletedLists),
-            deletedItems: mergeCachedVersions(localShoppingMeta.deletedItems, cachedShoppingMeta.deletedItems),
-          };
-          setShoppingSyncMeta(hydratedShoppingMeta);
-          shoppingSyncMetaRef.current = hydratedShoppingMeta;
-          if (data.borrowItems) setBorrowItems(data.borrowItems);
-          if (data.nudges) setNudges(data.nudges);
+          // The legacy record is now treated as personal-only. Shared domain
+          // collections are never hydrated without an explicit Sweet key.
           if (Array.isArray(data.appAlerts)) setAppAlerts(data.appAlerts);
-          if (data.essentialsAssignees) setEssentialsAssignees(data.essentialsAssignees);
           if (data.suppressedAlerts) setSuppressedAlerts(data.suppressedAlerts);
-          if (data.roommateStatuses) setRoommateStatusesState(data.roommateStatuses);
-          if (data.sleepStartedAt) setSleepStartedAtState(data.sleepStartedAt);
-          if (data.homeLocation) setHomeLocationState(data.homeLocation);
-          if (data.choreChart) setChoreChartState(data.choreChart);
-          if (data.choreChartStartedAt) setChoreChartStartedAtState(data.choreChartStartedAt);
-          if (data.homeProfile) setHomeProfileState(data.homeProfile);
           if (data.currentUserId && typeof data.currentUserId === "string") {
             setCurrentUserIdState(data.currentUserId);
           }
@@ -1377,29 +1597,58 @@ export function AppProvider({
         reportRuntimeError("hydrate cached household state", error);
       })
       .finally(() => setLoaded(true));
-  }, []);
+  }, [session?.user.id]);
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !session?.user.id) return;
     // Coalesce rapid mutations and move the full-state serialization off the
     // interaction frame. This is especially important when a user completes
     // a chore and immediately switches tabs.
     let interaction: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
     const timer = setTimeout(() => {
       interaction = InteractionManager.runAfterInteractions(() => {
-        AsyncStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({ roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, nudges, appAlerts, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId })
-        ).catch((error) => {
-          reportRuntimeError("cache household state", error);
-        });
+        const userId = session.user.id;
+        const writes = [
+          AsyncStorage.setItem(
+            userStateKey(userId),
+            JSON.stringify({ appAlerts, suppressedAlerts, currentUserId }),
+          ),
+        ];
+        if (householdId) {
+          writes.push(
+            AsyncStorage.setItem(
+              sweetStateKey(userId, householdId),
+              JSON.stringify({
+                roommates,
+                chores,
+                expenses,
+                shoppingLists,
+                shoppingItems,
+                shoppingSyncMeta,
+                borrowItems,
+                essentialsAssignees,
+                roommateStatuses,
+                sleepStartedAt,
+                homeLocation,
+                choreChart,
+                choreChartStartedAt,
+                homeProfile,
+                liveChart,
+                customTasks,
+              } satisfies SharedHouseholdState),
+            ),
+          );
+        }
+        Promise.all(writes).catch((error) =>
+          reportRuntimeError("cache Sweet state", error, { householdId }),
+        );
       });
     }, 120);
     return () => {
       clearTimeout(timer);
       interaction?.cancel();
     };
-  }, [loaded, roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, nudges, appAlerts, essentialsAssignees, suppressedAlerts, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, currentUserId]);
+  }, [appAlerts, borrowItems, choreChart, choreChartStartedAt, chores, currentUserId, customTasks, essentialsAssignees, expenses, homeLocation, homeProfile, householdId, liveChart, loaded, roommateStatuses, roommates, session?.user.id, shoppingItems, shoppingLists, shoppingSyncMeta, sleepStartedAt, suppressedAlerts]);
 
   const upsertInformationalAlerts = useCallback((incoming: AppAlert[]) => {
     if (!incoming.length) return;
@@ -1599,6 +1848,11 @@ export function AppProvider({
 
   const latestSharedStateRef = useRef(sharedState);
   latestSharedStateRef.current = sharedState;
+
+  useEffect(() => {
+    if (!householdId || !cloudReady) return;
+    sweetDataCacheRef.current[householdId] = sharedState;
+  }, [cloudReady, householdId, sharedState]);
 
   const applySharedState = useCallback((next: Partial<SharedHouseholdState>) => {
     // currentUserId, suppressedAlerts, and pendingIouDraft remain private to
@@ -3054,6 +3308,17 @@ export function AppProvider({
   // realtime readiness, auth token refreshes). Those updates should not
   // broadcast a brand-new context object to every mounted tab when none of
   // the values that screens consume changed.
+  const activeSweet = useMemo(
+    () => memberships.find((membership) => membership.sweetId === householdId) ?? null,
+    [householdId, memberships],
+  );
+  const visibleAppAlerts = useMemo(
+    () => householdId
+      ? appAlerts.filter((alert) => alert.deduplicationKey.includes(`:${householdId}:`))
+      : [],
+    [appAlerts, householdId],
+  );
+
   const contextValue = useMemo<AppContextType>(() => ({
     itemDifficulties,
     setItemDifficulty,
@@ -3079,7 +3344,7 @@ export function AppProvider({
     quickGuideOpen,
     openQuickGuide,
     dismissQuickGuide,
-    appAlerts,
+    appAlerts: visibleAppAlerts,
     markAlertRead,
     markAllAlertsRead,
     householdComplete,
@@ -3093,6 +3358,9 @@ export function AppProvider({
     leaderboardPeriod,
     setLeaderboardPeriod,
     householdId,
+    memberships,
+    activeSweetId: householdId,
+    activeSweet,
     householdName,
     inviteCode,
     householdLoading,
@@ -3102,6 +3370,8 @@ export function AppProvider({
     refreshHousehold,
     createHousehold,
     joinHousehold,
+    switchSweet,
+    leaveSweet,
     deleteHousehold,
     removeRoommate,
     deleteOwnAccount,
@@ -3173,11 +3443,11 @@ export function AppProvider({
     approveProposedChart, forceApproveProposedChart, restartChartProcess,
     isHost, preferencesLoaded, preferencesOnboardingPending,
     finishPreferencesOnboarding, quickGuideOpen, openQuickGuide,
-    dismissQuickGuide, appAlerts, markAlertRead, markAllAlertsRead,
+    dismissQuickGuide, visibleAppAlerts, markAlertRead, markAllAlertsRead,
     householdComplete, setHouseholdComplete,
-    colorScheme, pointsEnabled, plantEnabled, leaderboardPeriod, householdId, householdName,
+    colorScheme, pointsEnabled, plantEnabled, leaderboardPeriod, householdId, memberships, activeSweet, householdName,
     inviteCode, householdLoading, membersLoading, currentMemberRole,
-    refreshMembers, refreshHousehold, createHousehold, joinHousehold,
+    refreshMembers, refreshHousehold, createHousehold, joinHousehold, switchSweet, leaveSweet,
     deleteHousehold, removeRoommate, deleteOwnAccount, currentUserId,
     setCurrentUser, roommates, chores, expenses, shoppingLists, shoppingItems,
     borrowItems, nudges, nudgesReady, addChore, updateChore, addChores, completeChore, pickUpChore, deleteChore,
