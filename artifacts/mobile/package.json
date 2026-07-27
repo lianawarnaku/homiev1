@@ -58,11 +58,17 @@
   "dependencies": {
     "@expo-google-fonts/barlow-condensed": "^0.4.1",
     "@react-navigation/bottom-tabs": "^7.15.11",
+    "@sentry/react-native": "7.2.0",
     "@supabase/supabase-js": "^2.110.0",
+    "expo-application": "~7.0.8",
     "expo-calendar": "~15.0.8",
     "expo-clipboard": "~8.0.8",
     "expo-crypto": "^15.0.9",
+    "expo-device": "~8.0.10",
+    "expo-file-system": "~19.0.23",
+    "expo-localization": "~17.0.9",
     "expo-secure-store": "^15.0.8",
+    "posthog-react-native": "4.60.0",
     "react-native-draggable-flatlist": "^4.0.3",
     "react-native-url-polyfill": "^3.0.0"
   }

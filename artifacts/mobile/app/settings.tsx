@@ -22,6 +22,7 @@ import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContext } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { UserPreferencesPanel } from "@/components/UserPreferencesPanel";
+import { AnalyticsPreferencesPanel } from "@/components/AnalyticsConsentManager";
 import { HouseholdCompletionControl } from "@/components/HouseholdCompletionControl";
 import { InviteCodeCard } from "@/components/InviteCodeCard";
 import { useSupabaseSession } from "@/hooks/useSupabaseSession";
@@ -29,6 +30,7 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { supabase } from "@/lib/supabase";
 import { error as hapticError } from "@/lib/haptics";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
+import { track } from "@/lib/analytics";
 import {
   findRoommateIdByEmail,
   getStoredEmail,
@@ -543,6 +545,14 @@ export default function SettingsScreen() {
           </View>
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>🎨  APPEARANCE & FEATURES</Text>
           <UserPreferencesPanel />
+          {session?.user.id ? (
+            <>
+              <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+                🔒  PRIVACY & DIAGNOSTICS
+              </Text>
+              <AnalyticsPreferencesPanel userId={session.user.id} />
+            </>
+          ) : null}
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ⓘ  HELP</Text>
           <TouchableOpacity
             accessibilityRole="button"
@@ -550,6 +560,7 @@ export default function SettingsScreen() {
             style={[styles.linkRow, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              track.quickGuideOpened({ source: "settings" });
               openQuickGuide();
             }}
           >

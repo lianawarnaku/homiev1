@@ -52,6 +52,7 @@
       "expo-font",
       "expo-web-browser",
       "expo-secure-store",
+      "@sentry/react-native/expo",
       [
         "expo-calendar",
         {

@@ -16,6 +16,7 @@ import { AuthGate } from "@/components/AuthGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { QuickGuideModal } from "@/components/QuickGuideModal";
 import { NudgeToast } from "@/components/NudgeToast";
+import { AnalyticsConsentManager } from "@/components/AnalyticsConsentManager";
 import { AppProvider } from "@/context/AppContext";
 import { useSupabaseSession } from "@/hooks/useSupabaseSession";
 import { setBaseUrl } from "@workspace/api-client-react";
@@ -68,6 +69,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <AppProvider session={session}>
+              <AnalyticsConsentManager session={session} />
               <AuthGate session={session} sessionLoading={sessionLoading}>
                 <>
                 <Stack

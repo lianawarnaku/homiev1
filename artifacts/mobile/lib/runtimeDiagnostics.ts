@@ -6,6 +6,7 @@ type ErrorLike = {
   hint?: string;
   status?: number;
 };
+import { captureDiagnosticException } from "@/lib/analytics";
 
 type RejectionEventLike = {
   reason?: unknown;
@@ -47,12 +48,13 @@ function diagnosticPayload(error: unknown, action = activeAction) {
   const normalized = normalizeError(error);
   return {
     action,
-    message: normalized.message ?? "Unknown runtime error",
+    errorType: error instanceof Error ? error.name : "RuntimeError",
     code: normalized.code,
-    details: normalized.details,
-    hint: normalized.hint,
     status: normalized.status,
-    stack: normalized.stack ?? new Error().stack,
+    stack: (normalized.stack ?? new Error().stack)
+      ?.split("\n")
+      .slice(1)
+      .join("\n"),
   };
 }
 
@@ -64,9 +66,10 @@ export function reportRuntimeError(
   const logger = originalConsoleError ?? console.error;
   const payload = {
     ...diagnosticPayload(error, action),
-    ...context,
+    contextKeys: Object.keys(context ?? {}),
   };
   logger("[SweetMate runtime error]", JSON.stringify(payload, null, 2));
+  captureDiagnosticException(error, action, context);
 }
 
 export function reportSupabaseError(
@@ -108,8 +111,8 @@ export function installGlobalRuntimeDiagnostics() {
       ...diagnosticPayload(firstError ?? args.map(String).join(" ")),
       arguments: args.map((value) =>
         value instanceof Error
-          ? { message: value.message, stack: value.stack }
-          : String(value),
+          ? { errorType: value.name }
+          : typeof value,
       ),
     }, null, 2));
   };

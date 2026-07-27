@@ -12,7 +12,9 @@ import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -28,9 +30,20 @@ import { error as hapticError } from "@/lib/haptics";
 import { BrandMark } from "./BrandMark";
 import { supabase } from "@/lib/supabase";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
+import { track } from "@/lib/analytics";
 
 type Mode = "signin" | "signup";
 const EMAIL_CONFIRMATION_URL = "https://sweetmate.info/auth/confirm";
+const PRIVACY_POLICY_URL = "https://sweetmate.info/privacy";
+
+function openPrivacyPolicy() {
+  void Linking.openURL(PRIVACY_POLICY_URL).catch(() => {
+    Alert.alert(
+      "Privacy Policy unavailable",
+      "Check your connection and try again, or visit sweetmate.info/privacy in a browser.",
+    );
+  });
+}
 
 function isValidEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -97,6 +110,7 @@ export function SignInScreen() {
         if (data.session) {
           // Auto-confirm is enabled — the new user is signed in immediately.
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          track.accountCreated();
         } else {
           // Defensive fallback for a legacy/unconfirmed account or a remote
           // configuration mismatch.
@@ -257,6 +271,19 @@ export function SignInScreen() {
               </Text>
             )}
           </TouchableOpacity>
+          {mode === "signup" ? (
+            <Text style={[styles.privacyCopy, { color: colors.mutedForeground }]}>
+              By creating an account, you acknowledge the{" "}
+              <Text
+                accessibilityRole="link"
+                onPress={openPrivacyPolicy}
+                style={{ color: colors.primary, fontFamily: "Inter_600SemiBold" }}
+              >
+                Privacy Policy
+              </Text>
+              . Optional analytics and crash reporting remain off unless you enable them.
+            </Text>
+          ) : null}
 
           <TouchableOpacity
             style={styles.switchRow}
@@ -362,5 +389,12 @@ const styles = StyleSheet.create({
   switchText: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
+  },
+  privacyCopy: {
+    marginTop: 14,
+    textAlign: "center",
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 17,
   },
 });

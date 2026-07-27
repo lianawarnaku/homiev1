@@ -22,6 +22,7 @@ import type { ItemCategory } from "@/constants/itemDifficulty";
 import type { Difficulty } from "@/lib/itemDifficulty";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import { findAssignedLoadDeviations } from "@/lib/chartLoadBalance";
+import { deleteLocalAnalyticsIdentity, track } from "@/lib/analytics";
 
 export type RoommateStatus = "home" | "away" | "asleep" | "unknown";
 export type LeaderboardPeriod = "weekly" | "alltime";
@@ -1172,6 +1173,7 @@ export function AppProvider({
     const membership = memberships.find((item) => item.sweetId === sweetId);
     const userId = session?.user.id;
     if (!membership || !userId || sweetId === householdId) return;
+    track.sweetSwitched({ destination: "existing" });
     setCloudReady(false);
     setRoommates([]);
     setChores([]);
@@ -1344,6 +1346,7 @@ export function AppProvider({
       ]);
     }
     setMembershipVersion((value) => value + 1);
+    track.sweetCreated({ source: "setup" });
     return createdSweetId;
   }, [memberships.length, session?.user.id]);
 
@@ -1374,6 +1377,7 @@ export function AppProvider({
     if (isFirstSweet) setPreferencesOnboardingPending(true);
     if (session?.user.id) setCurrentUserIdState(session.user.id);
     setMembershipVersion((value) => value + 1);
+    track.sweetJoined({ source: "invite" });
   }, [memberships.length, session?.user.id]);
 
   const leaveSweet = useCallback(async (sweetId: string) => {
@@ -1548,6 +1552,7 @@ export function AppProvider({
     await AsyncStorage.removeItem(STORAGE_KEY);
     if (session?.user.id) {
       await AsyncStorage.removeItem(userPreferencesKey(session.user.id));
+      await deleteLocalAnalyticsIdentity(session.user.id);
     }
     await supabase.auth.signOut({ scope: "local" });
     setHouseholdId(null);
@@ -2338,6 +2343,7 @@ export function AppProvider({
     const updated = [...choresRef.current, next];
     choresRef.current = updated;
     setChores(updated);
+    track.choreCreated({ recurring: Boolean(chore.recurring) });
     return id;
   }, [currentUserId, householdId, roommates, session?.user.id]);
 
@@ -2409,6 +2415,9 @@ export function AppProvider({
   const completeChore = useCallback((id: string) => {
     const chore = choresRef.current.find((c) => c.id === id);
     if (!chore) return;
+    if (!chore.completed) {
+      track.choreCompleted({ recurring: Boolean(chore.recurring) });
+    }
     const wasCompleted = chore.completed;
     const delta = wasCompleted ? -chore.points : chore.points;
     const completedAt = new Date().toISOString();
@@ -2560,12 +2569,14 @@ export function AppProvider({
     });
     choresRef.current = next;
     setChores(next);
+    track.choreDeleted({ recurring: Boolean(target.recurring) });
     return true;
   }, [canManageChore]);
 
   const addExpense = useCallback((expense: Omit<Expense, "id">) => {
     const id = makeId();
     setExpenses((prev) => [...prev, { ...expense, id }]);
+    track.expenseCreated({ recurring: Boolean(expense.recurring) });
     return id;
   }, []);
 
@@ -2582,6 +2593,7 @@ export function AppProvider({
     setExpenses((prev) =>
       prev.map((e) => (e.id === id ? { ...e, settled: true } : e))
     );
+    track.iouSettled();
   }, []);
 
   const deleteExpense = useCallback((id: string) => {
@@ -2642,6 +2654,7 @@ export function AppProvider({
       const unpinned = prev.filter((l) => !l.pinned);
       return [...pinned, newList, ...unpinned];
     });
+    track.shoppingListCreated();
   }, [recordShoppingVersions]);
 
   // Accept whatever id order the DraggableFlatList emits, then re-partition
@@ -2703,6 +2716,7 @@ export function AppProvider({
     const id = makeId();
     recordShoppingVersions("item", [id]);
     setShoppingItems((prev) => [...prev, { ...item, id }]);
+    track.shoppingItemAdded();
   }, [recordShoppingVersions]);
 
   const toggleShoppingItem = useCallback((id: string) => {
@@ -2819,6 +2833,7 @@ export function AppProvider({
       createdAt: now,
       updatedAt: now,
     }]);
+    track.borrowingItemAdded();
     return id;
   }, [householdId, roommates, session?.user.id]);
 
@@ -2868,6 +2883,7 @@ export function AppProvider({
     const isOwner = current.borrowedFrom === currentUserId;
     const isBorrower = current.borrowedBy === currentUserId;
     if (!isOwner && !isBorrower && !isHost) return false;
+    track.borrowingItemReturned();
     const now = new Date().toISOString();
     setBorrowItems((prev) =>
       prev.map((b) => {
@@ -2947,6 +2963,7 @@ export function AppProvider({
       });
       throw error;
     }
+    track.nudgeSent({ channel: "in_app" });
   }, [householdId, session?.user.id]);
 
   const suppressAlert = useCallback((id: string) => {
