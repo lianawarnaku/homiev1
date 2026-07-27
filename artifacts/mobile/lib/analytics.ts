@@ -4,6 +4,8 @@ import { Platform } from "react-native";
 import PostHog from "posthog-react-native";
 import * as Sentry from "@sentry/react-native";
 
+import { createExternalStoreSnapshotCache } from "@/lib/externalStoreSnapshot";
+
 export const PRIVACY_NOTICE_VERSION = "2026-07-26";
 
 export type AnalyticsPreferences = {
@@ -79,6 +81,7 @@ const DEFAULT_PREFERENCES: AnalyticsPreferences = {
   crashReportingEnabled: false,
   noticeVersion: null,
 };
+const snapshotCache = createExternalStoreSnapshotCache(DEFAULT_PREFERENCES);
 
 const deniedKeys =
   /(^|_)(email|name|display_name|invite_code|sweet_name|household_name|title|description|note|item|token|password|address|photo|avatar|message|query|url)($|_)/i;
@@ -205,6 +208,7 @@ export async function loadAnalyticsPreferences(userId: string) {
   }
   preferencesByUser.set(userId, preferences);
   loadedUsers.add(userId);
+  snapshotCache.publish(userId, true, preferences);
   notify();
   await applyPreferences(userId);
 }
@@ -219,6 +223,7 @@ export async function saveAnalyticsPreferences(
   };
   preferencesByUser.set(userId, next);
   await AsyncStorage.setItem(preferenceKey(userId), JSON.stringify(next));
+  snapshotCache.publish(userId, true, next);
   notify();
   await applyPreferences(userId);
 }
@@ -235,16 +240,12 @@ export async function deleteLocalAnalyticsIdentity(userId: string) {
   await AsyncStorage.multiRemove([preferenceKey(userId), analyticsIdKey(userId)]);
   preferencesByUser.delete(userId);
   loadedUsers.delete(userId);
+  snapshotCache.remove(userId);
   notify();
 }
 
 export function analyticsSnapshot(userId: string | null) {
-  return {
-    loaded: userId ? loadedUsers.has(userId) : true,
-    preferences: userId
-      ? preferencesByUser.get(userId) ?? DEFAULT_PREFERENCES
-      : DEFAULT_PREFERENCES,
-  };
+  return snapshotCache.get(userId);
 }
 
 export function subscribeAnalytics(listener: () => void) {
