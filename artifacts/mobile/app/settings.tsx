@@ -29,7 +29,10 @@ import { useSupabaseSession } from "@/hooks/useSupabaseSession";
 import { useConfirm } from "@/hooks/useConfirm";
 import { supabase } from "@/lib/supabase";
 import { error as hapticError } from "@/lib/haptics";
-import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
+import {
+  reportSupabaseError,
+  reportRuntimeError,
+} from "@/lib/runtimeDiagnostics";
 import { track } from "@/lib/analytics";
 import {
   findRoommateIdByEmail,
@@ -52,11 +55,17 @@ function generateResetCode(): string {
 function apiBaseUrl(): string {
   return (
     process.env.EXPO_PUBLIC_API_URL ??
-    (process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : "")
+    (process.env.EXPO_PUBLIC_DOMAIN
+      ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+      : "")
   );
 }
 
-async function sendEmail(to: string, subject: string, body: string): Promise<{ sent: boolean; simulated: boolean; body?: string }> {
+async function sendEmail(
+  to: string,
+  subject: string,
+  body: string,
+): Promise<{ sent: boolean; simulated: boolean; body?: string }> {
   const url = `${apiBaseUrl()}/api/email/send`;
   const res = await fetch(url, {
     method: "POST",
@@ -84,9 +93,25 @@ export default function SettingsScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const {
-    roommates, currentUserId, updateRoommate, setCurrentUser, householdName,
-    inviteCode, householdLoading, refreshHousehold, deleteHousehold, restartChartProcess, currentProposedChart,
-    isHost, removeRoommate, deleteOwnAccount, openQuickGuide,
+    roommates,
+    currentUserId,
+    updateRoommate,
+    setCurrentUser,
+    householdName,
+    inviteCode,
+    householdLoading,
+    refreshHousehold,
+    deleteHousehold,
+    restartChartProcess,
+    currentProposedChart,
+    isHost,
+    removeRoommate,
+    deleteOwnAccount,
+    openQuickGuide,
+    memberships,
+    activeSweetId,
+    switchSweet,
+    leaveSweet,
   } = useAppContext();
   const { confirm } = useConfirm();
   const me = roommates.find((r) => r.id === currentUserId);
@@ -96,8 +121,11 @@ export default function SettingsScreen() {
   const [signingOut, setSigningOut] = useState(false);
   const [deletingHousehold, setDeletingHousehold] = useState(false);
   const [restartingChart, setRestartingChart] = useState(false);
-  const [removingRoommateId, setRemovingRoommateId] = useState<string | null>(null);
+  const [removingRoommateId, setRemovingRoommateId] = useState<string | null>(
+    null,
+  );
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [householdSwitcherOpen, setHouseholdSwitcherOpen] = useState(false);
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
@@ -110,7 +138,10 @@ export default function SettingsScreen() {
       // this component will unmount, so no need to reset state locally.
     } catch (error) {
       reportRuntimeError("sign out from settings", error);
-      Alert.alert("Unable to sign out", "Please check your connection and try again.");
+      Alert.alert(
+        "Unable to sign out",
+        "Please check your connection and try again.",
+      );
     } finally {
       setSigningOut(false);
     }
@@ -129,12 +160,17 @@ export default function SettingsScreen() {
             setDeletingHousehold(true);
             try {
               await deleteHousehold();
-              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              await Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Success,
+              );
               router.replace("/");
             } catch (error) {
               hapticError();
               const message =
-                error && typeof error === "object" && "message" in error && typeof error.message === "string"
+                error &&
+                typeof error === "object" &&
+                "message" in error &&
+                typeof error.message === "string"
                   ? error.message
                   : "The household could not be deleted.";
               Alert.alert("Unable to delete household", message);
@@ -143,7 +179,7 @@ export default function SettingsScreen() {
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -163,13 +199,16 @@ export default function SettingsScreen() {
               router.push("/planning");
             } catch {
               hapticError();
-              Alert.alert("Could not restart", "Please check your connection and try again.");
+              Alert.alert(
+                "Could not restart",
+                "Please check your connection and try again.",
+              );
             } finally {
               setRestartingChart(false);
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -183,11 +222,16 @@ export default function SettingsScreen() {
           setRemovingRoommateId(roommateId);
           try {
             await removeRoommate(roommateId);
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            await Haptics.notificationAsync(
+              Haptics.NotificationFeedbackType.Success,
+            );
           } catch (error) {
             hapticError();
             const message =
-              error && typeof error === "object" && "message" in error && typeof error.message === "string"
+              error &&
+              typeof error === "object" &&
+              "message" in error &&
+              typeof error.message === "string"
                 ? error.message
                 : "The roommate could not be removed.";
             Alert.alert("Unable to remove roommate", message);
@@ -196,7 +240,7 @@ export default function SettingsScreen() {
           }
         })();
       },
-      { confirmText: "Remove roommate", destructive: true }
+      { confirmText: "Remove roommate", destructive: true },
     );
   };
 
@@ -210,12 +254,17 @@ export default function SettingsScreen() {
           setDeletingAccount(true);
           try {
             await deleteOwnAccount();
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            await Haptics.notificationAsync(
+              Haptics.NotificationFeedbackType.Success,
+            );
             router.replace("/");
           } catch (error) {
             hapticError();
             const rawMessage =
-              error && typeof error === "object" && "message" in error && typeof error.message === "string"
+              error &&
+              typeof error === "object" &&
+              "message" in error &&
+              typeof error.message === "string"
                 ? error.message
                 : "";
             const message = rawMessage.includes("Remove all other roommates")
@@ -227,7 +276,7 @@ export default function SettingsScreen() {
           }
         })();
       },
-      { confirmText: "Delete my account", destructive: true }
+      { confirmText: "Delete my account", destructive: true },
     );
   };
 
@@ -246,7 +295,9 @@ export default function SettingsScreen() {
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
-  const [authPhase, setAuthPhase] = useState<"pick" | "creds" | "forgot" | "reset">("pick");
+  const [authPhase, setAuthPhase] = useState<
+    "pick" | "creds" | "forgot" | "reset"
+  >("pick");
   const [authMode, setAuthMode] = useState<"login" | "setup">("login");
   const [authRoommateId, setAuthRoommateId] = useState<string | null>(null);
   const [authUsername, setAuthUsername] = useState("");
@@ -258,10 +309,14 @@ export default function SettingsScreen() {
 
   // Forgot-password flow state
   const [forgotEmail, setForgotEmail] = useState("");
-  const [resetCodeExpected, setResetCodeExpected] = useState<string | null>(null);
+  const [resetCodeExpected, setResetCodeExpected] = useState<string | null>(
+    null,
+  );
   const [resetCodeInput, setResetCodeInput] = useState("");
   const [resetNewPassword, setResetNewPassword] = useState("");
-  const [resetTargetRoommateId, setResetTargetRoommateId] = useState<string | null>(null);
+  const [resetTargetRoommateId, setResetTargetRoommateId] = useState<
+    string | null
+  >(null);
   const [resetDemoCode, setResetDemoCode] = useState<string | null>(null);
 
   useEffect(() => {
@@ -350,7 +405,7 @@ export default function SettingsScreen() {
         const ok = await verifyCredentials(
           authRoommateId,
           authUsername.trim(),
-          authPassword
+          authPassword,
         );
         if (!ok) {
           setAuthError("Incorrect username or password.");
@@ -361,14 +416,15 @@ export default function SettingsScreen() {
           authRoommateId,
           authUsername.trim(),
           authEmail.trim(),
-          authPassword
+          authPassword,
         );
         // Fire-and-forget confirmation email — don't block login on this
-        const roommateName = roommates.find((r) => r.id === authRoommateId)?.name ?? "there";
+        const roommateName =
+          roommates.find((r) => r.id === authRoommateId)?.name ?? "there";
         sendEmail(
           authEmail.trim(),
           "Welcome to SweetMate",
-          `Hi ${roommateName},\n\nYour SweetMate account was just set up on this device with username "${authUsername.trim()}".\n\nIf this wasn't you, sign in and change your password.\n\n— SweetMate`
+          `Hi ${roommateName},\n\nYour SweetMate account was just set up on this device with username "${authUsername.trim()}".\n\nIf this wasn't you, sign in and change your password.\n\n— SweetMate`,
         ).catch(() => {
           // Email failure is non-blocking; user is already logged in
         });
@@ -406,7 +462,7 @@ export default function SettingsScreen() {
     try {
       const matchedId = await findRoommateIdByEmail(
         forgotEmail.trim(),
-        roommates.map((r) => r.id)
+        roommates.map((r) => r.id),
       );
       if (!matchedId) {
         setAuthError("No account found for that email on this device.");
@@ -415,12 +471,13 @@ export default function SettingsScreen() {
       const code = generateResetCode();
       setResetCodeExpected(code);
       setResetTargetRoommateId(matchedId);
-      const roommateName = roommates.find((r) => r.id === matchedId)?.name ?? "there";
+      const roommateName =
+        roommates.find((r) => r.id === matchedId)?.name ?? "there";
       try {
         const result = await sendEmail(
           forgotEmail.trim(),
           "Your SweetMate reset code",
-          `Hi ${roommateName},\n\nYour SweetMate password reset code is:\n\n${code}\n\nThis code is good for one reset. If you didn't request a reset, ignore this email.\n\n— SweetMate`
+          `Hi ${roommateName},\n\nYour SweetMate password reset code is:\n\n${code}\n\nThis code is good for one reset. If you didn't request a reset, ignore this email.\n\n— SweetMate`,
         );
         if (result.simulated) {
           setResetDemoCode(code);
@@ -508,15 +565,25 @@ export default function SettingsScreen() {
       router.back();
     } catch (error) {
       reportRuntimeError("save Sweetmate profile", error);
-      Alert.alert("Unable to save profile", "Please check your connection and try again.");
+      Alert.alert(
+        "Unable to save profile",
+        "Please check your connection and try again.",
+      );
     }
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: topPad + 12, borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: topPad + 12, borderBottomColor: colors.border },
+        ]}
+      >
         <View style={styles.iconBtn} />
-        <Text style={[styles.title, { color: colors.foreground }]}>SWEETMATE SETTINGS</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>
+          SWEETMATE SETTINGS
+        </Text>
         <TouchableOpacity
           onPress={() => router.back()}
           style={[styles.iconBtn, { backgroundColor: colors.muted }]}
@@ -536,50 +603,99 @@ export default function SettingsScreen() {
           contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={[styles.settingsIntro, { borderBottomColor: colors.border }]}>
+          <View
+            style={[styles.settingsIntro, { borderBottomColor: colors.border }]}
+          >
             <Text style={styles.settingsIntroEmoji}>⚙️</Text>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.settingsIntroTitle, { color: colors.foreground }]}>MAKE SWEETMATE YOURS</Text>
-              <Text style={[styles.settingsIntroSub, { color: colors.mutedForeground }]}>Profile, household tools, and account access</Text>
+              <Text
+                style={[
+                  styles.settingsIntroTitle,
+                  { color: colors.foreground },
+                ]}
+              >
+                MAKE SWEETMATE YOURS
+              </Text>
+              <Text
+                style={[
+                  styles.settingsIntroSub,
+                  { color: colors.mutedForeground },
+                ]}
+              >
+                Profile, household tools, and account access
+              </Text>
             </View>
           </View>
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>🎨  APPEARANCE & FEATURES</Text>
+          <Text
+            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+          >
+            🎨 APPEARANCE & FEATURES
+          </Text>
           <UserPreferencesPanel />
           {session?.user.id ? (
             <>
-              <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-                🔒  PRIVACY & DIAGNOSTICS
+              <Text
+                style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+              >
+                🔒 PRIVACY & DIAGNOSTICS
               </Text>
               <AnalyticsPreferencesPanel userId={session.user.id} />
             </>
           ) : null}
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ⓘ  HELP</Text>
+          <Text
+            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+          >
+            ⓘ HELP
+          </Text>
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Open Quick guide"
-            style={[styles.linkRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={[
+              styles.linkRow,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               track.quickGuideOpened({ source: "settings" });
               openQuickGuide();
             }}
           >
-            <View style={[styles.linkIcon, { backgroundColor: colors.primary + "18" }]}>
+            <View
+              style={[
+                styles.linkIcon,
+                { backgroundColor: colors.primary + "18" },
+              ]}
+            >
               <Feather name="info" size={18} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.linkTitle, { color: colors.foreground }]}>QUICK GUIDE</Text>
+              <Text style={[styles.linkTitle, { color: colors.foreground }]}>
+                QUICK GUIDE
+              </Text>
               <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
                 Revisit a few helpful SweetMate features
               </Text>
             </View>
-            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={colors.mutedForeground}
+            />
           </TouchableOpacity>
           {/* Cloud Account — Supabase session. Shown above the legacy local
               account section. Signing out here drops the whole app back to
               the SignInScreen via AuthGate. */}
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>☁️  CLOUD ACCOUNT</Text>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text
+            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+          >
+            ☁️ CLOUD ACCOUNT
+          </Text>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
             <View style={styles.accountRow}>
               <View
                 style={{
@@ -594,11 +710,16 @@ export default function SettingsScreen() {
                 <Text style={styles.rowEmoji}>☁️</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.accountName, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.accountName, { color: colors.foreground }]}
+                >
                   Signed in
                 </Text>
                 <Text
-                  style={[styles.accountUsername, { color: colors.mutedForeground }]}
+                  style={[
+                    styles.accountUsername,
+                    { color: colors.mutedForeground },
+                  ]}
                   numberOfLines={1}
                 >
                   {session?.user.email ?? "—"}
@@ -606,7 +727,13 @@ export default function SettingsScreen() {
               </View>
             </View>
             <TouchableOpacity
-              style={[styles.switchUserBtn, { backgroundColor: colors.destructive, opacity: signingOut ? 0.6 : 1 }]}
+              style={[
+                styles.switchUserBtn,
+                {
+                  backgroundColor: colors.destructive,
+                  opacity: signingOut ? 0.6 : 1,
+                },
+              ]}
               onPress={handleSignOut}
               disabled={signingOut}
             >
@@ -618,24 +745,39 @@ export default function SettingsScreen() {
             <TouchableOpacity
               style={[
                 styles.outlineDangerBtn,
-                { borderColor: colors.destructive, opacity: deletingAccount ? 0.6 : 1 },
+                {
+                  borderColor: colors.destructive,
+                  opacity: deletingAccount ? 0.6 : 1,
+                },
               ]}
               onPress={confirmDeleteOwnAccount}
               disabled={deletingAccount}
             >
               <Feather name="user-x" size={14} color={colors.destructive} />
-              <Text style={[styles.outlineDangerBtnText, { color: colors.destructive }]}>
+              <Text
+                style={[
+                  styles.outlineDangerBtnText,
+                  { color: colors.destructive },
+                ]}
+              >
                 {deletingAccount ? "Deleting account…" : "Delete my account"}
               </Text>
             </TouchableOpacity>
-            <Text style={[styles.accountHint, { color: colors.mutedForeground }]}>
-              Permanently deletes your login. This is separate from leaving or removing someone from a household.
+            <Text
+              style={[styles.accountHint, { color: colors.mutedForeground }]}
+            >
+              Permanently deletes your login. This is separate from leaving or
+              removing someone from a household.
             </Text>
           </View>
 
           {/* Profile section */}
           {/* Account section — login / switch / logout */}
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>🏠  YOUR HOUSEHOLD</Text>
+          <Text
+            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+          >
+            🏠 YOUR HOUSEHOLD
+          </Text>
           <View
             style={[
               styles.card,
@@ -643,6 +785,55 @@ export default function SettingsScreen() {
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
+            <View style={styles.activeHouseholdRow}>
+              <View
+                style={[
+                  styles.linkIcon,
+                  { backgroundColor: colors.primary + "18" },
+                ]}
+              >
+                <Feather name="home" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+                >
+                  ACTIVE HOUSEHOLD
+                </Text>
+                <Text
+                  style={[styles.accountName, { color: colors.foreground }]}
+                  numberOfLines={1}
+                >
+                  {householdName ?? "No household selected"}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Switch household"
+              style={[
+                styles.householdSwitchButton,
+                { borderColor: colors.border },
+              ]}
+              onPress={() => setHouseholdSwitcherOpen(true)}
+            >
+              <Feather name="repeat" size={17} color={colors.primary} />
+              <Text
+                style={[
+                  styles.householdSwitchButtonText,
+                  { color: colors.foreground },
+                ]}
+              >
+                {memberships.length > 1
+                  ? "Switch household"
+                  : "Manage households"}
+              </Text>
+              <Feather
+                name="chevron-right"
+                size={17}
+                color={colors.mutedForeground}
+              />
+            </TouchableOpacity>
             <View style={styles.accountRow}>
               <RoommateAvatar
                 name={me?.name ?? "?"}
@@ -651,17 +842,30 @@ export default function SettingsScreen() {
                 imageUri={me?.avatarUri}
               />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.accountName, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.accountName, { color: colors.foreground }]}
+                >
                   {me?.name ?? "Unknown"}
                 </Text>
-                <Text style={[styles.accountUsername, { color: colors.mutedForeground }]}>{householdName ?? "Your household"}</Text>
-                <Text style={[styles.accountUsername, { color: colors.mutedForeground }]}>{roommates.length} {roommates.length === 1 ? "member" : "members"}</Text>
+                <Text
+                  style={[
+                    styles.accountUsername,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  {householdName ?? "Your household"}
+                </Text>
+                <Text
+                  style={[
+                    styles.accountUsername,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  {roommates.length}{" "}
+                  {roommates.length === 1 ? "member" : "members"}
+                </Text>
               </View>
-              <Feather
-                name="shield"
-                size={16}
-                color={colors.success}
-              />
+              <Feather name="shield" size={16} color={colors.success} />
             </View>
             <View style={styles.householdTileGroup}>
               <InviteCodeCard
@@ -671,13 +875,30 @@ export default function SettingsScreen() {
                 onRetry={refreshHousehold}
               />
             </View>
-            {isHost && roommates.some((roommate) => roommate.id !== currentUserId) ? (
-              <View style={[styles.memberManagement, { borderTopColor: colors.border }]}>
-                <Text style={[styles.memberManagementTitle, { color: colors.foreground }]}>
+            {isHost &&
+            roommates.some((roommate) => roommate.id !== currentUserId) ? (
+              <View
+                style={[
+                  styles.memberManagement,
+                  { borderTopColor: colors.border },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.memberManagementTitle,
+                    { color: colors.foreground },
+                  ]}
+                >
                   HOUSEHOLD MEMBERS
                 </Text>
-                <Text style={[styles.memberManagementHint, { color: colors.mutedForeground }]}>
-                  Removing someone only revokes household access. It does not delete their account.
+                <Text
+                  style={[
+                    styles.memberManagementHint,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Removing someone only revokes household access. It does not
+                  delete their account.
                 </Text>
                 {roommates
                   .filter((roommate) => roommate.id !== currentUserId)
@@ -689,11 +910,18 @@ export default function SettingsScreen() {
                         size={36}
                         imageUri={roommate.avatarUri}
                       />
-                      <Text style={[styles.memberManagementName, { color: colors.foreground }]}>
+                      <Text
+                        style={[
+                          styles.memberManagementName,
+                          { color: colors.foreground },
+                        ]}
+                      >
                         {roommate.name}
                       </Text>
                       <TouchableOpacity
-                        onPress={() => confirmRemoveRoommate(roommate.id, roommate.name)}
+                        onPress={() =>
+                          confirmRemoveRoommate(roommate.id, roommate.name)
+                        }
                         disabled={removingRoommateId !== null}
                         style={[
                           styles.memberRemoveBtn,
@@ -703,9 +931,20 @@ export default function SettingsScreen() {
                           },
                         ]}
                       >
-                        <Feather name="user-minus" size={13} color={colors.destructive} />
-                        <Text style={[styles.memberRemoveText, { color: colors.destructive }]}>
-                          {removingRoommateId === roommate.id ? "Removing…" : "Remove"}
+                        <Feather
+                          name="user-minus"
+                          size={13}
+                          color={colors.destructive}
+                        />
+                        <Text
+                          style={[
+                            styles.memberRemoveText,
+                            { color: colors.destructive },
+                          ]}
+                        >
+                          {removingRoommateId === roommate.id
+                            ? "Removing…"
+                            : "Remove"}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -715,7 +954,13 @@ export default function SettingsScreen() {
             <TouchableOpacity
               disabled={deletingHousehold}
               onPress={confirmDeleteHousehold}
-              style={[styles.switchUserBtn, { backgroundColor: colors.destructive, opacity: deletingHousehold ? 0.6 : 1 }]}
+              style={[
+                styles.switchUserBtn,
+                {
+                  backgroundColor: colors.destructive,
+                  opacity: deletingHousehold ? 0.6 : 1,
+                },
+              ]}
             >
               <Feather name="trash-2" size={15} color="#fff" />
               <Text style={styles.switchUserBtnText}>
@@ -724,11 +969,220 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
 
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>🙂  YOUR PROFILE</Text>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Modal
+            visible={householdSwitcherOpen}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setHouseholdSwitcherOpen(false)}
+          >
+            <Pressable
+              style={styles.switcherBackdrop}
+              onPress={() => setHouseholdSwitcherOpen(false)}
+            />
+            <View
+              style={[
+                styles.switcherSheet,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  paddingBottom: insets.bottom + 18,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.switcherHandle,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+              <View style={styles.switcherHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[styles.switcherTitle, { color: colors.foreground }]}
+                  >
+                    Household
+                  </Text>
+                  <Text
+                    style={[
+                      styles.switcherSubtitle,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    Choose which household to view
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setHouseholdSwitcherOpen(false)}
+                  style={[
+                    styles.switcherCloseButton,
+                    { backgroundColor: colors.muted },
+                  ]}
+                  accessibilityLabel="Close household selector"
+                >
+                  <Feather name="x" size={18} color={colors.foreground} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.membershipList}>
+                {memberships.length === 0 ? (
+                  <Text
+                    style={[
+                      styles.emptyMembershipText,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    You do not belong to a household yet.
+                  </Text>
+                ) : (
+                  memberships.map((membership) => {
+                    const selected = membership.sweetId === activeSweetId;
+                    return (
+                      <TouchableOpacity
+                        key={membership.id}
+                        style={[
+                          styles.membershipRow,
+                          {
+                            borderColor: selected
+                              ? colors.primary
+                              : colors.border,
+                            backgroundColor: selected
+                              ? colors.primary + "0F"
+                              : colors.background,
+                          },
+                        ]}
+                        onPress={() => {
+                          if (!selected) switchSweet(membership.sweetId);
+                          setHouseholdSwitcherOpen(false);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        accessibilityLabel={`${membership.name}, ${membership.role}, ${membership.memberCount ?? 1} members${selected ? ", selected" : ""}`}
+                      >
+                        <View
+                          style={[
+                            styles.sweetIcon,
+                            { backgroundColor: colors.secondary },
+                          ]}
+                        >
+                          <Feather
+                            name="home"
+                            size={17}
+                            color={colors.primary}
+                          />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text
+                            style={[
+                              styles.sweetName,
+                              { color: colors.foreground },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {membership.name}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.sweetMeta,
+                              { color: colors.mutedForeground },
+                            ]}
+                          >
+                            {membership.role === "owner" ? "Host" : "Member"} ·{" "}
+                            {membership.memberCount ?? 1}{" "}
+                            {(membership.memberCount ?? 1) === 1
+                              ? "member"
+                              : "members"}
+                          </Text>
+                        </View>
+                        {selected && (
+                          <Feather
+                            name="check-circle"
+                            size={20}
+                            color={colors.primary}
+                          />
+                        )}
+                        <TouchableOpacity
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            Alert.alert(
+                              `Leave ${membership.name}?`,
+                              "You will lose access to this household’s shared data. Your other households are not affected.",
+                              [
+                                { text: "Cancel", style: "cancel" },
+                                {
+                                  text: "Leave",
+                                  style: "destructive",
+                                  onPress: () =>
+                                    void leaveSweet(membership.sweetId).catch(
+                                      (error) =>
+                                        Alert.alert(
+                                          "Unable to leave",
+                                          error instanceof Error
+                                            ? error.message
+                                            : "Please try again.",
+                                        ),
+                                    ),
+                                },
+                              ],
+                            );
+                          }}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Leave ${membership.name}`}
+                        >
+                          <Feather
+                            name="log-out"
+                            size={17}
+                            color={colors.mutedForeground}
+                          />
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Create or join a household"
+                style={[
+                  styles.switcherActionButton,
+                  { borderColor: colors.border },
+                ]}
+                onPress={() => {
+                  setHouseholdSwitcherOpen(false);
+                  router.push("/sweet-setup" as never);
+                }}
+              >
+                <Feather name="plus-circle" size={18} color={colors.primary} />
+                <Text
+                  style={[
+                    styles.switcherActionText,
+                    { color: colors.foreground },
+                  ]}
+                >
+                  Create or join a household
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Modal>
+
+          <Text
+            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+          >
+            🙂 YOUR PROFILE
+          </Text>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
             {/* Avatar preview + photo controls */}
             <View style={styles.avatarRow}>
-              <RoommateAvatar name={name || "?"} color={color} size={84} imageUri={avatarUri} />
+              <RoommateAvatar
+                name={name || "?"}
+                color={color}
+                size={84}
+                imageUri={avatarUri}
+              />
               <View style={{ flex: 1, gap: 8 }}>
                 <TouchableOpacity
                   style={[styles.photoBtn, { backgroundColor: colors.primary }]}
@@ -741,11 +1195,23 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
                 {avatarUri ? (
                   <TouchableOpacity
-                    style={[styles.photoSecondaryBtn, { borderColor: colors.border }]}
+                    style={[
+                      styles.photoSecondaryBtn,
+                      { borderColor: colors.border },
+                    ]}
                     onPress={removePhoto}
                   >
-                    <Feather name="x" size={13} color={colors.mutedForeground} />
-                    <Text style={[styles.photoSecondaryText, { color: colors.mutedForeground }]}>
+                    <Feather
+                      name="x"
+                      size={13}
+                      color={colors.mutedForeground}
+                    />
+                    <Text
+                      style={[
+                        styles.photoSecondaryText,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
                       Remove
                     </Text>
                   </TouchableOpacity>
@@ -754,7 +1220,11 @@ export default function SettingsScreen() {
             </View>
 
             {/* Name input */}
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>✏️  DISPLAY NAME</Text>
+            <Text
+              style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+            >
+              ✏️ DISPLAY NAME
+            </Text>
             <TextInput
               style={[
                 styles.input,
@@ -772,7 +1242,11 @@ export default function SettingsScreen() {
             />
 
             {/* Color picker */}
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>🎨  PROFILE COLOR</Text>
+            <Text
+              style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+            >
+              🎨 PROFILE COLOR
+            </Text>
             <View style={styles.colorRow}>
               {COLOR_PALETTE.map((c) => {
                 const selected = color === c;
@@ -787,7 +1261,9 @@ export default function SettingsScreen() {
                       styles.colorSwatch,
                       {
                         backgroundColor: c,
-                        borderColor: selected ? colors.foreground : "transparent",
+                        borderColor: selected
+                          ? colors.foreground
+                          : "transparent",
                         borderWidth: selected ? 3 : 0,
                       },
                     ]}
@@ -802,35 +1278,69 @@ export default function SettingsScreen() {
           </View>
 
           {/* Planning section */}
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>🏠  HOUSEHOLD</Text>
+          <Text
+            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+          >
+            🏠 HOUSEHOLD
+          </Text>
           <HouseholdCompletionControl />
           <TouchableOpacity
-            style={[styles.linkRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={[
+              styles.linkRow,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
             onPress={() => router.push("/task-difficulty")}
           >
-            <View style={[styles.linkIcon, { backgroundColor: colors.accent + "18" }]}>
+            <View
+              style={[
+                styles.linkIcon,
+                { backgroundColor: colors.accent + "18" },
+              ]}
+            >
               <Text style={styles.linkEmoji}>⚖️</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.linkTitle, { color: colors.foreground }]}>TASK DIFFICULTY</Text>
-              <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>Review and edit shared difficulty levels</Text>
+              <Text style={[styles.linkTitle, { color: colors.foreground }]}>
+                TASK DIFFICULTY
+              </Text>
+              <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
+                Review and edit shared difficulty levels
+              </Text>
             </View>
-            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={colors.mutedForeground}
+            />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.linkRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={[
+              styles.linkRow,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
             onPress={() => router.push("/planning")}
           >
-            <View style={[styles.linkIcon, { backgroundColor: colors.primary + "18" }]}>
+            <View
+              style={[
+                styles.linkIcon,
+                { backgroundColor: colors.primary + "18" },
+              ]}
+            >
               <Text style={styles.linkEmoji}>📋</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.linkTitle, { color: colors.foreground }]}>CHORE PLANNING</Text>
+              <Text style={[styles.linkTitle, { color: colors.foreground }]}>
+                CHORE PLANNING
+              </Text>
               <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
                 Build a chore chart or generate a Sweet checklist
               </Text>
             </View>
-            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={colors.mutedForeground}
+            />
           </TouchableOpacity>
           <TouchableOpacity
             style={[
@@ -844,18 +1354,29 @@ export default function SettingsScreen() {
             onPress={confirmRestartChart}
             disabled={restartingChart}
           >
-            <View style={[styles.linkIcon, { backgroundColor: colors.warning + "18" }]}>
+            <View
+              style={[
+                styles.linkIcon,
+                { backgroundColor: colors.warning + "18" },
+              ]}
+            >
               <Feather name="rotate-ccw" size={18} color={colors.warning} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.linkTitle, { color: colors.foreground }]}>RESTART CHART PROCESS</Text>
+              <Text style={[styles.linkTitle, { color: colors.foreground }]}>
+                RESTART CHART PROCESS
+              </Text>
               <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
                 {currentProposedChart?.status === "pending"
                   ? "Cancel the pending proposal and generate a new one"
                   : "Return to planning and generate a fresh proposal"}
               </Text>
             </View>
-            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={colors.mutedForeground}
+            />
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -886,36 +1407,86 @@ export default function SettingsScreen() {
       )}
 
       {/* ── Auth modal: pick roommate, then enter credentials ── */}
-      <Modal visible={authOpen} transparent animationType="slide" onRequestClose={() => setAuthOpen(false)}>
-        <Pressable style={styles.authOverlay} onPress={() => setAuthOpen(false)} />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} pointerEvents="box-none">
-          <View style={[styles.authSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 }]}>
-            <View style={[styles.authHandle, { backgroundColor: colors.border }]} />
+      <Modal
+        visible={authOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAuthOpen(false)}
+      >
+        <Pressable
+          style={styles.authOverlay}
+          onPress={() => setAuthOpen(false)}
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          pointerEvents="box-none"
+        >
+          <View
+            style={[
+              styles.authSheet,
+              {
+                backgroundColor: colors.card,
+                paddingBottom: insets.bottom + 24,
+              },
+            ]}
+          >
+            <View
+              style={[styles.authHandle, { backgroundColor: colors.border }]}
+            />
 
             {authPhase === "pick" ? (
               <>
-                <Text style={[styles.authTitle, { color: colors.foreground }]}>Choose roommate</Text>
-                <Text style={[styles.authSub, { color: colors.mutedForeground }]}>
+                <Text style={[styles.authTitle, { color: colors.foreground }]}>
+                  Choose roommate
+                </Text>
+                <Text
+                  style={[styles.authSub, { color: colors.mutedForeground }]}
+                >
                   Pick a roommate to log in as. You'll need their password.
                 </Text>
                 {roommates.map((r) => (
                   <TouchableOpacity
                     key={r.id}
-                    style={[styles.roommateRow, { borderColor: colors.border, backgroundColor: colors.muted }]}
+                    style={[
+                      styles.roommateRow,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.muted,
+                      },
+                    ]}
                     onPress={() => pickRoommateForAuth(r.id)}
                   >
-                    <RoommateAvatar name={r.name} color={r.color} size={36} imageUri={r.avatarUri} />
+                    <RoommateAvatar
+                      name={r.name}
+                      color={r.color}
+                      size={36}
+                      imageUri={r.avatarUri}
+                    />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.roommateRowName, { color: colors.foreground }]}>
+                      <Text
+                        style={[
+                          styles.roommateRowName,
+                          { color: colors.foreground },
+                        ]}
+                      >
                         {r.name}
                         {r.id === currentUserId && (
-                          <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                          <Text
+                            style={{
+                              color: colors.mutedForeground,
+                              fontFamily: "Inter_400Regular",
+                            }}
+                          >
                             {"  · current"}
                           </Text>
                         )}
                       </Text>
                     </View>
-                    <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+                    <Feather
+                      name="chevron-right"
+                      size={18}
+                      color={colors.mutedForeground}
+                    />
                   </TouchableOpacity>
                 ))}
               </>
@@ -926,14 +1497,27 @@ export default function SettingsScreen() {
                     ? `Set up ${roommates.find((r) => r.id === authRoommateId)?.name}'s account`
                     : `Log in as ${roommates.find((r) => r.id === authRoommateId)?.name}`}
                 </Text>
-                <Text style={[styles.authSub, { color: colors.mutedForeground }]}>
+                <Text
+                  style={[styles.authSub, { color: colors.mutedForeground }]}
+                >
                   {authMode === "setup"
                     ? "Choose a username, email, and password — they'll be encrypted on the device."
                     : "Enter the username and password for this roommate."}
                 </Text>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Username</Text>
+                <Text
+                  style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+                >
+                  Username
+                </Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.muted,
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                    },
+                  ]}
                   placeholder="Username"
                   placeholderTextColor={colors.mutedForeground}
                   value={authUsername}
@@ -944,9 +1528,23 @@ export default function SettingsScreen() {
                 />
                 {authMode === "setup" && (
                   <>
-                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Email</Text>
+                    <Text
+                      style={[
+                        styles.fieldLabel,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      Email
+                    </Text>
                     <TextInput
-                      style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+                      style={[
+                        styles.input,
+                        {
+                          backgroundColor: colors.muted,
+                          color: colors.foreground,
+                          borderColor: colors.border,
+                        },
+                      ]}
                       placeholder="you@example.com"
                       placeholderTextColor={colors.mutedForeground}
                       value={authEmail}
@@ -957,9 +1555,20 @@ export default function SettingsScreen() {
                     />
                   </>
                 )}
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Password</Text>
+                <Text
+                  style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+                >
+                  Password
+                </Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.muted,
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                    },
+                  ]}
                   placeholder="Password"
                   placeholderTextColor={colors.mutedForeground}
                   value={authPassword}
@@ -969,40 +1578,85 @@ export default function SettingsScreen() {
                   autoCorrect={false}
                 />
                 {authMode === "login" && (
-                  <TouchableOpacity onPress={startForgotFlow} style={{ alignSelf: "flex-end" }}>
-                    <Text style={[styles.linkText, { color: colors.primary }]}>Forgot password?</Text>
+                  <TouchableOpacity
+                    onPress={startForgotFlow}
+                    style={{ alignSelf: "flex-end" }}
+                  >
+                    <Text style={[styles.linkText, { color: colors.primary }]}>
+                      Forgot password?
+                    </Text>
                   </TouchableOpacity>
                 )}
                 {authError && (
-                  <Text style={[styles.authErrorText, { color: colors.destructive }]}>{authError}</Text>
+                  <Text
+                    style={[
+                      styles.authErrorText,
+                      { color: colors.destructive },
+                    ]}
+                  >
+                    {authError}
+                  </Text>
                 )}
                 <View style={styles.authBtnRow}>
                   <TouchableOpacity
-                    style={[styles.authBackBtn, { backgroundColor: colors.muted }]}
+                    style={[
+                      styles.authBackBtn,
+                      { backgroundColor: colors.muted },
+                    ]}
                     onPress={() => setAuthPhase("pick")}
                   >
-                    <Text style={[styles.authBtnText, { color: colors.foreground }]}>Back</Text>
+                    <Text
+                      style={[styles.authBtnText, { color: colors.foreground }]}
+                    >
+                      Back
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.authPrimaryBtn, { backgroundColor: colors.primary, opacity: authLoading ? 0.6 : 1 }]}
+                    style={[
+                      styles.authPrimaryBtn,
+                      {
+                        backgroundColor: colors.primary,
+                        opacity: authLoading ? 0.6 : 1,
+                      },
+                    ]}
                     disabled={authLoading}
                     onPress={submitAuth}
                   >
                     <Text style={[styles.authBtnText, { color: "#fff" }]}>
-                      {authLoading ? "..." : authMode === "setup" ? "Save & Log In" : "Log In"}
+                      {authLoading
+                        ? "..."
+                        : authMode === "setup"
+                          ? "Save & Log In"
+                          : "Log In"}
                     </Text>
                   </TouchableOpacity>
                 </View>
               </>
             ) : authPhase === "forgot" ? (
               <>
-                <Text style={[styles.authTitle, { color: colors.foreground }]}>Forgot password</Text>
-                <Text style={[styles.authSub, { color: colors.mutedForeground }]}>
-                  Enter the email you used when setting up the account. We'll send a 6-digit reset code there.
+                <Text style={[styles.authTitle, { color: colors.foreground }]}>
+                  Forgot password
                 </Text>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Email</Text>
+                <Text
+                  style={[styles.authSub, { color: colors.mutedForeground }]}
+                >
+                  Enter the email you used when setting up the account. We'll
+                  send a 6-digit reset code there.
+                </Text>
+                <Text
+                  style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+                >
+                  Email
+                </Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.muted,
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                    },
+                  ]}
                   placeholder="you@example.com"
                   placeholderTextColor={colors.mutedForeground}
                   value={forgotEmail}
@@ -1013,17 +1667,37 @@ export default function SettingsScreen() {
                   autoFocus
                 />
                 {authError && (
-                  <Text style={[styles.authErrorText, { color: colors.destructive }]}>{authError}</Text>
+                  <Text
+                    style={[
+                      styles.authErrorText,
+                      { color: colors.destructive },
+                    ]}
+                  >
+                    {authError}
+                  </Text>
                 )}
                 <View style={styles.authBtnRow}>
                   <TouchableOpacity
-                    style={[styles.authBackBtn, { backgroundColor: colors.muted }]}
+                    style={[
+                      styles.authBackBtn,
+                      { backgroundColor: colors.muted },
+                    ]}
                     onPress={() => setAuthPhase("creds")}
                   >
-                    <Text style={[styles.authBtnText, { color: colors.foreground }]}>Back</Text>
+                    <Text
+                      style={[styles.authBtnText, { color: colors.foreground }]}
+                    >
+                      Back
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.authPrimaryBtn, { backgroundColor: colors.primary, opacity: authLoading ? 0.6 : 1 }]}
+                    style={[
+                      styles.authPrimaryBtn,
+                      {
+                        backgroundColor: colors.primary,
+                        opacity: authLoading ? 0.6 : 1,
+                      },
+                    ]}
                     disabled={authLoading}
                     onPress={submitForgot}
                   >
@@ -1035,21 +1709,54 @@ export default function SettingsScreen() {
               </>
             ) : (
               <>
-                <Text style={[styles.authTitle, { color: colors.foreground }]}>Reset password</Text>
-                <Text style={[styles.authSub, { color: colors.mutedForeground }]}>
-                  Enter the 6-digit code from your email and choose a new password.
+                <Text style={[styles.authTitle, { color: colors.foreground }]}>
+                  Reset password
+                </Text>
+                <Text
+                  style={[styles.authSub, { color: colors.mutedForeground }]}
+                >
+                  Enter the 6-digit code from your email and choose a new
+                  password.
                 </Text>
                 {resetDemoCode && (
-                  <View style={[styles.demoCodeBox, { backgroundColor: colors.warning + "15", borderColor: colors.warning + "55" }]}>
-                    <Feather name="alert-circle" size={14} color={colors.warning} />
-                    <Text style={[styles.demoCodeText, { color: colors.warning }]}>
-                      Demo mode (no email service configured). Your code: <Text style={{ fontFamily: "Inter_700Bold" }}>{resetDemoCode}</Text>
+                  <View
+                    style={[
+                      styles.demoCodeBox,
+                      {
+                        backgroundColor: colors.warning + "15",
+                        borderColor: colors.warning + "55",
+                      },
+                    ]}
+                  >
+                    <Feather
+                      name="alert-circle"
+                      size={14}
+                      color={colors.warning}
+                    />
+                    <Text
+                      style={[styles.demoCodeText, { color: colors.warning }]}
+                    >
+                      Demo mode (no email service configured). Your code:{" "}
+                      <Text style={{ fontFamily: "Inter_700Bold" }}>
+                        {resetDemoCode}
+                      </Text>
                     </Text>
                   </View>
                 )}
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Reset code</Text>
+                <Text
+                  style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+                >
+                  Reset code
+                </Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.muted,
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                    },
+                  ]}
                   placeholder="123456"
                   placeholderTextColor={colors.mutedForeground}
                   value={resetCodeInput}
@@ -1058,9 +1765,20 @@ export default function SettingsScreen() {
                   maxLength={6}
                   autoFocus
                 />
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>New password</Text>
+                <Text
+                  style={[styles.fieldLabel, { color: colors.mutedForeground }]}
+                >
+                  New password
+                </Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.muted,
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                    },
+                  ]}
                   placeholder="At least 4 characters"
                   placeholderTextColor={colors.mutedForeground}
                   value={resetNewPassword}
@@ -1070,17 +1788,37 @@ export default function SettingsScreen() {
                   autoCorrect={false}
                 />
                 {authError && (
-                  <Text style={[styles.authErrorText, { color: colors.destructive }]}>{authError}</Text>
+                  <Text
+                    style={[
+                      styles.authErrorText,
+                      { color: colors.destructive },
+                    ]}
+                  >
+                    {authError}
+                  </Text>
                 )}
                 <View style={styles.authBtnRow}>
                   <TouchableOpacity
-                    style={[styles.authBackBtn, { backgroundColor: colors.muted }]}
+                    style={[
+                      styles.authBackBtn,
+                      { backgroundColor: colors.muted },
+                    ]}
                     onPress={() => setAuthPhase("forgot")}
                   >
-                    <Text style={[styles.authBtnText, { color: colors.foreground }]}>Back</Text>
+                    <Text
+                      style={[styles.authBtnText, { color: colors.foreground }]}
+                    >
+                      Back
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.authPrimaryBtn, { backgroundColor: colors.primary, opacity: authLoading ? 0.6 : 1 }]}
+                    style={[
+                      styles.authPrimaryBtn,
+                      {
+                        backgroundColor: colors.primary,
+                        opacity: authLoading ? 0.6 : 1,
+                      },
+                    ]}
                     disabled={authLoading}
                     onPress={submitReset}
                   >
@@ -1143,6 +1881,101 @@ const styles = StyleSheet.create({
   householdTileGroup: {
     gap: 8,
   },
+  activeHouseholdRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  householdSwitchButton: {
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+  householdSwitchButtonText: {
+    flex: 1,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+  },
+  switcherBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.38)",
+  },
+  switcherSheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderWidth: 1,
+    padding: 18,
+  },
+  switcherHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 14,
+  },
+  switcherHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  switcherTitle: { fontFamily: "Inter_700Bold", fontSize: 20 },
+  switcherSubtitle: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  switcherCloseButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  membershipList: { gap: 9 },
+  membershipRow: {
+    minHeight: 64,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  sweetIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sweetName: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  sweetMeta: { fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 2 },
+  emptyMembershipText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    paddingVertical: 16,
+    textAlign: "center",
+  },
+  switcherActionButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 14,
+  },
+  switcherActionText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
   settingsIntro: {
     marginHorizontal: 20,
     paddingVertical: 20,
@@ -1152,8 +1985,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   settingsIntroEmoji: { fontSize: 32 },
-  settingsIntroTitle: { fontFamily: "Inter_700Bold", fontSize: 19, letterSpacing: 1.4 },
-  settingsIntroSub: { fontFamily: "Inter_400Regular", fontSize: 14, marginTop: 2 },
+  settingsIntroTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 19,
+    letterSpacing: 1.4,
+  },
+  settingsIntroSub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    marginTop: 2,
+  },
   rowEmoji: { fontSize: 24 },
   avatarRow: {
     flexDirection: "row",
@@ -1170,7 +2011,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     justifyContent: "center",
   },
-  photoBtnText: { color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  photoBtnText: {
+    color: "#fff",
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+  },
   photoSecondaryBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1226,7 +2071,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   linkEmoji: { fontSize: 23 },
-  linkTitle: { fontFamily: "Inter_600SemiBold", fontSize: 16, letterSpacing: 1.1 },
+  linkTitle: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 16,
+    letterSpacing: 1.1,
+  },
   linkSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
   stickyBottom: {
     paddingHorizontal: 16,
@@ -1246,8 +2095,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  accountName: { fontFamily: "Inter_600SemiBold", fontSize: 17, letterSpacing: 0.5 },
-  accountUsername: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
+  accountName: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 17,
+    letterSpacing: 0.5,
+  },
+  accountUsername: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    marginTop: 2,
+  },
   switchUserBtn: {
     flexDirection: "row",
     alignItems: "center",
