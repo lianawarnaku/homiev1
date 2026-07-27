@@ -24,6 +24,10 @@ import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostic
 import { findAssignedLoadDeviations } from "@/lib/chartLoadBalance";
 import { deleteLocalAnalyticsIdentity, track } from "@/lib/analytics";
 import { migrateEssentialRecord } from "@/constants/essentialCatalog";
+import {
+  advanceChoreDueDate,
+  resolveRoundRobinParticipants,
+} from "@/lib/choreSchedule";
 
 export type RoommateStatus = "home" | "away" | "asleep" | "unknown";
 export type LeaderboardPeriod = "weekly" | "alltime";
@@ -495,43 +499,6 @@ function daysFromNow(days: number): string {
   d.setDate(d.getDate() + days);
   d.setHours(23, 59, 0, 0);
   return d.toISOString();
-}
-
-function advanceChoreDueDate(dateValue: string, recurrence: ChoreRecurrence): string {
-  const next = new Date(dateValue);
-  if (recurrence === "monthly") {
-    const originalDay = next.getDate();
-    next.setDate(1);
-    next.setMonth(next.getMonth() + 1);
-    const finalDay = new Date(
-      next.getFullYear(),
-      next.getMonth() + 1,
-      0,
-    ).getDate();
-    next.setDate(Math.min(originalDay, finalDay));
-  } else {
-    next.setDate(
-      next.getDate() +
-        (recurrence === "daily" ? 1 : recurrence === "biweekly" ? 14 : 7),
-    );
-  }
-  return next.toISOString();
-}
-
-function resolveRoundRobinParticipants(
-  chore: Chore,
-  activeMemberIds: string[],
-): string[] {
-  const active = new Set(activeMemberIds);
-  const excluded = new Set(chore.excludedParticipantIds ?? []);
-  const stored = (chore.roundRobinParticipantIds ?? []).filter(
-    (id) => active.has(id) && !excluded.has(id),
-  );
-  if (!chore.roundRobinAllMembers) return stored;
-  const addedMembers = activeMemberIds
-    .filter((id) => !stored.includes(id) && !excluded.has(id))
-    .sort();
-  return [...stored, ...addedMembers];
 }
 
 const STORAGE_KEY = "homebase_data_v7";

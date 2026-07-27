@@ -1,4 +1,4 @@
-import { createExternalStoreSnapshotCache } from "./externalStoreSnapshot";
+import { createExternalStoreSnapshotCache } from "./externalStoreSnapshot.ts";
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);

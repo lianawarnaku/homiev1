@@ -1,4 +1,4 @@
-import { occurrencesPerWeek } from "../constants/choreRules";
+import { occurrencesPerWeek } from "../constants/choreRules.ts";
 import type {
   Assignment,
   GeneratedTask,
