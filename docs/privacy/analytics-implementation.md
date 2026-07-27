@@ -25,6 +25,13 @@ the named `track` methods, not vendor SDKs or free-form event strings. Allowed
 properties are booleans or small enumerations; content, names, IDs, money
 amounts, dates, and free text are not approved.
 
+Sweet Essentials uses deterministic on-device shortlist selection. PostHog may
+receive `shortlist_opened`, `shortlist_saved`, and
+`shortlist_sent_to_shopping` with count buckets and a fixed source value only.
+It never receives item labels, category text, Sweet IDs, owned-item records, or
+assignment details. The shortlist flow does not call an AI or recommendation
+service.
+
 Sentry receives exceptions only after opt-in. The runtime diagnostics bridge
 removes request data, limits extras to primitive values, filters denied keys,
 uses only an opaque user ID, and disables tracing. Source-map upload is deferred

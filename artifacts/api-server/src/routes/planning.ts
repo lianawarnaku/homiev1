@@ -14,6 +14,12 @@ router.post("/planning/suggest", async (req, res) => {
     res.status(400).json({ error: "Invalid type. Use chore-chart or home-checklist." });
     return;
   }
+  if (type === "home-checklist") {
+    res.status(410).json({
+      error: "Sweet Essentials shortlists are created deterministically in the app.",
+    });
+    return;
+  }
 
   const roommateNames =
     Array.isArray(roommates) && roommates.length > 0

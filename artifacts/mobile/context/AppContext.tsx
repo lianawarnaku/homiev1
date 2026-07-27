@@ -23,6 +23,7 @@ import type { Difficulty } from "@/lib/itemDifficulty";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import { findAssignedLoadDeviations } from "@/lib/chartLoadBalance";
 import { deleteLocalAnalyticsIdentity, track } from "@/lib/analytics";
+import { migrateEssentialRecord } from "@/constants/essentialCatalog";
 
 export type RoommateStatus = "home" | "away" | "asleep" | "unknown";
 export type LeaderboardPeriod = "weekly" | "alltime";
@@ -150,6 +151,8 @@ export interface ShoppingItem {
   convertedExpenseId?: string;
   /** Optional local calendar day (YYYY-MM-DD) by which the item is needed. */
   neededByDate?: string;
+  /** Stable Sweet Essentials catalog ID when transferred from a shortlist. */
+  sourceEssentialItemId?: string;
 }
 
 interface ShoppingSyncMeta {
@@ -384,7 +387,7 @@ interface AppContextType {
   settleExpense: (id: string) => void;
   deleteExpense: (id: string) => void;
   markPersonPaid: (expenseId: string, personId: string) => void;
-  addShoppingList: (name: string, plannedDate?: string) => void;
+  addShoppingList: (name: string, plannedDate?: string) => string;
   reorderShoppingLists: (newIds: string[]) => void;
   pinShoppingList: (id: string, pinned: boolean) => void;
   deleteShoppingList: (id: string) => void;
@@ -411,6 +414,11 @@ interface AppContextType {
   getBalances: () => Record<string, number>;
   essentialsAssignees: Record<string, Record<string, string>>;
   setEssentialAssignee: (sectionKey: string, item: string, roommateId: string | null) => void;
+  essentialOwned: Record<string, Record<string, boolean>>;
+  essentialShortlist: Record<string, Record<string, boolean>>;
+  essentialShortlistUpdatedBy: string | null;
+  setEssentialOwned: (sectionKey: string, itemId: string, owned: boolean) => void;
+  saveEssentialShortlist: (next: Record<string, Record<string, boolean>>) => void;
   suppressedAlerts: Record<string, boolean>;
   suppressAlert: (id: string) => void;
   roommateStatuses: Record<string, RoommateStatus>;
@@ -581,6 +589,9 @@ interface SharedHouseholdState {
   shoppingSyncMeta: ShoppingSyncMeta;
   borrowItems: BorrowItem[];
   essentialsAssignees: Record<string, Record<string, string>>;
+  essentialOwned: Record<string, Record<string, boolean>>;
+  essentialShortlist: Record<string, Record<string, boolean>>;
+  essentialShortlistUpdatedBy: string | null;
   roommateStatuses: Record<string, RoommateStatus>;
   sleepStartedAt: Record<string, number>;
   homeLocation: HomeLocation | null;
@@ -626,6 +637,9 @@ export function AppProvider({
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [nudgesReady, setNudgesReady] = useState(false);
   const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
+  const [essentialOwned, setEssentialOwnedState] = useState<Record<string, Record<string, boolean>>>({});
+  const [essentialShortlist, setEssentialShortlist] = useState<Record<string, Record<string, boolean>>>({});
+  const [essentialShortlistUpdatedBy, setEssentialShortlistUpdatedBy] = useState<string | null>(null);
   const [suppressedAlerts, setSuppressedAlerts] = useState<Record<string, boolean>>({});
   const [roommateStatuses, setRoommateStatusesState] = useState<Record<string, RoommateStatus>>({});
   const [sleepStartedAt, setSleepStartedAtState] = useState<Record<string, number>>({});
@@ -1087,6 +1101,9 @@ export function AppProvider({
         setNudges([]);
         setNudgesReady(false);
         setEssentialsAssignees({});
+        setEssentialOwnedState({});
+        setEssentialShortlist({});
+        setEssentialShortlistUpdatedBy(null);
         setRoommateStatusesState({});
         setSleepStartedAtState({});
         setHomeLocationState(null);
@@ -1113,7 +1130,10 @@ export function AppProvider({
           if (Array.isArray(cached.shoppingItems)) setShoppingItems(cached.shoppingItems);
           if (cached.shoppingSyncMeta) setShoppingSyncMeta(cached.shoppingSyncMeta);
           if (Array.isArray(cached.borrowItems)) setBorrowItems(cached.borrowItems);
-          if (cached.essentialsAssignees) setEssentialsAssignees(cached.essentialsAssignees);
+          if (cached.essentialsAssignees) setEssentialsAssignees(migrateEssentialRecord(cached.essentialsAssignees));
+          if (cached.essentialOwned) setEssentialOwnedState(migrateEssentialRecord(cached.essentialOwned));
+          if (cached.essentialShortlist) setEssentialShortlist(migrateEssentialRecord(cached.essentialShortlist));
+          setEssentialShortlistUpdatedBy(cached.essentialShortlistUpdatedBy ?? null);
           if (cached.roommateStatuses) setRoommateStatusesState(cached.roommateStatuses);
           if (cached.sleepStartedAt) setSleepStartedAtState(cached.sleepStartedAt);
           setHomeLocationState(cached.homeLocation ?? null);
@@ -1185,6 +1205,9 @@ export function AppProvider({
     setNudges([]);
     setNudgesReady(false);
     setEssentialsAssignees({});
+    setEssentialOwnedState({});
+    setEssentialShortlist({});
+    setEssentialShortlistUpdatedBy(null);
     setRoommateStatusesState({});
     setSleepStartedAtState({});
     setHomeLocationState(null);
@@ -1207,7 +1230,10 @@ export function AppProvider({
       setShoppingItems(cached.shoppingItems);
       setShoppingSyncMeta(cached.shoppingSyncMeta);
       setBorrowItems(cached.borrowItems);
-      setEssentialsAssignees(cached.essentialsAssignees);
+      setEssentialsAssignees(migrateEssentialRecord(cached.essentialsAssignees));
+      setEssentialOwnedState(migrateEssentialRecord(cached.essentialOwned));
+      setEssentialShortlist(migrateEssentialRecord(cached.essentialShortlist));
+      setEssentialShortlistUpdatedBy(cached.essentialShortlistUpdatedBy ?? null);
       setRoommateStatusesState(cached.roommateStatuses);
       setSleepStartedAtState(cached.sleepStartedAt);
       setHomeLocationState(cached.homeLocation);
@@ -1477,6 +1503,9 @@ export function AppProvider({
     setAppAlerts([]);
     setSuppressedAlerts({});
     setEssentialsAssignees({});
+    setEssentialOwnedState({});
+    setEssentialShortlist({});
+    setEssentialShortlistUpdatedBy(null);
     setRoommateStatusesState({});
     setSleepStartedAtState({});
     setHomeLocationState(null);
@@ -1632,6 +1661,9 @@ export function AppProvider({
                 shoppingSyncMeta,
                 borrowItems,
                 essentialsAssignees,
+                essentialOwned,
+                essentialShortlist,
+                essentialShortlistUpdatedBy,
                 roommateStatuses,
                 sleepStartedAt,
                 homeLocation,
@@ -1653,7 +1685,7 @@ export function AppProvider({
       clearTimeout(timer);
       interaction?.cancel();
     };
-  }, [appAlerts, borrowItems, choreChart, choreChartStartedAt, chores, currentUserId, customTasks, essentialsAssignees, expenses, homeLocation, homeProfile, householdId, liveChart, loaded, roommateStatuses, roommates, session?.user.id, shoppingItems, shoppingLists, shoppingSyncMeta, sleepStartedAt, suppressedAlerts]);
+  }, [appAlerts, borrowItems, choreChart, choreChartStartedAt, chores, currentUserId, customTasks, essentialOwned, essentialShortlist, essentialShortlistUpdatedBy, essentialsAssignees, expenses, homeLocation, homeProfile, householdId, liveChart, loaded, roommateStatuses, roommates, session?.user.id, shoppingItems, shoppingLists, shoppingSyncMeta, sleepStartedAt, suppressedAlerts]);
 
   const upsertInformationalAlerts = useCallback((incoming: AppAlert[]) => {
     if (!incoming.length) return;
@@ -1841,6 +1873,9 @@ export function AppProvider({
     shoppingSyncMeta,
     borrowItems,
     essentialsAssignees,
+    essentialOwned,
+    essentialShortlist,
+    essentialShortlistUpdatedBy,
     roommateStatuses,
     sleepStartedAt,
     homeLocation,
@@ -1849,7 +1884,7 @@ export function AppProvider({
     homeProfile,
     liveChart,
     customTasks,
-  }), [roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
+  }), [roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, essentialOwned, essentialShortlist, essentialShortlistUpdatedBy, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
 
   const latestSharedStateRef = useRef(sharedState);
   latestSharedStateRef.current = sharedState;
@@ -1947,7 +1982,18 @@ export function AppProvider({
     shoppingSyncMetaRef.current = mergedMeta;
     setShoppingSyncMeta(mergedMeta);
     if (Array.isArray(next.borrowItems)) setBorrowItems(next.borrowItems);
-    if (next.essentialsAssignees) setEssentialsAssignees(next.essentialsAssignees);
+    if (next.essentialsAssignees) {
+      setEssentialsAssignees(migrateEssentialRecord(next.essentialsAssignees));
+    }
+    if (next.essentialOwned) {
+      setEssentialOwnedState(migrateEssentialRecord(next.essentialOwned));
+    }
+    if (next.essentialShortlist) {
+      setEssentialShortlist(migrateEssentialRecord(next.essentialShortlist));
+    }
+    if ("essentialShortlistUpdatedBy" in next) {
+      setEssentialShortlistUpdatedBy(next.essentialShortlistUpdatedBy ?? null);
+    }
     if (next.roommateStatuses) setRoommateStatusesState(next.roommateStatuses);
     if (next.sleepStartedAt) setSleepStartedAtState(next.sleepStartedAt);
     if ("homeLocation" in next) setHomeLocationState(next.homeLocation ?? null);
@@ -2655,6 +2701,7 @@ export function AppProvider({
       return [...pinned, newList, ...unpinned];
     });
     track.shoppingListCreated();
+    return id;
   }, [recordShoppingVersions]);
 
   // Accept whatever id order the DraggableFlatList emits, then re-partition
@@ -2944,6 +2991,21 @@ export function AppProvider({
       return { ...prev, [sectionKey]: section };
     });
   }, []);
+
+  const setEssentialOwned = useCallback((sectionKey: string, itemId: string, owned: boolean) => {
+    setEssentialOwnedState((current) => ({
+      ...current,
+      [sectionKey]: { ...(current[sectionKey] ?? {}), [itemId]: owned },
+    }));
+  }, []);
+
+  const saveEssentialShortlist = useCallback(
+    (next: Record<string, Record<string, boolean>>) => {
+      setEssentialShortlist(next);
+      setEssentialShortlistUpdatedBy(currentUserId);
+    },
+    [currentUserId],
+  );
 
   const sendNudge = useCallback(async (toRoommateId: string, choreId: string) => {
     if (!householdId || !session?.user.id) {
@@ -3440,6 +3502,11 @@ export function AppProvider({
     getBalances,
     essentialsAssignees,
     setEssentialAssignee,
+    essentialOwned,
+    essentialShortlist,
+    essentialShortlistUpdatedBy,
+    setEssentialOwned,
+    saveEssentialShortlist,
     suppressedAlerts,
     suppressAlert,
     roommateStatuses,
@@ -3475,7 +3542,8 @@ export function AppProvider({
     updateShoppingItemPrice, linkShoppingItemsToExpense, pendingIouDraft, setPendingIouDraft, addBorrowItem,
     updateBorrowItem, returnBorrowItem, deleteBorrowItem, sendNudge,
     removeNudge, acknowledgeNudge, getRoommateById, updateRoommate,
-    getChoresByRoommate, getBalances, essentialsAssignees,
+    getChoresByRoommate, getBalances, essentialsAssignees, essentialOwned,
+    essentialShortlist, essentialShortlistUpdatedBy, setEssentialOwned, saveEssentialShortlist,
     setEssentialAssignee, suppressedAlerts, suppressAlert, roommateStatuses,
     setRoommateStatus, sleepStartedAt, homeLocation, setHomeLocation,
     choreChart, choreChartStartedAt, setChoreChart, homeProfile,

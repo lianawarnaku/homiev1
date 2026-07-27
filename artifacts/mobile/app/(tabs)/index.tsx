@@ -41,6 +41,7 @@ import {
   type ExternalTaskDestination,
 } from "@/lib/externalTasks";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
+import { essentialItemById } from "@/constants/essentialCatalog";
 import {
   deriveCalendarItems,
   groupCalendarItemsByDate,
@@ -597,7 +598,11 @@ export default function MyChoresScreen() {
       Object.entries(essentialsAssignees).flatMap(([sectionKey, items]) =>
         Object.entries(items)
           .filter(([, roommateId]) => roommateId === currentUserId)
-          .map(([item]) => ({ sectionKey, item })),
+          .map(([item]) => ({
+            sectionKey,
+            item,
+            label: essentialItemById(item)?.label ?? item,
+          })),
       ),
     [currentUserId, essentialsAssignees],
   );
@@ -1212,7 +1217,8 @@ export default function MyChoresScreen() {
         )}
         ListFooterComponent={
           <>
-            <>
+            {myToBuyItems.length > 0 ? (
+              <>
                 <CollapsibleSectionHeader
                   title="To Buy"
                   count={myToBuyItems.length}
@@ -1220,16 +1226,14 @@ export default function MyChoresScreen() {
                   expanded={expandedHomeSections["to-buy"]}
                   onToggle={() => toggleHomeSection("to-buy")}
                 />
-                {expandedHomeSections["to-buy"] && (myToBuyItems.length === 0 ? (
-                  <Text style={[styles.sectionEmpty, { color: colors.mutedForeground }]}>Nothing to buy</Text>
-                ) : (
+                {expandedHomeSections["to-buy"] ? (
                 <View
                   style={[
                     styles.toBuyCard,
                     { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 12 },
                   ]}
                 >
-                  {myToBuyItems.map(({ sectionKey, item }, idx) => (
+                  {myToBuyItems.map(({ sectionKey, item, label }, idx) => (
                     <TouchableOpacity
                       key={`${sectionKey}:${item}`}
                       style={[
@@ -1244,7 +1248,7 @@ export default function MyChoresScreen() {
                     >
                       <View style={[styles.toBuyCheck, { borderColor: colors.border }]} />
                       <Text style={[styles.toBuyItem, { color: colors.foreground }]} numberOfLines={1}>
-                        {item}
+                        {label}
                       </Text>
                       <Text style={[styles.toBuySection, { color: colors.mutedForeground }]}>
                         {SECTION_NAMES[sectionKey] ?? sectionKey}
@@ -1252,8 +1256,9 @@ export default function MyChoresScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
-                ))}
+                ) : null}
               </>
+            ) : null}
 
               <>
                 <CollapsibleSectionHeader

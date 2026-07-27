@@ -49,6 +49,16 @@ type EventProperties = {
     duration_bucket: "under_250ms" | "250ms_1s" | "1s_3s" | "over_3s";
     visit: "first" | "repeat" | "not_applicable";
   };
+  shortlist_opened: { source: "sweet_essentials" };
+  shortlist_saved: {
+    item_count_bucket: "1_5" | "6_10" | "11_plus";
+    category_count: number;
+    source: "sweet_essentials";
+  };
+  shortlist_sent_to_shopping: {
+    item_count_bucket: "1_5" | "6_10" | "11_plus";
+    source: "sweet_essentials";
+  };
 };
 
 type EventName = keyof EventProperties;
@@ -278,6 +288,13 @@ export const track = {
     capture("workflow_failed", properties),
   performanceTiming: (properties: EventProperties["performance_timing"]) =>
     capture("performance_timing", properties),
+  shortlistOpened: (properties: EventProperties["shortlist_opened"]) =>
+    capture("shortlist_opened", properties),
+  shortlistSaved: (properties: EventProperties["shortlist_saved"]) =>
+    capture("shortlist_saved", properties),
+  shortlistSentToShopping: (
+    properties: EventProperties["shortlist_sent_to_shopping"],
+  ) => capture("shortlist_sent_to_shopping", properties),
 };
 
 export function captureDiagnosticException(

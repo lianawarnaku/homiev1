@@ -6,12 +6,14 @@ import {
   Animated,
   Dimensions,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  UIManager,
   View,
 } from "react-native";
 
@@ -172,6 +174,65 @@ export default function GroupChoresScreen() {
   const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
   const [viewMode] = useState<"activity" | "calendar">("activity");
   const [monthOffset, setMonthOffset] = useState(0);
+  const [roomHealthExpanded, setRoomHealthExpanded] = useState(true);
+  const [roommatesExpanded, setRoommatesExpanded] = useState(true);
+  const previousScrollOffsetRef = useRef(0);
+  const taskListTopRef = useRef(0);
+  const autoCollapseTriggeredRef = useRef(false);
+  const autoCollapsedAtRef = useRef(0);
+
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      UIManager.setLayoutAnimationEnabledExperimental?.(true);
+    }
+  }, []);
+
+  const animateSummaryLayout = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  };
+  const toggleRoomHealth = () => {
+    animateSummaryLayout();
+    setRoomHealthExpanded((expanded) => !expanded);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+  const toggleRoommates = () => {
+    animateSummaryLayout();
+    setRoommatesExpanded((expanded) => !expanded);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+  const handleGroupScroll = (event: {
+    nativeEvent: { contentOffset: { y: number } };
+  }) => {
+    const offset = Math.max(0, event.nativeEvent.contentOffset.y);
+    const previous = previousScrollOffsetRef.current;
+    previousScrollOffsetRef.current = offset;
+
+    if (offset <= 8) {
+      // Require a stable return to the top after the collapse animation. This
+      // prevents the layout's own offset correction from re-arming the cycle.
+      if (
+        previous <= 8 &&
+        Date.now() - autoCollapsedAtRef.current > 800
+      ) {
+        autoCollapseTriggeredRef.current = false;
+      }
+      return;
+    }
+    if (autoCollapseTriggeredRef.current || offset <= previous) return;
+
+    // A small fraction of the measured summary height adapts across phones,
+    // member counts, font sizes, and whether Room Health is enabled.
+    const threshold = Math.max(24, Math.min(72, taskListTopRef.current * 0.12));
+    if (offset < threshold) return;
+
+    autoCollapseTriggeredRef.current = true;
+    autoCollapsedAtRef.current = Date.now();
+    if (roomHealthExpanded || roommatesExpanded) {
+      animateSummaryLayout();
+      if (roomHealthExpanded) setRoomHealthExpanded(false);
+      if (roommatesExpanded) setRoommatesExpanded(false);
+    }
+  };
 
   useEffect(() => {
     setNudgedChores(new Set(
@@ -719,6 +780,8 @@ export default function GroupChoresScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 90 + botPad }}
+        onScroll={handleGroupScroll}
+        scrollEventThrottle={32}
       >
         {/* ── Plant Health Card ──────────────────────────── */}
         {plantEnabled && <View
@@ -731,11 +794,26 @@ export default function GroupChoresScreen() {
             },
           ]}
         >
-          {/* Preserve the card's established vertical spacing without the
-              tinted strip that created a discoloration above the plant. */}
-          <View style={styles.plantTopSpacer} />
+          <TouchableOpacity
+            style={styles.summaryHeader}
+            onPress={toggleRoomHealth}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: roomHealthExpanded }}
+            accessibilityLabel={`${roomHealthExpanded ? "Collapse" : "Expand"} Room Health`}
+          >
+            <View style={[styles.activityHeaderIcon, { backgroundColor: healthColor + "18" }]}>
+              <Feather name="activity" size={14} color={healthColor} />
+            </View>
+            <Text style={[styles.activityTitle, { color: colors.foreground }]}>Room Health</Text>
+            <Feather
+              name={roomHealthExpanded ? "chevron-down" : "chevron-right"}
+              size={18}
+              color={colors.mutedForeground}
+            />
+          </TouchableOpacity>
 
-          <View style={styles.plantCardInner}>
+          {roomHealthExpanded && <View style={styles.plantCardInner}>
             {/* Left: Animated plant */}
             <View style={styles.plantContainer}>
               <HomePlant health={healthPct} size={130} />
@@ -749,7 +827,7 @@ export default function GroupChoresScreen() {
                   { color: colors.mutedForeground },
                 ]}
               >
-                Room Health
+                Household overview
               </Text>
 
               <Text
@@ -806,7 +884,7 @@ export default function GroupChoresScreen() {
                 </Text>
               </View>
             </View>
-          </View>
+          </View>}
         </View>}
 
         {/* ── Roommates ──────────────────────────────────
@@ -814,13 +892,25 @@ export default function GroupChoresScreen() {
               😊 (chill / around)  →  😴 (sleeping)  →  🤫 (do not disturb)  →  😊
             Sleeping still auto-reverts after 9 hours via AppContext. */}
         <View style={[styles.activityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.activityHeader}>
+          <TouchableOpacity
+            style={styles.activityHeader}
+            onPress={toggleRoommates}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: roommatesExpanded }}
+            accessibilityLabel={`${roommatesExpanded ? "Collapse" : "Expand"} Roommates`}
+          >
             <View style={[styles.activityHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
               <Feather name="users" size={14} color={colors.primary} />
             </View>
             <Text style={[styles.activityTitle, { color: colors.foreground }]}>Roommates</Text>
-          </View>
-          <View style={styles.roommatesGrid}>
+            <Feather
+              name={roommatesExpanded ? "chevron-down" : "chevron-right"}
+              size={18}
+              color={colors.mutedForeground}
+            />
+          </TouchableOpacity>
+          {roommatesExpanded && <View style={styles.roommatesGrid}>
             {roommates.map((rm) => {
               const status = roommateStatuses[rm.id] ?? "home";
               const emoji =
@@ -856,11 +946,21 @@ export default function GroupChoresScreen() {
                 </View>
               );
             })}
-          </View>
+          </View>}
         </View>
 
         {/* ── Roommate chore sections ───────────────────── */}
-        <View style={styles.listPad}>
+        <View
+          style={styles.listPad}
+          onLayout={(event) => {
+            if (!autoCollapseTriggeredRef.current) {
+              taskListTopRef.current = Math.max(
+                taskListTopRef.current,
+                event.nativeEvent.layout.y,
+              );
+            }
+          }}
+        >
           {roommatesWithChores.length === 0 ? (
             <EmptyState
               icon="users"
@@ -1272,7 +1372,14 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 3,
   },
-  plantTopSpacer: { height: 4, width: "100%" },
+  summaryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 10,
+  },
   plantCardInner: {
     flexDirection: "row",
     alignItems: "flex-end",

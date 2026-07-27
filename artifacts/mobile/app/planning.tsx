@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -25,6 +26,12 @@ import { generateHouseholdTasks, parseHouseholdAmenities } from "@/lib/taskGener
 import { PreferenceBar } from "@/components/PreferenceBar";
 import { buildBalancedChart } from "@/lib/choreEngine";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
+import {
+  ESSENTIAL_CATALOG,
+  ESSENTIAL_SUBSECTION_LABELS,
+  type EssentialSubsection,
+} from "@/constants/essentialCatalog";
+import { track } from "@/lib/analytics";
 
 type PlanType = "chore-chart" | "home-checklist" | null;
 type HousingType = "traditional" | "suite" | "apartment" | null;
@@ -161,152 +168,6 @@ const KITCHEN_CHORE_MAP: Record<string, { title: string; points: number }> = {
 const LIVING_ITEM_CHORE_MAP: Record<string, { title: string; points: number }> = {
   couches: { title: "Vacuum & lint-roll couches", points: 15 },
 };
-
-// ── Home Essentials sections (from dorm essentials reference list) ─────────
-const HOME_ESSENTIALS_SECTIONS = [
-  {
-    key: "room",
-    title: "Room & Bedroom",
-    icon: "home",
-    color: "#7B6252",
-    items: [
-      // Lighting & electronics
-      "Lamp", "Alarm Clock", "Standing Fan / Box Fan",
-      // Room basics
-      "Mirror", "Small Rug",
-      // Storage
-      "Hangers", "Plastic Storage Bins (under bed / wardrobe)", "Towel Hook (Command Strip)", "Shower Caddy",
-      // Decor / personalization
-      "Room Decor (string lights, posters, pictures)", "Whiteboard for Door",
-    ],
-  },
-  {
-    key: "kitchen",
-    title: "Kitchen",
-    icon: "coffee",
-    color: "#A7744D",
-    items: [
-      // Major appliances
-      "Mini-fridge", "Microwave", "Toaster", "Air Fryer", "Coffee Maker",
-      "Hot Water Kettle", "Blender", "Rice Cooker",
-      // Cookware
-      "Pans", "Pots", "Oven / Baking Tray",
-      // Prep tools
-      "Cutting Board", "Knives", "Kitchen Scissors", "Peeler", "Can Opener", "Bottle Opener",
-      "Measuring Cups", "Whisk", "Mixing Spoons", "Spatulas", "Tongs",
-      "Strainer / Colander", "Oil Dispenser",
-      // Tableware & drinkware
-      "Plates", "Bowls", "Microwave-safe Bowls", "Mug", "Tumbler", "Reusable Water Bottle",
-      // Cutlery
-      "Silverware / Cutlery", "Silverware Organizer", "Reusable Utensil Kit",
-      // Food storage & wraps
-      "Tupperware", "Food Storage Containers", "Chip Clips",
-      "Saran Wrap / Cling Film", "Parchment Paper", "Aluminium Foil",
-      // Dishwashing
-      "Sponge", "Bottle Brush", "Dish Soap", "Dishwasher Pods", "Dish Towel",
-      "Dish Drying Mat", "Dish Drying Rack",
-      // Cleaning & water
-      "Paper Towels", "Water Filter / Brita",
-      // Trash
-      "Trash Can", "Trash Bags", "Plastic Bags",
-    ],
-  },
-  {
-    key: "cleaning",
-    title: "Cleaning Supplies",
-    icon: "wind",
-    color: "#8A7462",
-    items: [
-      // Laundry
-      "Laundry Detergent", "Laundry Basket",
-      // Cleaning agents
-      "All-purpose Cleaner", "Clorox / Disinfectant Wipes", "Windex / Glass Cleaner",
-      "Mirror Cleaner", "Toilet Cleaner",
-      // Cleaning tools
-      "Mini Vacuum", "Swiffer / Mop", "Cleaning Rags",
-      // Air
-      "Febreze / Air Freshener",
-    ],
-  },
-  {
-    key: "bedding",
-    title: "Bedding & Linens",
-    icon: "moon",
-    color: "#B1846D",
-    items: [
-      // Bed (bottom-up)
-      "Mattress Pad / Topper", "Sheets", "Pillows", "Pillowcases",
-      "Duvet / Comforter", "Throw Blanket",
-      // Towels
-      "Bath Towels", "Hand Towels",
-      // Clothing care
-      "Lint Roller", "Steamer / Iron",
-    ],
-  },
-  {
-    key: "bathroom",
-    title: "Bathroom",
-    icon: "droplet",
-    color: "#87644B",
-    items: [
-      // Hygiene
-      "Toilet Paper", "Hand Soap", "Hand Soap Refills",
-      // Storage & towels
-      "Shower Toiletries Holder / Caddy", "Hand Towels",
-      // Cleaning
-      "Toilet Cleaner", "Mirror Cleaner", "Febreze",
-      // Trash
-      "Trashcan",
-    ],
-  },
-  {
-    key: "utility",
-    title: "Utility & Misc",
-    icon: "tool",
-    color: "#C19362",
-    items: [
-      // Power
-      "Batteries", "Extension Cord", "Power Strip",
-      // Adhesives & fixing
-      "Duct Tape", "Painters Tape", "Scissors",
-      // Security
-      "Lock or Lockbox",
-      // Office / desk
-      "Calendar", "Desk Drawer Organizers",
-      // Misc
-      "Tissues", "Lighter",
-      // Cleaning & clothing care
-      "Rag", "Lint Roller", "Steamer / Iron",
-    ],
-  },
-  {
-    key: "food",
-    title: "Food Staples",
-    icon: "shopping-bag",
-    color: "#955C48",
-    items: [
-      // Grains & breads
-      "Rice", "Pasta", "Bread", "Cereal", "Instant Oatmeal", "Ramen",
-      // Canned & pantry
-      "Tomato Sauce", "Soup (canned)", "Dahl", "Tofu", "Frozen Veggies",
-      // Dairy & fridge
-      "Milk", "Butter", "Eggs", "Yogurt",
-      // Spreads
-      "Peanut Butter", "Nutella", "Jam", "Honey",
-      // Sauces & condiments
-      "Soy Sauce", "Hot Sauce", "Ketchup",
-      // Spices & seasonings
-      "Salt", "Pepper", "Sugar", "Oil",
-      "Garlic Powder", "Cinnamon", "Chilli Flakes",
-      // Aromatics
-      "Garlic", "Ginger",
-      // Snacks
-      "Chips / Crackers / Cookies", "Granola Bars", "Microwave Popcorn",
-      // Drinks
-      "Tea", "Hot Chocolate", "Coffee Pods",
-    ],
-  },
-];
 
 function daysFromNow(days: number): string {
   const d = new Date();
@@ -556,7 +417,9 @@ const customStyles = StyleSheet.create({
 // ── Essential item row with optional roommate assignment ───────────────────
 function EssentialItemRow({
   item,
+  optional,
   checked,
+  shortlisted,
   onToggle,
   assigneeId,
   onAssign,
@@ -566,7 +429,9 @@ function EssentialItemRow({
   roommates,
 }: {
   item: string;
+  optional: boolean;
   checked: boolean;
+  shortlisted: boolean;
   onToggle: () => void;
   assigneeId: string | null;
   onAssign: (id: string | null) => void;
@@ -577,7 +442,14 @@ function EssentialItemRow({
 }) {
   return (
     <View>
-      <TouchableOpacity style={styles.checkRow} onPress={onToggle} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={styles.checkRow}
+        onPress={onToggle}
+        activeOpacity={0.7}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked }}
+        accessibilityLabel={`${checked ? "Remove" : "Mark"} ${item} ${checked ? "from owned items" : "as owned"}`}
+      >
         <View
           style={[
             styles.checkBox,
@@ -589,8 +461,11 @@ function EssentialItemRow({
         >
           {checked ? <Feather name="check" size={11} color={accentColor} /> : null}
         </View>
-        <Text style={[styles.checkLabel, { color: textColor, flex: 1 }]}>{item}</Text>
-        {checked && assigneeId && (() => {
+        <Text style={[styles.checkLabel, { color: textColor, flex: 1 }]}>
+          {item}{optional ? <Text style={{ color: mutedColor }}> · Optional</Text> : null}
+        </Text>
+        {shortlisted ? <Feather name="bookmark" size={13} color={accentColor} /> : null}
+        {shortlisted && assigneeId && (() => {
           const r = roommates.find((x) => x.id === assigneeId);
           return r ? (
             <View style={[essentialRowStyles.assignedPill, { backgroundColor: r.color + "22", borderColor: r.color + "55" }]}>
@@ -600,7 +475,7 @@ function EssentialItemRow({
           ) : null;
         })()}
       </TouchableOpacity>
-      {checked && (
+      {shortlisted && !checked && (
         <View style={essentialRowStyles.assignRow}>
           <Text style={[essentialRowStyles.assignLabel, { color: mutedColor }]}>Who's getting it?</Text>
           <View style={essentialRowStyles.avatarRow}>
@@ -703,7 +578,15 @@ function SectionCard({
 export default function PlanningScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, addChore, addChores, essentialsAssignees, setEssentialAssignee, pointsEnabled, householdComplete, householdId, homeProfile, customTasks, addCustomTask, deleteCustomTask, memberPreferences, setMemberPreference, currentUserId } = useAppContext();
+  const {
+    roommates, addChore, addChores, essentialsAssignees, setEssentialAssignee,
+    essentialOwned, essentialShortlist, essentialShortlistUpdatedBy,
+    setEssentialOwned, saveEssentialShortlist,
+    shoppingLists, shoppingItems, addShoppingList, addShoppingItem,
+    pointsEnabled, householdComplete, householdId, homeProfile, customTasks,
+    addCustomTask, deleteCustomTask, memberPreferences, setMemberPreference,
+    currentUserId,
+  } = useAppContext();
 
   const [selectedType, setSelectedType] = useState<PlanType>(null);
   const [housingType, setHousingType] = useState<HousingType>(homeProfile?.housingType ?? null);
@@ -718,6 +601,8 @@ export default function PlanningScreen() {
   const [checkedEssentials, setCheckedEssentials] = useState<Record<string, Set<string>>>({});
   const [customEssentials, setCustomEssentials] = useState<Record<string, string[]>>({});
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [shortlistOpen, setShortlistOpen] = useState(false);
+  const [shortlistDraft, setShortlistDraft] = useState<Record<string, Record<string, boolean>>>({});
   const [result, setResult] = useState<string | null>(null);
   const [choreChartData, setChoreChartData] = useState<ChoreChartData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -769,6 +654,133 @@ export default function PlanningScreen() {
       else next.add(key);
       return next;
     });
+  }
+
+  function openShortlist() {
+    const hasSaved = Object.values(essentialShortlist).some((section) =>
+      Object.values(section).some(Boolean),
+    );
+    const next = Object.fromEntries(
+      ESSENTIAL_CATALOG.map((category) => [
+        category.id,
+        Object.fromEntries(
+          category.items.map((entry) => [
+            entry.id,
+            !essentialOwned[category.id]?.[entry.id] &&
+              (hasSaved
+                ? Boolean(essentialShortlist[category.id]?.[entry.id])
+                : entry.subsection !== "optional"),
+          ]),
+        ),
+      ]),
+    );
+    setShortlistDraft(next);
+    setShortlistOpen(true);
+    track.shortlistOpened({ source: "sweet_essentials" });
+  }
+
+  function setDraftItem(categoryId: string, itemId: string, selected: boolean) {
+    setShortlistDraft((current) => ({
+      ...current,
+      [categoryId]: { ...(current[categoryId] ?? {}), [itemId]: selected },
+    }));
+  }
+
+  function toggleOwnedItem(categoryId: string, itemId: string) {
+    const willOwn = !essentialOwned[categoryId]?.[itemId];
+    setEssentialOwned(categoryId, itemId, willOwn);
+    if (willOwn && essentialShortlist[categoryId]?.[itemId]) {
+      saveEssentialShortlist({
+        ...essentialShortlist,
+        [categoryId]: {
+          ...(essentialShortlist[categoryId] ?? {}),
+          [itemId]: false,
+        },
+      });
+    }
+  }
+
+  function setDraftSubsection(
+    categoryId: string,
+    subsection: EssentialSubsection,
+    selected: boolean,
+  ) {
+    const category = ESSENTIAL_CATALOG.find((entry) => entry.id === categoryId);
+    if (!category) return;
+    setShortlistDraft((current) => ({
+      ...current,
+      [categoryId]: {
+        ...(current[categoryId] ?? {}),
+        ...Object.fromEntries(
+          category.items
+            .filter((entry) => entry.subsection === subsection)
+            .map((entry) => [entry.id, selected]),
+        ),
+      },
+    }));
+  }
+
+  function saveShortlist() {
+    saveEssentialShortlist(shortlistDraft);
+    const count = Object.values(shortlistDraft).reduce(
+      (total, section) => total + Object.values(section).filter(Boolean).length,
+      0,
+    );
+    track.shortlistSaved({
+      item_count_bucket: count <= 5 ? "1_5" : count <= 10 ? "6_10" : "11_plus",
+      category_count: Object.values(shortlistDraft).filter((section) =>
+        Object.values(section).some(Boolean),
+      ).length,
+      source: "sweet_essentials",
+    });
+    setShortlistOpen(false);
+  }
+
+  function sendShortlistToShopping() {
+    const selected = ESSENTIAL_CATALOG.flatMap((category) =>
+      category.items
+        .filter(
+          (entry) =>
+            shortlistDraft[category.id]?.[entry.id] &&
+            !essentialOwned[category.id]?.[entry.id],
+        )
+        .map((entry) => ({ category, entry })),
+    );
+    let listId = shoppingLists.find((list) => list.name === "Sweet Essentials")?.id;
+    if (!listId) listId = addShoppingList("Sweet Essentials");
+    const existingSourceIds = new Set(
+      shoppingItems.flatMap((entry) =>
+        entry.sourceEssentialItemId ? [entry.sourceEssentialItemId] : [],
+      ),
+    );
+    const existingNames = new Set(
+      shoppingItems
+        .filter((entry) => entry.listId === listId && !entry.completed)
+        .map((entry) => entry.name.trim().toLowerCase()),
+    );
+    const additions = selected.filter(
+      ({ entry }) =>
+        !existingSourceIds.has(entry.id) &&
+        !existingNames.has(entry.label.toLowerCase()),
+    );
+    additions.forEach(({ entry }) => {
+      addShoppingItem({
+        listId,
+        name: entry.label,
+        quantity: "",
+        addedBy: currentUserId,
+        completed: false,
+        sourceEssentialItemId: entry.id,
+      });
+    });
+    if (additions.length) {
+      track.shortlistSentToShopping({
+        item_count_bucket:
+          additions.length <= 5 ? "1_5" : additions.length <= 10 ? "6_10" : "11_plus",
+        source: "sweet_essentials",
+      });
+    }
+    saveShortlist();
   }
 
   // ── Build + create chores ────────────────────────────────────────────────
@@ -965,12 +977,12 @@ export default function PlanningScreen() {
     }
     // ── Home essentials selections ──
     if (selectedType === "home-checklist") {
-      HOME_ESSENTIALS_SECTIONS.forEach((section) => {
-        const checked = checkedEssentials[section.key];
-        const custom = customEssentials[section.key] ?? [];
+      ESSENTIAL_CATALOG.forEach((section) => {
+        const checked = checkedEssentials[section.id];
+        const custom = customEssentials[section.id] ?? [];
         const items = [...(checked ? [...checked] : []), ...custom];
         if (items.length > 0) {
-          const assignments = essentialsAssignees[section.key] ?? {};
+          const assignments = essentialsAssignees[section.id] ?? {};
           const itemsWithAssignment = items.map((item) => {
             const rid = assignments[item];
             const rname = rid ? roommates.find((r) => r.id === rid)?.name : null;
@@ -1046,15 +1058,7 @@ export default function PlanningScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         return;
       }
-      const selectedItems = HOME_ESSENTIALS_SECTIONS.flatMap((section) => [
-        ...[...(checkedEssentials[section.key] ?? [])],
-        ...(customEssentials[section.key] ?? []),
-      ]);
-      setResult(
-        selectedItems.length
-          ? selectedItems.map((item) => `• ${item}`).join("\n")
-          : "Select the household essentials you want included.",
-      );
+      openShortlist();
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
@@ -1494,19 +1498,21 @@ export default function PlanningScreen() {
       {/* ── Home Essentials checklist ── */}
       {selectedType === "home-checklist" && (
         <View style={[styles.amenityArea, { marginTop: 4 }]}>
-          {HOME_ESSENTIALS_SECTIONS.map((section) => {
-            const sectionChecked = checkedEssentials[section.key] ?? new Set<string>();
-            const sectionCustom = customEssentials[section.key] ?? [];
-            const checkedCount = sectionChecked.size + sectionCustom.length;
-            const isExpanded = expandedSections.has(section.key);
+          {ESSENTIAL_CATALOG.map((section) => {
+            const sectionCustom = customEssentials[section.id] ?? [];
+            const coreItems = section.items.filter((entry) => entry.subsection !== "optional");
+            const ownedCoreCount = coreItems.filter(
+              (entry) => essentialOwned[section.id]?.[entry.id],
+            ).length;
+            const isExpanded = expandedSections.has(section.id);
             return (
               <View
-                key={section.key}
+                key={section.id}
                 style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
                 <TouchableOpacity
                   style={styles.sectionCardHeader}
-                  onPress={() => toggleExpandSection(section.key)}
+                  onPress={() => toggleExpandSection(section.id)}
                   activeOpacity={0.7}
                 >
                   <View style={[styles.sectionCardIcon, { backgroundColor: section.color + "18" }]}>
@@ -1515,10 +1521,10 @@ export default function PlanningScreen() {
                   <Text style={[styles.sectionCardTitle, { color: colors.foreground, flex: 1 }]}>
                     {section.title}
                   </Text>
-                  {checkedCount > 0 && (
+                  {ownedCoreCount > 0 && (
                     <View style={[styles.checkedBadge, { backgroundColor: section.color + "20" }]}>
                       <Text style={[styles.checkedBadgeText, { color: section.color }]}>
-                        {checkedCount}
+                        {ownedCoreCount}/{coreItems.length}
                       </Text>
                     </View>
                   )}
@@ -1531,24 +1537,43 @@ export default function PlanningScreen() {
 
                 {isExpanded && (
                   <View style={{ marginTop: 4 }}>
-                    {section.items.map((item) => (
-                      <EssentialItemRow
-                        key={item}
-                        item={item}
-                        checked={sectionChecked.has(item)}
-                        onToggle={() => toggleEssential(section.key, item)}
-                        assigneeId={essentialsAssignees[section.key]?.[item] ?? null}
-                        onAssign={(id) => setEssentialAssignee(section.key, item, id)}
-                        accentColor={section.color}
-                        textColor={colors.foreground}
-                        mutedColor={colors.mutedForeground}
-                        roommates={roommates}
-                      />
-                    ))}
+                    {(["large", "small", "optional"] as const).map((subsection) => {
+                      const subsectionItems = section.items.filter(
+                        (entry) => entry.subsection === subsection,
+                      );
+                      if (subsectionItems.length === 0) return null;
+                      return (
+                        <View key={subsection}>
+                          <Text
+                            accessibilityRole="header"
+                            style={[styles.essentialSubsectionTitle, { color: colors.mutedForeground }]}
+                          >
+                            {ESSENTIAL_SUBSECTION_LABELS[subsection]}
+                            {subsection === "optional" ? " · does not affect core progress" : ""}
+                          </Text>
+                          {subsectionItems.map((entry) => (
+                            <EssentialItemRow
+                              key={entry.id}
+                              item={entry.label}
+                              optional={entry.subsection === "optional"}
+                              checked={Boolean(essentialOwned[section.id]?.[entry.id])}
+                              shortlisted={Boolean(essentialShortlist[section.id]?.[entry.id])}
+                              onToggle={() => toggleOwnedItem(section.id, entry.id)}
+                              assigneeId={essentialsAssignees[section.id]?.[entry.id] ?? null}
+                              onAssign={(id) => setEssentialAssignee(section.id, entry.id, id)}
+                              accentColor={section.color}
+                              textColor={colors.foreground}
+                              mutedColor={colors.mutedForeground}
+                              roommates={roommates}
+                            />
+                          ))}
+                        </View>
+                      );
+                    })}
                     <CustomChoreInput
                       chores={sectionCustom}
-                      onAdd={(item) => addCustomEssential(section.key, item)}
-                      onRemove={(i) => removeCustomEssential(section.key, i)}
+                      onAdd={(item) => addCustomEssential(section.id, item)}
+                      onRemove={(i) => removeCustomEssential(section.id, i)}
                       accentColor={section.color}
                       textColor={colors.foreground}
                       mutedColor={colors.mutedForeground}
@@ -1805,6 +1830,125 @@ export default function PlanningScreen() {
       ) : null}
     </ScrollView>
 
+    <Modal
+      visible={shortlistOpen}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setShortlistOpen(false)}
+    >
+      <View style={[styles.shortlistScreen, { backgroundColor: colors.background }]}>
+        <View style={[styles.shortlistHeader, { borderBottomColor: colors.border }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.shortlistTitle, { color: colors.foreground }]}>Shortlist Items</Text>
+            <Text style={[styles.shortlistHelper, { color: colors.mutedForeground }]}>
+              Choose what your Sweet still wants to obtain. Owned items and optional items start unselected.
+            </Text>
+            {essentialShortlistUpdatedBy ? (
+              <Text style={[styles.shortlistUpdatedBy, { color: colors.mutedForeground }]}>
+                Last updated by {roommates.find((entry) => entry.id === essentialShortlistUpdatedBy)?.name ?? "a Sweetmate"}
+              </Text>
+            ) : null}
+          </View>
+          <TouchableOpacity
+            onPress={() => setShortlistOpen(false)}
+            accessibilityLabel="Close shortlist"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="x" size={22} color={colors.foreground} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView contentContainerStyle={styles.shortlistContent}>
+          {ESSENTIAL_CATALOG.map((category) => (
+            <View
+              key={category.id}
+              style={[styles.shortlistCategory, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Text accessibilityRole="header" style={[styles.sectionCardTitle, { color: colors.foreground }]}>
+                {category.title}
+              </Text>
+              {(["large", "small", "optional"] as const).map((subsection) => {
+                const subsectionItems = category.items.filter(
+                  (entry) => entry.subsection === subsection,
+                );
+                if (!subsectionItems.length) return null;
+                return (
+                  <View key={subsection}>
+                    <View style={styles.shortlistSubsectionHeader}>
+                      <Text style={[styles.essentialSubsectionTitle, { color: colors.mutedForeground, flex: 1 }]}>
+                        {ESSENTIAL_SUBSECTION_LABELS[subsection]}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => setDraftSubsection(category.id, subsection, true)}
+                        accessibilityLabel={`Select all ${category.title} ${ESSENTIAL_SUBSECTION_LABELS[subsection]}`}
+                      >
+                        <Text style={[styles.shortlistAction, { color: colors.primary }]}>Select all</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setDraftSubsection(category.id, subsection, false)}
+                        accessibilityLabel={`Clear all ${category.title} ${ESSENTIAL_SUBSECTION_LABELS[subsection]}`}
+                      >
+                        <Text style={[styles.shortlistAction, { color: colors.mutedForeground }]}>Clear</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {subsectionItems.map((entry) => {
+                      const selected = Boolean(shortlistDraft[category.id]?.[entry.id]);
+                      const owned = Boolean(essentialOwned[category.id]?.[entry.id]);
+                      return (
+                        <TouchableOpacity
+                          key={entry.id}
+                          style={styles.shortlistRow}
+                          onPress={() => setDraftItem(category.id, entry.id, !selected)}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: selected }}
+                          accessibilityLabel={`${selected ? "Remove" : "Add"} ${entry.label} ${selected ? "from" : "to"} shortlist${owned ? ", already owned" : ""}`}
+                        >
+                          <Feather
+                            name={selected ? "check-square" : "square"}
+                            size={18}
+                            color={selected ? category.color : colors.mutedForeground}
+                          />
+                          <Text style={[styles.checkLabel, { color: owned ? colors.mutedForeground : colors.foreground, flex: 1 }]}>
+                            {entry.label}
+                          </Text>
+                          <Text style={[styles.shortlistStatus, { color: colors.mutedForeground }]}>
+                            {owned ? "Owned" : subsection === "optional" ? "Optional" : "Needed"}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+            </View>
+          ))}
+        </ScrollView>
+        <View style={[styles.shortlistFooter, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+          <Text style={[styles.shortlistCount, { color: colors.foreground }]}>
+            {Object.values(shortlistDraft).reduce(
+              (total, section) => total + Object.values(section).filter(Boolean).length,
+              0,
+            )} selected
+          </Text>
+          <TouchableOpacity
+            onPress={sendShortlistToShopping}
+            style={[styles.shortlistOutline, { borderColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel="Send shortlisted items to Shopping"
+          >
+            <Text style={[styles.shortlistOutlineText, { color: colors.primary }]}>To Shopping</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={saveShortlist}
+            style={[styles.shortlistSave, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel="Save shortlist"
+          >
+            <Text style={styles.generateText}>Save Shortlist</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+
     {/* ── Sticky bottom button area ── */}
     <View style={[styles.stickyBottom, { backgroundColor: colors.background, borderTopColor: colors.border, paddingBottom: botPad + 16 }]}>
       {/* Add Tasks button — shown after chart is generated */}
@@ -1824,17 +1968,19 @@ export default function PlanningScreen() {
           style={[styles.generateBtn, { backgroundColor: canGenerate && !loading ? colors.primary : colors.muted }]}
           disabled={!canGenerate || loading}
           onPress={generate}
+          accessibilityRole="button"
+          accessibilityLabel={selectedType === "home-checklist" ? "Shortlist items" : "Build chore chart"}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <>
-              <Feather name="zap" size={18} color="#fff" />
+              <Feather name={selectedType === "home-checklist" ? "bookmark" : "zap"} size={18} color="#fff" />
               <Text style={styles.generateText}>
                 {isChoreChart
                   ? "Build Chore Chart"
                   : selectedType === "home-checklist"
-                  ? "Generate Suggestions"
+                  ? "Shortlist Items"
                   : "Generate"}
               </Text>
             </>
@@ -1976,6 +2122,48 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sectionCardTitle: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  essentialSubsectionTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginTop: 14,
+    marginBottom: 5,
+  },
+  shortlistScreen: { flex: 1 },
+  shortlistHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 14,
+  },
+  shortlistTitle: { fontFamily: "Inter_700Bold", fontSize: 22 },
+  shortlistHelper: { fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 18, marginTop: 4 },
+  shortlistUpdatedBy: { fontFamily: "Inter_500Medium", fontSize: 12, marginTop: 5 },
+  shortlistContent: { padding: 16, paddingBottom: 120, gap: 12 },
+  shortlistCategory: { borderWidth: 1, borderRadius: 16, padding: 14 },
+  shortlistSubsectionHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  shortlistAction: { fontFamily: "Inter_600SemiBold", fontSize: 12, paddingVertical: 8 },
+  shortlistRow: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 10 },
+  shortlistStatus: { fontFamily: "Inter_500Medium", fontSize: 11 },
+  shortlistFooter: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  shortlistCount: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 14 },
+  shortlistSave: { minHeight: 48, borderRadius: 12, paddingHorizontal: 24, alignItems: "center", justifyContent: "center" },
+  shortlistOutline: { minHeight: 48, borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, alignItems: "center", justifyContent: "center" },
+  shortlistOutlineText: { fontFamily: "Inter_700Bold", fontSize: 13 },
   amenityHint: {
     fontFamily: "Inter_500Medium",
     fontSize: 12,
