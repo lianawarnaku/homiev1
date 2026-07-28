@@ -402,33 +402,6 @@ export default function BorrowScreen() {
                   },
                 ]}
               >
-                <View style={styles.cardLeft}>
-                  <View
-                    style={[
-                      styles.itemIcon,
-                      {
-                        backgroundColor: borrow.returned
-                          ? colors.muted
-                          : isOverdueItem
-                          ? colors.warning + "18"
-                          : colors.primary + "18",
-                      },
-                    ]}
-                  >
-                    <Feather
-                      name={borrow.returned ? "check" : "repeat"}
-                      size={18}
-                      color={
-                        borrow.returned
-                          ? colors.mutedForeground
-                          : isOverdueItem
-                          ? colors.warning
-                          : colors.primary
-                      }
-                    />
-                  </View>
-                </View>
-
                 <View style={styles.cardContent}>
                   <Text
                     style={[
@@ -442,7 +415,7 @@ export default function BorrowScreen() {
                           : "none",
                       },
                     ]}
-                    numberOfLines={1}
+                    numberOfLines={2}
                   >
                     {borrow.item}
                   </Text>
@@ -828,14 +801,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     gap: 12,
-  },
-  cardLeft: {},
-  itemIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
   },
   cardContent: { flex: 1, gap: 3 },
   borrowItemName: { fontFamily: "Inter_600SemiBold", fontSize: 15 },

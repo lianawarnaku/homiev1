@@ -1015,12 +1015,7 @@ export default function MyChoresScreen() {
               }}
             />
 
-            <View
-              style={[
-                styles.progressCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
+            <View style={styles.progressSection}>
               <View style={styles.progressHeader}>
                 <Text style={[styles.progressLabel, { color: colors.foreground }]}>
                   My Progress
@@ -1319,16 +1314,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   totalPointsText: { fontFamily: "Inter_700Bold", fontSize: 14 },
-  progressCard: {
-    borderRadius: 22,
-    padding: 16,
-    borderWidth: 1,
-    marginBottom: 14,
-    shadowColor: "#4A3426",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.07,
-    shadowRadius: 16,
-    elevation: 2,
+  progressSection: {
+    paddingHorizontal: 2,
+    paddingVertical: 4,
+    marginBottom: 10,
   },
   calendarCard: {
     borderRadius: 22,
@@ -1408,6 +1397,7 @@ const styles = StyleSheet.create({
   dayItemAmount: { fontFamily: "Inter_700Bold", fontSize: 12 },
   progressHeader: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 8,

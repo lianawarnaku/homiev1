@@ -8,6 +8,7 @@ function assert(condition: boolean, message: string) {
 const appRoot = resolve(process.cwd(), "app/(tabs)");
 const home = readFileSync(resolve(appRoot, "index.tsx"), "utf8");
 const group = readFileSync(resolve(appRoot, "group.tsx"), "utf8");
+const borrowing = readFileSync(resolve(appRoot, "borrow.tsx"), "utf8");
 
 assert(
   home.includes('(["today", "done", "all"] as Filter[])'),
@@ -25,4 +26,14 @@ assert(
   group.includes("style={styles.moreActionsButton}") &&
     group.includes("event.stopPropagation()"),
   "Group overflow must use a dedicated non-bubbling touch target",
+);
+assert(
+  home.includes("style={styles.progressSection}") &&
+    !home.includes("styles.progressCard"),
+  "My Progress must render without its former card shell",
+);
+assert(
+  !borrowing.includes("styles.itemIcon") &&
+    !borrowing.includes("styles.cardLeft"),
+  "borrowing rows must not render or reserve space for the leading status circle",
 );
