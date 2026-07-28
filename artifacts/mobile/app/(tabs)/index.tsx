@@ -835,7 +835,7 @@ export default function MyChoresScreen() {
                 Welcome home,
               </Text>
               <Text style={[styles.username, { color: colors.foreground }]}>
-                {currentUser?.name ?? "You"} 🏠
+                {currentUser?.name ?? "You"}
               </Text>
             </View>
 

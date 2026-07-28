@@ -13,6 +13,12 @@ const expenses = readFileSync(resolve(appRoot, "expenses.tsx"), "utf8");
 const shopping = readFileSync(resolve(appRoot, "shopping.tsx"), "utf8");
 
 assert(
+  home.includes('{currentUser?.name ?? "You"}') &&
+    !home.includes('{currentUser?.name ?? "You"} 🏠'),
+  "My Sweet must render the current user's name without the appended home emoji",
+);
+
+assert(
   home.includes('(["today", "done", "week"] as Filter[])'),
   "My Chores filters must render Today, Done, Week",
 );
