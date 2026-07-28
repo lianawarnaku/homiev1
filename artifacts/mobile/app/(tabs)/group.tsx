@@ -731,7 +731,7 @@ export default function GroupChoresScreen() {
           accessibilityLabel={`Room health ${Math.round(healthPct * 100)} percent. ${msg.title}. ${msg.subtitle}`}
         >
           <View style={styles.summaryHeader}>
-            <View style={[styles.activityHeaderIcon, { backgroundColor: healthColor + "18" }]}>
+            <View style={styles.activityHeaderIcon}>
               <Feather name="activity" size={14} color={healthColor} />
             </View>
             <Text style={[styles.activityTitle, { color: colors.foreground }]}>Room Health</Text>
@@ -824,7 +824,7 @@ export default function GroupChoresScreen() {
             accessibilityState={{ expanded: roommatesExpanded }}
             accessibilityLabel={`${roommatesExpanded ? "Collapse" : "Expand"} Roommates`}
           >
-            <View style={[styles.activityHeaderIcon, { backgroundColor: colors.primary + "18" }]}>
+            <View style={styles.activityHeaderIcon}>
               <Feather name="users" size={14} color={colors.primary} />
             </View>
             <Text style={[styles.activityTitle, { color: colors.foreground }]}>Roommates</Text>
@@ -1383,9 +1383,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   activityHeaderIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
+    width: 18,
     alignItems: "center",
     justifyContent: "center",
   },

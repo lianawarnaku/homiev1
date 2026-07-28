@@ -557,12 +557,7 @@ export default function ExpensesScreen() {
                 >
                   {/* Top row */}
                   <View style={styles.expenseCardTop}>
-                    <View
-                      style={[
-                        styles.expCatIcon,
-                        { backgroundColor: colors.primary + "18" },
-                      ]}
-                    >
+                    <View style={styles.expCatIcon}>
                       <Feather
                         name={cat.icon}
                         size={16}
@@ -575,7 +570,7 @@ export default function ExpensesScreen() {
                           styles.expTitle,
                           { color: colors.foreground },
                         ]}
-                        numberOfLines={1}
+                        numberOfLines={2}
                       >
                         {item.title}
                       </Text>
@@ -749,7 +744,7 @@ export default function ExpensesScreen() {
 
                   {/* Header */}
                   <View style={styles.detailHeader}>
-                    <View style={[styles.expCatIcon, { backgroundColor: colors.primary + "18" }]}>
+                    <View style={styles.expCatIcon}>
                       <Feather name={cat.icon} size={18} color={colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
@@ -1463,9 +1458,7 @@ const styles = StyleSheet.create({
   },
   expenseCardTop: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   expCatIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 20,
     alignItems: "center",
     justifyContent: "center",
   },

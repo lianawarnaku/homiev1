@@ -9,6 +9,8 @@ const appRoot = resolve(process.cwd(), "app/(tabs)");
 const home = readFileSync(resolve(appRoot, "index.tsx"), "utf8");
 const group = readFileSync(resolve(appRoot, "group.tsx"), "utf8");
 const borrowing = readFileSync(resolve(appRoot, "borrow.tsx"), "utf8");
+const expenses = readFileSync(resolve(appRoot, "expenses.tsx"), "utf8");
+const shopping = readFileSync(resolve(appRoot, "shopping.tsx"), "utf8");
 
 assert(
   home.includes('(["today", "done", "all"] as Filter[])'),
@@ -36,4 +38,23 @@ assert(
   !borrowing.includes("styles.itemIcon") &&
     !borrowing.includes("styles.cardLeft"),
   "borrowing rows must not render or reserve space for the leading status circle",
+);
+assert(
+  home.includes("style={styles.categoryVisual}") &&
+    home.includes("style={styles.pointsVisual}") &&
+    !home.includes("styles.categoryIcon"),
+  "My Chores category and points visuals must render without icon tiles",
+);
+assert(
+  !group.includes("styles.activityHeaderIcon, { backgroundColor:"),
+  "Room Health and Roommates heading icons must render without tiles",
+);
+assert(
+  !expenses.includes("styles.expCatIcon, { backgroundColor:"),
+  "IOU category icons must render without tiles",
+);
+assert(
+  shopping.includes("style={[styles.inlineYou, { color: colors.foreground }]}") &&
+    !shopping.includes('listAssignee.id === currentUserId ? "You" : listAssignee.name'),
+  "the current-user shopping assignment must render as plain inline text",
 );

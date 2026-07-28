@@ -447,12 +447,16 @@ export default function ShoppingScreen() {
                     style={styles.assignBtn}
                   >
                     {listAssignee ? (
-                      <View style={[styles.assignedPill, { backgroundColor: listAssignee.color + "22", borderColor: listAssignee.color + "55" }]}>
-                        <View style={[styles.pillDot, { backgroundColor: listAssignee.color }]} />
-                        <Text style={[styles.pillText, { color: listAssignee.color }]}>
-                          {listAssignee.id === currentUserId ? "You" : listAssignee.name}
-                        </Text>
-                      </View>
+                      listAssignee.id === currentUserId ? (
+                        <Text style={[styles.inlineYou, { color: colors.foreground }]}>You</Text>
+                      ) : (
+                        <View style={[styles.assignedPill, { backgroundColor: listAssignee.color + "22", borderColor: listAssignee.color + "55" }]}>
+                          <View style={[styles.pillDot, { backgroundColor: listAssignee.color }]} />
+                          <Text style={[styles.pillText, { color: listAssignee.color }]}>
+                            {listAssignee.name}
+                          </Text>
+                        </View>
+                      )
                     ) : (
                       <View style={[styles.assignGhost, { borderColor: colors.border }]}>
                         <Feather name="user-plus" size={12} color={colors.mutedForeground} />
@@ -1258,7 +1262,8 @@ const styles = StyleSheet.create({
   },
   shopName: { fontFamily: "Inter_500Medium", fontSize: 14 },
   shopMeta: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 1 },
-  assignBtn: { alignItems: "center", justifyContent: "center" },
+  assignBtn: { minHeight: 32, alignItems: "center", justifyContent: "center" },
+  inlineYou: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
   assignedPill: {
     flexDirection: "row",
     alignItems: "center",

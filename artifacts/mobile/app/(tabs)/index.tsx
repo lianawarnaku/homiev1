@@ -263,12 +263,12 @@ function ChoreRow({
           accessible
           accessibilityRole="text"
           accessibilityLabel={`${chore.points} points`}
-          style={[styles.categoryIcon, { backgroundColor: colors.secondary }]}
+          style={styles.pointsVisual}
         >
           <Text style={[styles.leftPointsText, { color: colors.primary }]}>{chore.points} pts</Text>
         </View>
       ) : (
-        <View style={[styles.categoryIcon, { backgroundColor: colors.secondary }]}>
+        <View style={styles.categoryVisual}>
           <Feather name={cat.icon} size={14} color={colors.primary} />
         </View>
       )}
@@ -1468,13 +1468,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  categoryIcon: {
-    minWidth: 42,
-    height: 30,
-    borderRadius: 10,
+  categoryVisual: {
+    width: 18,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 5,
+  },
+  pointsVisual: {
+    minWidth: 42,
+    alignItems: "center",
+    justifyContent: "center",
   },
   leftPointsText: { fontFamily: "Inter_700Bold", fontSize: 10 },
   choreInfo: { flex: 1, minWidth: 0 },
