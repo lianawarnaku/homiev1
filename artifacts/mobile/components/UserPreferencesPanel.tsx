@@ -10,7 +10,7 @@ const SCHEME_LABELS: Record<ColorScheme, string> = {
   mono: "Black & White",
   brown: "Brown",
   pinkWhite: "Pink + White",
-  blueWhite: "Blue + White",
+  blueWhite: "Navy Blue",
 };
 
 export function UserPreferencesPanel() {

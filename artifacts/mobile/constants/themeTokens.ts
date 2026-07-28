@@ -50,21 +50,20 @@ const pinkWhite: ThemeTokens = {
 };
 
 const blueWhite: ThemeTokens = {
-  // TODO: Fine-tune the blue-white scheme hex values.
-  text: "#111827", tint: "#4F7FF7", background: "#FFFFFF",
+  text: "#142A3C", tint: "#1E3F5A", background: "#F8FBFD",
   foreground: "#111827", card: "#FFFFFF", cardForeground: "#111827",
-  primary: "#4F7FF7", primaryForeground: "#FFFFFF", secondary: "#EEF3FF",
-  secondaryForeground: "#244A9E", muted: "#F3F4F6", mutedForeground: "#596273",
-  accent: "#315FCE", accentForeground: "#FFFFFF", destructive: "#D9363E",
+  primary: "#1E3F5A", primaryForeground: "#FFFFFF", secondary: "#E8F0F5",
+  secondaryForeground: "#1E3F5A", muted: "#EFF4F7", mutedForeground: "#566774",
+  accent: "#315F73", accentForeground: "#FFFFFF", destructive: "#B9363E",
   destructiveForeground: "#FFFFFF", success: "#27864B", warning: "#B87512",
-  border: "#D1D5DB", input: "#D1D5DB", radius: 22,
+  border: "#CBD8E0", input: "#CBD8E0", radius: 22,
 };
 
 export const colorSchemes = { mono, brown, pinkWhite, blueWhite } as const;
 export type ColorScheme = keyof typeof colorSchemes;
 
 export function normalizeColorScheme(value: unknown): ColorScheme {
-  if (value === "blue") return "mono";
+  if (value === "blue") return "blueWhite";
   return typeof value === "string" && value in colorSchemes
     ? value as ColorScheme
     : "mono";

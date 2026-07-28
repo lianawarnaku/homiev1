@@ -180,7 +180,6 @@ export default function GroupChoresScreen() {
   const [pickedUpChores, setPickedUpChores] = useState<Set<string>>(new Set());
   const [viewMode] = useState<"activity" | "calendar">("activity");
   const [monthOffset, setMonthOffset] = useState(0);
-  const [roomHealthExpanded, setRoomHealthExpanded] = useState(true);
   const [roommatesExpanded, setRoommatesExpanded] = useState(true);
   const previousScrollOffsetRef = useRef(0);
   const taskListTopRef = useRef(0);
@@ -195,11 +194,6 @@ export default function GroupChoresScreen() {
 
   const animateSummaryLayout = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-  };
-  const toggleRoomHealth = () => {
-    animateSummaryLayout();
-    setRoomHealthExpanded((expanded) => !expanded);
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
   const toggleRoommates = () => {
     animateSummaryLayout();
@@ -233,9 +227,8 @@ export default function GroupChoresScreen() {
 
     autoCollapseTriggeredRef.current = true;
     autoCollapsedAtRef.current = Date.now();
-    if (roomHealthExpanded || roommatesExpanded) {
+    if (roommatesExpanded) {
       animateSummaryLayout();
-      if (roomHealthExpanded) setRoomHealthExpanded(false);
       if (roommatesExpanded) setRoommatesExpanded(false);
     }
   };
@@ -789,37 +782,20 @@ export default function GroupChoresScreen() {
         onScroll={handleGroupScroll}
         scrollEventThrottle={32}
       >
-        {/* ── Plant Health Card ──────────────────────────── */}
+        {/* The enabled plant is intentionally open and integrated into the page. */}
         {plantEnabled && <View
-          style={[
-            styles.plantCard,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-              shadowColor: healthColor,
-            },
-          ]}
+          style={styles.plantSection}
+          accessibilityRole="summary"
+          accessibilityLabel={`Room health ${Math.round(healthPct * 100)} percent. ${msg.title}. ${msg.subtitle}`}
         >
-          <TouchableOpacity
-            style={styles.summaryHeader}
-            onPress={toggleRoomHealth}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: roomHealthExpanded }}
-            accessibilityLabel={`${roomHealthExpanded ? "Collapse" : "Expand"} Room Health`}
-          >
+          <View style={styles.summaryHeader}>
             <View style={[styles.activityHeaderIcon, { backgroundColor: healthColor + "18" }]}>
               <Feather name="activity" size={14} color={healthColor} />
             </View>
             <Text style={[styles.activityTitle, { color: colors.foreground }]}>Room Health</Text>
-            <Feather
-              name={roomHealthExpanded ? "chevron-down" : "chevron-right"}
-              size={18}
-              color={colors.mutedForeground}
-            />
-          </TouchableOpacity>
+          </View>
 
-          {roomHealthExpanded && <View style={styles.plantCardInner}>
+          <View style={styles.plantCardInner}>
             {/* Left: Animated plant */}
             <View style={styles.plantContainer}>
               <HomePlant health={healthPct} size={130} />
@@ -890,7 +866,7 @@ export default function GroupChoresScreen() {
                 </Text>
               </View>
             </View>
-          </View>}
+          </View>
         </View>}
 
         {/* ── Roommates ──────────────────────────────────
@@ -1366,17 +1342,10 @@ const styles = StyleSheet.create({
   },
   headerSub: { fontFamily: "Inter_400Regular", fontSize: 13 },
   headerTitle: { fontFamily: "Inter_700Bold", fontSize: 30, lineHeight: 36, marginTop: 2 },
-  // Plant card
-  plantCard: {
+  // Open plant summary — intentionally not enclosed in a separate card.
+  plantSection: {
     marginHorizontal: 16,
-    marginBottom: 14,
-    borderRadius: 22,
-    borderWidth: 1,
-    overflow: "hidden",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 18,
-    elevation: 3,
+    marginBottom: 18,
   },
   summaryHeader: {
     flexDirection: "row",
@@ -1388,21 +1357,23 @@ const styles = StyleSheet.create({
   },
   plantCardInner: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingBottom: 16,
-    paddingTop: 8,
-    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    paddingTop: 4,
+    gap: 12,
   },
   plantContainer: {
     width: 134,
+    minHeight: 188,
     alignItems: "center",
-    justifyContent: "flex-end",
+    justifyContent: "center",
   },
   healthInfo: {
     flex: 1,
-    paddingTop: 8,
-    gap: 4,
+    minWidth: 156,
+    paddingVertical: 12,
+    gap: 6,
   },
   healthRoom: { fontFamily: "Inter_400Regular", fontSize: 12 },
   healthTitle: {

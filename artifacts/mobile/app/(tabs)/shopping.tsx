@@ -1,9 +1,8 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -19,6 +18,7 @@ import type { RenderItemParams } from "react-native-draggable-flatlist";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { ActionMenuModal } from "@/components/ActionMenuModal";
 import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import {
   DraggableListCompat,
@@ -43,7 +43,7 @@ function normalizeAssignees(item: ShoppingItem): string[] {
   return [];
 }
 import { useTheme } from "@/constants/colors";
-import { useConfirm } from "@/hooks/useConfirm";
+import { tapLight } from "@/lib/haptics";
 import { buildEvenSplitCents, centsToDollars, parseMoneyToCents } from "@/lib/money";
 
 export default function ShoppingScreen() {
@@ -86,7 +86,6 @@ export default function ShoppingScreen() {
     currentUserId: context.currentUserId,
   }));
 
-  const { confirm } = useConfirm();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
 
@@ -100,6 +99,8 @@ export default function ShoppingScreen() {
   const [newListDate, setNewListDate] = useState("");
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [assignPickerListId, setAssignPickerListId] = useState<string | null>(null);
+  const [actionListId, setActionListId] = useState<string | null>(null);
+  const completedLongPressRef = useRef<string | null>(null);
 
   // Per-item picker: which item are we editing, its selected assignees + price.
   // The picker now supports MULTI-SELECT — item price is split evenly across
@@ -157,6 +158,28 @@ export default function ShoppingScreen() {
   const pickerList = assignPickerListId
     ? shoppingLists.find((l) => l.id === assignPickerListId)
     : null;
+  const actionList = actionListId
+    ? shoppingLists.find((list) => list.id === actionListId)
+    : null;
+
+  const openListActions = (listId: string) => {
+    completedLongPressRef.current = listId;
+    setActionListId(listId);
+    tapLight();
+    setTimeout(() => {
+      if (completedLongPressRef.current === listId) {
+        completedLongPressRef.current = null;
+      }
+    }, 700);
+  };
+
+  const handleListHeaderPress = (listId: string) => {
+    if (completedLongPressRef.current === listId) {
+      completedLongPressRef.current = null;
+      return;
+    }
+    toggleListCollapse(listId);
+  };
 
   // `shoppingLists` is already in display order — pinned first, then unpinned,
   // maintained by the mutators in AppContext. No per-render sort so the array
@@ -383,15 +406,30 @@ export default function ShoppingScreen() {
                     },
                   ]}
                 >
-                  {/* Section header — tap to collapse, long-press to drag reorder. */}
+                  {/* Tap to collapse; hold to reveal list actions. */}
                   <TouchableOpacity
                     style={styles.listHeader}
-                    onPress={() => toggleListCollapse(list.id)}
-                    onLongPress={drag}
-                    delayLongPress={220}
+                    onPress={() => handleListHeaderPress(list.id)}
+                    onLongPress={() => openListActions(list.id)}
+                    delayLongPress={450}
                     activeOpacity={0.7}
                     disabled={isActive}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${list.name}, ${items.length - doneCount} items remaining`}
+                    accessibilityHint="Tap to expand or collapse. Press and hold for pin and delete actions."
                   >
+                    <TouchableOpacity
+                      onLongPress={drag}
+                      delayLongPress={220}
+                      disabled={isActive}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Reorder ${list.name}`}
+                      accessibilityHint="Press and hold, then drag to reorder this list"
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={styles.dragHandle}
+                    >
+                      <Feather name="menu" size={17} color={colors.mutedForeground} />
+                    </TouchableOpacity>
                     <Feather
                       name={collapsed ? "chevron-right" : "chevron-down"}
                       size={18}
@@ -439,29 +477,14 @@ export default function ShoppingScreen() {
                   >
                     <Feather name="plus" size={15} color={colors.primary} />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() =>
-                      confirm("delete_shopping_list", "Delete List", `Delete "${list.name}" and all its items?`, () => deleteShoppingList(list.id), { confirmText: "Delete", destructive: true })
-                    }
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Feather name="trash-2" size={15} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                  {/* Pin toggle — tap to pin / unpin. Pinned lists float to the top. */}
-                  <TouchableOpacity
-                    onPress={() => {
-                      pinShoppingList(list.id, !list.pinned);
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    style={{ padding: 2 }}
-                  >
+                  {list.pinned ? (
                     <Ionicons
                       name="pin"
                       size={16}
-                      color={list.pinned ? colors.warning : colors.mutedForeground}
+                      color={colors.warning}
+                      accessibilityLabel="Pinned list"
                     />
-                  </TouchableOpacity>
+                  ) : null}
                 </TouchableOpacity>
 
                 {/* Items — long-press to drag within the list. Checked items
@@ -619,6 +642,40 @@ export default function ShoppingScreen() {
       <FloatingActionButton
         accessibilityLabel="Add shopping list"
         onPress={() => setShowNewListModal(true)}
+      />
+
+      <ActionMenuModal
+        visible={!!actionList}
+        title={actionList?.name ?? "Shopping list"}
+        subtitle="Choose what you’d like to do with this list."
+        onClose={() => setActionListId(null)}
+        actions={
+          actionList
+            ? [
+                {
+                  key: "pin",
+                  label: actionList.pinned ? "Unpin list" : "Pin list",
+                  icon: "bookmark",
+                  onPress: () => {
+                    pinShoppingList(actionList.id, !actionList.pinned);
+                    tapLight();
+                  },
+                },
+                {
+                  key: "delete",
+                  label: "Delete list",
+                  icon: "trash-2",
+                  destructive: true,
+                  confirmation: {
+                    title: `Delete “${actionList.name}”?`,
+                    message: "This permanently removes the list and every item in it.",
+                    confirmLabel: "Delete list",
+                  },
+                  onPress: () => deleteShoppingList(actionList.id),
+                },
+              ]
+            : []
+        }
       />
 
       {/* ── Assignee Picker Modal ── */}
@@ -1117,6 +1174,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 15,
     gap: 8,
+  },
+  dragHandle: {
+    width: 24,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
   listName: { flex: 1, fontFamily: "Inter_600SemiBold", fontSize: 15 },
   listCount: { fontFamily: "Inter_400Regular", fontSize: 12 },
