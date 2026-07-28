@@ -123,16 +123,46 @@ export function AnalyticsConsentManager({ session }: { session: Session | null }
           >
             <Text style={[styles.policyText, { color: colors.primary }]}>Review Privacy Policy</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.continueButton, { backgroundColor: colors.primary }]}
-            onPress={() =>
-              void saveAnalyticsPreferences(userId, {
-                noticeVersion: PRIVACY_NOTICE_VERSION,
-              })
-            }
-          >
-            <Text style={styles.continueText}>Continue with sharing off</Text>
-          </TouchableOpacity>
+          <View style={styles.consentActions}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Don't share optional analytics"
+              style={[
+                styles.consentButton,
+                { backgroundColor: colors.secondary, borderColor: colors.border },
+              ]}
+              onPress={() =>
+                void saveAnalyticsPreferences(userId, {
+                  productAnalyticsEnabled: false,
+                  crashReportingEnabled: false,
+                  noticeVersion: PRIVACY_NOTICE_VERSION,
+                })
+              }
+            >
+              <Text style={[styles.consentText, { color: colors.foreground }]}>
+                {"Don't share"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Share optional product analytics"
+              style={[
+                styles.consentButton,
+                { backgroundColor: colors.secondary, borderColor: colors.border },
+              ]}
+              onPress={() =>
+                void saveAnalyticsPreferences(userId, {
+                  productAnalyticsEnabled: true,
+                  crashReportingEnabled: false,
+                  noticeVersion: PRIVACY_NOTICE_VERSION,
+                })
+              }
+            >
+              <Text style={[styles.consentText, { color: colors.primary }]}>
+                Share analytics
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -157,6 +187,19 @@ const styles = StyleSheet.create({
   notice: { width: "100%", maxWidth: 440, borderRadius: 20, padding: 22 },
   noticeTitle: { fontFamily: "Inter_700Bold", fontSize: 22 },
   noticeBody: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20, marginVertical: 12 },
-  continueButton: { minHeight: 48, borderRadius: 12, alignItems: "center", justifyContent: "center", marginTop: 18 },
-  continueText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 14 },
+  consentActions: { flexDirection: "row", gap: 10, marginTop: 18 },
+  consentButton: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  consentText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 14,
+    textAlign: "center",
+  },
 });

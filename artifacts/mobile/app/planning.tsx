@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -578,6 +578,7 @@ function SectionCard({
 export default function PlanningScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ type?: string }>();
   const {
     roommates, addChore, addChores, essentialsAssignees, setEssentialAssignee,
     essentialOwned, essentialShortlist, essentialShortlistUpdatedBy,
@@ -588,7 +589,11 @@ export default function PlanningScreen() {
     currentUserId,
   } = useAppContext();
 
-  const [selectedType, setSelectedType] = useState<PlanType>(null);
+  const [selectedType, setSelectedType] = useState<PlanType>(() =>
+    params.type === "home-checklist" || params.type === "chore-chart"
+      ? params.type
+      : null,
+  );
   const [housingType, setHousingType] = useState<HousingType>(homeProfile?.housingType ?? null);
   const [kitchenAmenities, setKitchenAmenities] = useState<Set<string>>(new Set());
   const [bathroomItems, setBathroomItems] = useState<Set<string>>(new Set());

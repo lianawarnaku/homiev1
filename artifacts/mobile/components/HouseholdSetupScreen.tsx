@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,7 +35,11 @@ const ITEM_SECTIONS = [
   { key: "other", title: "Other", icon: "more-horizontal", items: ["Floor", "Trash can"] },
 ] as const;
 
-export function HouseholdSetupScreen({ onComplete }: { onComplete?: () => void } = {}) {
+export function HouseholdSetupScreen({
+  onComplete,
+}: {
+  onComplete?: (destination?: "essentials") => void;
+} = {}) {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const { createHousehold, joinHousehold, setHomeProfile, addChores } = useAppContext();
@@ -100,7 +105,7 @@ export function HouseholdSetupScreen({ onComplete }: { onComplete?: () => void }
     if (step === 1 && !displayName.trim()) return setError("Enter the name your roommates will see.");
     if (step === 1 && !householdName.trim()) return setError("Give your household a name.");
     if (step === 2 && !housingType) return setError("Choose the type of home you live in.");
-    setStep((current) => Math.min(4, current + 1));
+    setStep((current) => Math.min(5, current + 1));
   };
 
   const submitJoin = async () => {
@@ -119,7 +124,8 @@ export function HouseholdSetupScreen({ onComplete }: { onComplete?: () => void }
     } finally { setLoading(false); }
   };
 
-  const submitCreate = async () => {
+  const submitCreate = async (destination?: "essentials") => {
+    if (loading) return;
     if (!housingType) return;
     setLoading(true);
     setError(null);
@@ -160,7 +166,10 @@ export function HouseholdSetupScreen({ onComplete }: { onComplete?: () => void }
         }),
       ]);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onComplete?.();
+      if (onComplete) onComplete(destination);
+      else if (destination === "essentials") {
+        router.replace("/planning?type=home-checklist" as never);
+      }
     } catch (e) {
       reportRuntimeError("create household", e);
       hapticError();
@@ -193,12 +202,12 @@ export function HouseholdSetupScreen({ onComplete }: { onComplete?: () => void }
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 18, paddingBottom: insets.bottom + 28 }]} keyboardShouldPersistTaps="handled">
         {mode === "create" && <Progress step={step} colors={colors} />}
         <View style={styles.brand}><BrandMark size={58} color={colors.primary} /></View>
-        <Text style={[styles.eyebrow, { color: colors.primary }]}>{mode === "create" ? `CREATE YOUR SWEET · STEP ${step} OF 4` : "JOIN YOUR SWEET"}</Text>
+        <Text style={[styles.eyebrow, { color: colors.primary }]}>{mode === "create" ? `CREATE YOUR SWEET · STEP ${step} OF 5` : "JOIN YOUR SWEET"}</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>
-          {mode === "join" ? "Join your roommates" : step === 1 ? "Start your household" : step === 2 ? "What kind of home is it?" : step === 3 ? "What's in your space?" : "Your chore plan"}
+          {mode === "join" ? "Join your roommates" : step === 1 ? "Start your household" : step === 2 ? "What kind of home is it?" : step === 3 ? "What's in your space?" : step === 4 ? "Your chore plan" : "Buying for your Sweet?"}
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          {mode === "join" ? "Enter the invite code a roommate shared with you." : step === 1 ? "Set up your private household and invite your roommates." : step === 2 ? "This determines which fixed chore rules apply." : step === 3 ? "Select everything your household shares. Your plan updates automatically." : "We created these chores from what is in your Sweet. Remove any you do not want or add your own."}
+          {mode === "join" ? "Enter the invite code a roommate shared with you." : step === 1 ? "Set up your private household and invite your roommates." : step === 2 ? "This determines which fixed chore rules apply." : step === 3 ? "Select everything your household shares. Your plan updates automatically." : step === 4 ? "We created these chores from what is in your Sweet. Remove any you do not want or add your own." : "Sweet Essentials is an optional checklist for setting up your home. You can browse it now or skip it entirely."}
         </Text>
 
         {step === 1 && (
@@ -287,7 +296,7 @@ export function HouseholdSetupScreen({ onComplete }: { onComplete?: () => void }
                 </View>
               ))}
             </View>
-          ) : (
+          ) : step === 4 ? (
             <>
               <View style={styles.reviewList}>
                 {generatedPlan.length ? generatedPlan.map((chore) => (
@@ -348,14 +357,50 @@ export function HouseholdSetupScreen({ onComplete }: { onComplete?: () => void }
                 </Pressable>
               ))}
             </>
+          ) : (
+            <View style={styles.essentialsDecision}>
+              <View style={[styles.decisionIllustration, { backgroundColor: colors.primary + "12" }]}>
+                <Feather name="shopping-bag" size={30} color={colors.primary} />
+              </View>
+              <Text style={[styles.decisionTitle, { color: colors.foreground }]}>
+                Need a hand setting up?
+              </Text>
+              <Text style={[styles.decisionBody, { color: colors.mutedForeground }]}>
+                Browse a practical checklist and save only what your Sweet needs. Nothing is added unless you choose it.
+              </Text>
+              <Pressable
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Create household and browse Sweet Essentials"
+                onPress={() => void submitCreate("essentials")}
+                style={[styles.decisionButton, { backgroundColor: colors.primary, opacity: loading ? 0.65 : 1 }]}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : <Feather name="shopping-bag" size={18} color="#fff" />}
+                <Text style={styles.decisionPrimaryText}>Browse Sweet Essentials</Text>
+              </Pressable>
+              <Pressable
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Create household without Sweet Essentials"
+                onPress={() => void submitCreate()}
+                style={[styles.decisionButton, { borderColor: colors.border, borderWidth: 1, opacity: loading ? 0.65 : 1 }]}
+              >
+                <Feather name="arrow-right" size={18} color={colors.foreground} />
+                <Text style={[styles.decisionSecondaryText, { color: colors.foreground }]}>
+                  Skip for now
+                </Text>
+              </Pressable>
+            </View>
           )}
 
           {error && <View style={[styles.error, { backgroundColor: colors.destructive + "12" }]}><Feather name="alert-circle" size={15} color={colors.destructive} /><Text style={[styles.errorText, { color: colors.destructive }]}>{error}</Text></View>}
           <View style={styles.actions}>
             {mode === "create" && step > 1 && <Pressable onPress={() => { setStep(step - 1); setError(null); }} style={[styles.back, { borderColor: colors.border }]}><Feather name="arrow-left" size={18} color={colors.foreground} /><Text style={[styles.backText, { color: colors.foreground }]}>Back</Text></Pressable>}
-            <Pressable disabled={loading} onPress={mode === "join" ? submitJoin : step === 4 ? submitCreate : next} style={[styles.primary, { backgroundColor: colors.primary, opacity: loading ? .65 : 1 }]}>
-              {loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.primaryText}>{mode === "join" ? "Join household" : step === 4 ? "Create household" : "Continue"}</Text><Feather name="arrow-right" size={17} color="#fff" /></>}
-            </Pressable>
+            {step < 5 || mode === "join" ? (
+              <Pressable disabled={loading} onPress={mode === "join" ? submitJoin : next} style={[styles.primary, { backgroundColor: colors.primary, opacity: loading ? .65 : 1 }]}>
+                {loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.primaryText}>{mode === "join" ? "Join household" : "Continue"}</Text><Feather name="arrow-right" size={17} color="#fff" /></>}
+              </Pressable>
+            ) : null}
           </View>
         </View>
         <Pressable
@@ -379,7 +424,7 @@ export function HouseholdSetupScreen({ onComplete }: { onComplete?: () => void }
 }
 
 function Progress({ step, colors }: any) {
-  return <View style={styles.progressWrap}><View style={styles.progressLabels}><Text style={[styles.progressText, { color: colors.foreground }]}>Household setup</Text><Text style={[styles.progressCount, { color: colors.mutedForeground }]}>{step}/4</Text></View><View style={[styles.progressTrack, { backgroundColor: colors.muted }]}><View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${step * 25}%` }]} /></View><View style={styles.progressDots}>{["Details", "Home", "Items", "Review"].map((label, index) => <Text key={label} style={[styles.progressDotLabel, { color: index + 1 <= step ? colors.primary : colors.mutedForeground }]}>{label}</Text>)}</View></View>;
+  return <View style={styles.progressWrap}><View style={styles.progressLabels}><Text style={[styles.progressText, { color: colors.foreground }]}>Household setup</Text><Text style={[styles.progressCount, { color: colors.mutedForeground }]}>{step}/5</Text></View><View style={[styles.progressTrack, { backgroundColor: colors.muted }]}><View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${step * 20}%` }]} /></View><View style={styles.progressDots}>{["Details", "Home", "Items", "Review", "Optional"].map((label, index) => <Text key={label} style={[styles.progressDotLabel, { color: index + 1 <= step ? colors.primary : colors.mutedForeground }]}>{label}</Text>)}</View></View>;
 }
 function Field({ label, icon, colors, ...props }: any) { return <View><Text style={[styles.label, { color: colors.mutedForeground }]}>{label}</Text><View style={[styles.inputWrap, { backgroundColor: colors.muted, borderColor: colors.border }]}><Feather name={icon} size={16} color={colors.mutedForeground} /><TextInput {...props} placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} /></View></View>; }
 function ColorPicker({ value, onChange, colors }: any) { return <View style={styles.swatches}>{COLORS.map((item) => <Pressable key={item} onPress={() => onChange(item)} style={[styles.swatch, { backgroundColor: item }, value === item && { borderColor: colors.foreground, borderWidth: 3 }]}>{value === item && <Feather name="check" size={16} color="#fff" />}</Pressable>)}</View>; }
@@ -388,7 +433,7 @@ function Chip({ label, selected, onPress, colors }: any) { return <Pressable onP
 
 const styles = StyleSheet.create({
   root: { flex: 1 }, scroll: { paddingHorizontal: 22 }, brand: { alignItems: "center", marginBottom: 12 }, eyebrow: { fontFamily: "Inter_700Bold", fontSize: 12, letterSpacing: 1.5, textAlign: "center" }, title: { fontFamily: "Inter_700Bold", fontSize: 32, lineHeight: 36, textAlign: "center", marginTop: 5 }, subtitle: { fontFamily: "Inter_400Regular", fontSize: 16, lineHeight: 21, textAlign: "center", marginTop: 8, marginBottom: 20 },
-  progressWrap: { marginBottom: 16 }, progressLabels: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }, progressText: { fontFamily: "Inter_700Bold", fontSize: 14 }, progressCount: { fontFamily: "Inter_600SemiBold", fontSize: 13 }, progressTrack: { height: 7, borderRadius: 4, overflow: "hidden" }, progressFill: { height: "100%", borderRadius: 4 }, progressDots: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 }, progressDotLabel: { width: "25%", textAlign: "center", fontFamily: "Inter_600SemiBold", fontSize: 11 },
+  progressWrap: { marginBottom: 16 }, progressLabels: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }, progressText: { fontFamily: "Inter_700Bold", fontSize: 14 }, progressCount: { fontFamily: "Inter_600SemiBold", fontSize: 13 }, progressTrack: { height: 7, borderRadius: 4, overflow: "hidden" }, progressFill: { height: "100%", borderRadius: 4 }, progressDots: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 }, progressDotLabel: { width: "20%", textAlign: "center", fontFamily: "Inter_600SemiBold", fontSize: 10 },
   segment: { borderRadius: 16, padding: 4, flexDirection: "row", marginBottom: 14 }, segmentButton: { flex: 1, height: 48, borderRadius: 13, borderWidth: 1, borderColor: "transparent", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }, segmentText: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
   card: { borderWidth: 1, borderRadius: 22, padding: 18, gap: 16 }, label: { fontFamily: "Inter_700Bold", fontSize: 12, letterSpacing: 1, marginBottom: 7 }, inputWrap: { height: 52, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10 }, input: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 16 },
   swatches: { flexDirection: "row", justifyContent: "space-between" }, swatch: { width: 39, height: 39, borderRadius: 20, alignItems: "center", justifyContent: "center", borderColor: "transparent" }, optionList: { gap: 10 }, selectionCard: { borderWidth: 1.5, borderRadius: 16, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }, selectionIcon: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" }, selectionTitle: { fontFamily: "Inter_700Bold", fontSize: 18 }, selectionSub: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 18, marginTop: 2 },
@@ -397,5 +442,12 @@ const styles = StyleSheet.create({
   reviewList: { gap: 8 },
   reviewRow: { minHeight: 58, borderWidth: 1, borderRadius: 13, padding: 11, flexDirection: "row", alignItems: "center", gap: 8 },
   reviewMeta: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 3 },
+  essentialsDecision: { alignItems: "center", gap: 12, paddingVertical: 8 },
+  decisionIllustration: { width: 64, height: 64, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  decisionTitle: { fontFamily: "Inter_700Bold", fontSize: 21, textAlign: "center" },
+  decisionBody: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 20, textAlign: "center", marginBottom: 4 },
+  decisionButton: { width: "100%", minHeight: 54, borderRadius: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 9, paddingHorizontal: 14 },
+  decisionPrimaryText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 16 },
+  decisionSecondaryText: { fontFamily: "Inter_700Bold", fontSize: 16 },
   error: { padding: 12, borderRadius: 12, flexDirection: "row", gap: 8 }, errorText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 14 }, actions: { flexDirection: "row", gap: 10 }, back: { height: 54, borderRadius: 15, borderWidth: 1, paddingHorizontal: 18, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 7 }, backText: { fontFamily: "Inter_700Bold", fontSize: 16 }, primary: { flex: 1, height: 54, borderRadius: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10 }, primaryText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 17 }, signOut: { padding: 18, alignItems: "center" }, signOutText: { fontFamily: "Inter_500Medium", fontSize: 14 },
 });

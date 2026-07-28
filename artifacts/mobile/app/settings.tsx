@@ -1314,11 +1314,13 @@ export default function SettingsScreen() {
             />
           </TouchableOpacity>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Open Chore Chart planning"
             style={[
               styles.linkRow,
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
-            onPress={() => router.push("/planning")}
+            onPress={() => router.push("/planning?type=chore-chart" as never)}
           >
             <View
               style={[
@@ -1326,14 +1328,45 @@ export default function SettingsScreen() {
                 { backgroundColor: colors.primary + "18" },
               ]}
             >
-              <Text style={styles.linkEmoji}>📋</Text>
+              <Feather name="calendar" size={20} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.linkTitle, { color: colors.foreground }]}>
-                CHORE PLANNING
+                CHORE CHART
               </Text>
               <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
-                Build a chore chart or generate a Sweet checklist
+                Build a fair shared schedule for household chores
+              </Text>
+            </View>
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={colors.mutedForeground}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Open Sweet Essentials"
+            style={[
+              styles.linkRow,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={() => router.push("/planning?type=home-checklist" as never)}
+          >
+            <View
+              style={[
+                styles.linkIcon,
+                { backgroundColor: colors.accent + "18" },
+              ]}
+            >
+              <Feather name="shopping-bag" size={20} color={colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.linkTitle, { color: colors.foreground }]}>
+                SWEET ESSENTIALS
+              </Text>
+              <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
+                Browse the optional checklist for setting up your Sweet
               </Text>
             </View>
             <Feather

@@ -11,6 +11,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -105,6 +106,7 @@ export default function BorrowScreen() {
   const [dueDate, setDueDate] = useState(() => dateInput(7));
   const [formError, setFormError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  const [privateEntry, setPrivateEntry] = useState(false);
   // Collapse the "Returned" section into a single tile when there are more
   // than 3 returned items. Tap the tile to expand.
   const [showAllReturned, setShowAllReturned] = useState(false);
@@ -128,6 +130,7 @@ export default function BorrowScreen() {
     setBorrowedBy(currentUserId);
     setBorrowedDate(dateInput());
     setDueDate(dateInput(7));
+    setPrivateEntry(false);
     setFormError(null);
     setEditingId(null);
   };
@@ -145,6 +148,7 @@ export default function BorrowScreen() {
     setBorrowedDate(new Date(b.borrowedAt).toISOString().slice(0, 10));
     setDueDate(new Date(b.dueDate).toISOString().slice(0, 10));
     setNotes(b.notes ?? "");
+    setPrivateEntry(b.visibility === "private");
     setShowModal(true);
   };
 
@@ -178,6 +182,7 @@ export default function BorrowScreen() {
         borrowedAt,
         dueDate: due,
         notes: notes.trim() || undefined,
+        visibility: privateEntry ? "private" : "shared",
       });
     } else {
       saved = Boolean(addBorrowItem({
@@ -188,6 +193,7 @@ export default function BorrowScreen() {
         dueDate: due,
         returned: false,
         notes: notes.trim() || undefined,
+        visibility: privateEntry ? "private" : "shared",
       }));
     }
     if (!saved) {
@@ -334,22 +340,25 @@ export default function BorrowScreen() {
             : formatDue(borrow.dueDate);
           const isOwner = borrow.borrowedFrom === currentUserId;
           const isBorrower = borrow.borrowedBy === currentUserId;
+          const isPrivate = borrow.visibility === "private";
           const canManageLegacy =
             !borrow.creatorId && (isOwner || isBorrower);
-          const canManage =
-            isHost || borrow.creatorId === currentUserId || canManageLegacy;
-          const canUndoReturn = borrow.returned && (isOwner || isHost);
+          const canManage = isPrivate
+            ? borrow.ownerId === currentUserId
+            : isHost || borrow.creatorId === currentUserId || canManageLegacy;
+          const canUndoReturn = borrow.returned && (isPrivate || isOwner || isHost);
           const canConfirmReturn =
             !borrow.returned &&
             Boolean(borrow.returnRequestedAt) &&
-            (isOwner || isHost);
+            (isPrivate || isOwner || isHost);
           const canRequestReturn =
             !borrow.returned &&
             !borrow.returnRequestedAt &&
-            (isBorrower || isOwner || isHost);
+            (isPrivate || isBorrower || isOwner || isHost);
           const showReturnAction =
             canUndoReturn || canConfirmReturn || canRequestReturn || (isBorrower && Boolean(borrow.returnRequestedAt));
           const returnActionDisabled =
+            !isPrivate &&
             isBorrower &&
             !isOwner &&
             !isHost &&
@@ -360,7 +369,7 @@ export default function BorrowScreen() {
               ? "Confirm"
               : borrow.returnRequestedAt
                 ? "Awaiting owner"
-                : isOwner || isHost
+                : isPrivate || isOwner || isHost
                   ? "Mark returned"
                   : "Request return";
 
@@ -437,6 +446,17 @@ export default function BorrowScreen() {
                   >
                     {borrow.item}
                   </Text>
+                  {isPrivate ? (
+                    <View
+                      style={[styles.privateBadge, { backgroundColor: colors.primary + "12" }]}
+                      accessibilityLabel="Private entry. Only you can see this record."
+                    >
+                      <Feather name="lock" size={11} color={colors.primary} />
+                      <Text style={[styles.privateBadgeText, { color: colors.primary }]}>
+                        Private
+                      </Text>
+                    </View>
+                  ) : null}
                   {owner ? (
                     <View style={styles.ownerRow}>
                       <RoommateAvatar
@@ -555,6 +575,11 @@ export default function BorrowScreen() {
           ]}
         >
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.sheetContent}
+          >
           <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
             {editingId ? "Edit Borrowing Record" : "Log Borrowing Transaction"}
           </Text>
@@ -691,6 +716,35 @@ export default function BorrowScreen() {
             onChangeText={setNotes}
           />
 
+          <View
+            style={[
+              styles.privacyRow,
+              { backgroundColor: colors.secondary, borderColor: colors.border },
+            ]}
+          >
+            <View style={[styles.privacyIcon, { backgroundColor: colors.primary + "14" }]}>
+              <Feather name="lock" size={17} color={colors.primary} />
+            </View>
+            <View style={styles.privacyCopy}>
+              <Text style={[styles.privacyTitle, { color: colors.foreground }]}>
+                Private entry
+              </Text>
+              <Text style={[styles.privacyDescription, { color: colors.mutedForeground }]}>
+                {editingId
+                  ? "Visibility is fixed after an entry is created."
+                  : "Only you can see this in your personal borrowing log."}
+              </Text>
+            </View>
+            <Switch
+              value={privateEntry}
+              onValueChange={setPrivateEntry}
+              disabled={editingId !== null}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              accessibilityLabel="Private entry"
+              accessibilityHint="When enabled, only you can retrieve and view this borrowing entry"
+            />
+          </View>
+
           {formError && (
             <Text style={[styles.notesText, { color: colors.destructive }]}>
               {formError}
@@ -720,6 +774,7 @@ export default function BorrowScreen() {
           >
             <Text style={styles.saveBtnText}>Save</Text>
           </TouchableOpacity>
+          </ScrollView>
         </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -784,6 +839,16 @@ const styles = StyleSheet.create({
   },
   cardContent: { flex: 1, gap: 3 },
   borrowItemName: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
+  privateBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  privateBadgeText: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
   ownerRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   ownerText: { fontFamily: "Inter_400Regular", fontSize: 12 },
   notesText: { fontFamily: "Inter_400Regular", fontSize: 12, fontStyle: "italic" },
@@ -806,7 +871,9 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingTop: 12,
     gap: 4,
+    maxHeight: "92%",
   },
+  sheetContent: { paddingBottom: 4 },
   handle: {
     width: 36,
     height: 4,
@@ -832,6 +899,31 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
+  },
+  privacyRow: {
+    minHeight: 72,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  privacyIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  privacyCopy: { flex: 1, minWidth: 0 },
+  privacyTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  privacyDescription: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
   },
   dueChip: {
     paddingHorizontal: 14,

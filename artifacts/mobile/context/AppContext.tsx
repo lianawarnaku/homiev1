@@ -187,6 +187,8 @@ export interface BorrowItem {
   id: string;
   householdId?: string;
   creatorId?: string;
+  ownerId?: string;
+  visibility?: "shared" | "private";
   item: string;
   borrowedBy?: string;
   borrowedFrom: string;
@@ -201,6 +203,26 @@ export interface BorrowItem {
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+function normalizeSharedBorrowItems(value: unknown): BorrowItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is BorrowItem =>
+      Boolean(
+        entry &&
+        typeof entry === "object" &&
+        typeof (entry as Partial<BorrowItem>).id === "string" &&
+        typeof (entry as Partial<BorrowItem>).item === "string" &&
+        typeof (entry as Partial<BorrowItem>).borrowedFrom === "string",
+      ),
+    )
+    .map((entry) => ({
+      ...entry,
+      ownerId: entry.ownerId ?? entry.creatorId,
+      // Historical records predate this field and were household-shared.
+      visibility: "shared",
+    }));
 }
 
 export interface Nudge {
@@ -514,6 +536,8 @@ const activeSweetKey = (userId: string) =>
   `sweetmate:user:${userId}:active-sweet`;
 const sweetStateKey = (userId: string, sweetId: string) =>
   `sweetmate:user:${userId}:sweet:${sweetId}:state`;
+const privateBorrowStateKey = (userId: string, sweetId: string) =>
+  `sweetmate:user:${userId}:sweet:${sweetId}:private-borrows:v1`;
 const userStateKey = (userId: string) =>
   `sweetmate:user:${userId}:state`;
 const QUICK_GUIDE_VERSION = 2;
@@ -605,6 +629,11 @@ export function AppProvider({
   shoppingItemsRef.current = shoppingItems;
   shoppingSyncMetaRef.current = shoppingSyncMeta;
   const [borrowItems, setBorrowItems] = useState<BorrowItem[]>([]);
+  const [privateBorrowItems, setPrivateBorrowItems] = useState<BorrowItem[]>([]);
+  const visibleBorrowItems = useMemo(
+    () => [...borrowItems, ...privateBorrowItems],
+    [borrowItems, privateBorrowItems],
+  );
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [nudgesReady, setNudgesReady] = useState(false);
   const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
@@ -1106,6 +1135,7 @@ export function AppProvider({
         setShoppingItems([]);
         setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
         setBorrowItems([]);
+        setPrivateBorrowItems([]);
         setNudges([]);
         setNudgesReady(false);
         setEssentialsAssignees({});
@@ -1137,7 +1167,9 @@ export function AppProvider({
           if (Array.isArray(cached.shoppingLists)) setShoppingLists(cached.shoppingLists);
           if (Array.isArray(cached.shoppingItems)) setShoppingItems(cached.shoppingItems);
           if (cached.shoppingSyncMeta) setShoppingSyncMeta(cached.shoppingSyncMeta);
-          if (Array.isArray(cached.borrowItems)) setBorrowItems(cached.borrowItems);
+          if (Array.isArray(cached.borrowItems)) {
+            setBorrowItems(normalizeSharedBorrowItems(cached.borrowItems));
+          }
           if (cached.essentialsAssignees) setEssentialsAssignees(migrateEssentialRecord(cached.essentialsAssignees));
           if (cached.essentialOwned) setEssentialOwnedState(migrateEssentialRecord(cached.essentialOwned));
           if (cached.essentialShortlist) setEssentialShortlist(migrateEssentialRecord(cached.essentialShortlist));
@@ -1210,6 +1242,7 @@ export function AppProvider({
     setShoppingItems([]);
     setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
     setBorrowItems([]);
+    setPrivateBorrowItems([]);
     setNudges([]);
     setNudgesReady(false);
     setEssentialsAssignees({});
@@ -1237,7 +1270,7 @@ export function AppProvider({
       setShoppingLists(cached.shoppingLists);
       setShoppingItems(cached.shoppingItems);
       setShoppingSyncMeta(cached.shoppingSyncMeta);
-      setBorrowItems(cached.borrowItems);
+      setBorrowItems(normalizeSharedBorrowItems(cached.borrowItems));
       setEssentialsAssignees(migrateEssentialRecord(cached.essentialsAssignees));
       setEssentialOwnedState(migrateEssentialRecord(cached.essentialOwned));
       setEssentialShortlist(migrateEssentialRecord(cached.essentialShortlist));
@@ -1359,7 +1392,7 @@ export function AppProvider({
       choresRef.current = [];
       setChores([]); setExpenses([]); setShoppingLists([]); setShoppingItems([]);
       setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
-      setBorrowItems([]); setNudges([]); setCurrentUserIdState(userId);
+      setBorrowItems([]); setPrivateBorrowItems([]); setNudges([]); setCurrentUserIdState(userId);
       setHouseholdId(createdSweetId);
       setHouseholdName(name.trim());
       setInviteCode(code);
@@ -1507,6 +1540,7 @@ export function AppProvider({
     setShoppingItems([]);
     setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
     setBorrowItems([]);
+    setPrivateBorrowItems([]);
     setNudges([]);
     setAppAlerts([]);
     setSuppressedAlerts({});
@@ -1602,6 +1636,7 @@ export function AppProvider({
     setShoppingItems([]);
     setShoppingSyncMeta(EMPTY_SHOPPING_SYNC_META);
     setBorrowItems([]);
+    setPrivateBorrowItems([]);
     setNudges([]);
     setLiveChartState(null);
     setCustomTasks([]);
@@ -1782,7 +1817,7 @@ export function AppProvider({
         deduplicationKey: `expense:${householdId}:${currentUserId}:${expense.id}`,
         severity: "attention",
       }));
-    borrowItems
+    visibleBorrowItems
       .filter((item) =>
         !item.returned &&
         (item.borrowedBy === currentUserId || item.borrowedFrom === currentUserId) &&
@@ -1799,7 +1834,7 @@ export function AppProvider({
         deduplicationKey: `borrowing:${householdId}:${currentUserId}:${item.id}:${item.dueDate}`,
         severity: "attention",
       }));
-    borrowItems
+    visibleBorrowItems
       .filter((item) =>
         !item.returned &&
         Boolean(item.returnRequestedAt) &&
@@ -1837,7 +1872,7 @@ export function AppProvider({
       });
     }
     upsertInformationalAlerts(incoming);
-  }, [borrowItems, chores, currentProposedChart, currentUserId, expenses, householdId, loaded, upsertInformationalAlerts]);
+  }, [chores, currentProposedChart, currentUserId, expenses, householdId, loaded, upsertInformationalAlerts, visibleBorrowItems]);
 
   const memberRosterKey = useMemo(
     () => roommates.map((member) => `${member.id}:${member.name}`).sort().join("|"),
@@ -1989,7 +2024,9 @@ export function AppProvider({
     };
     shoppingSyncMetaRef.current = mergedMeta;
     setShoppingSyncMeta(mergedMeta);
-    if (Array.isArray(next.borrowItems)) setBorrowItems(next.borrowItems);
+    if (Array.isArray(next.borrowItems)) {
+      setBorrowItems(normalizeSharedBorrowItems(next.borrowItems));
+    }
     if (next.essentialsAssignees) {
       setEssentialsAssignees(migrateEssentialRecord(next.essentialsAssignees));
     }
@@ -2011,6 +2048,132 @@ export function AppProvider({
     if ("liveChart" in next) setLiveChartState(next.liveChart ?? null);
     if (Array.isArray(next.customTasks)) setCustomTasks(next.customTasks);
   }, []);
+
+  // Private borrowing records live outside the household-readable snapshot.
+  // RLS returns only rows owned by the authenticated user, even if another
+  // household member guesses an entry ID and queries the table directly.
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId || !householdId) {
+      setPrivateBorrowItems([]);
+      return;
+    }
+    let active = true;
+    const cacheKey = privateBorrowStateKey(userId, householdId);
+    const channel = supabase.channel(`private-borrows:${userId}:${householdId}`);
+    const normalizeRow = (row: {
+      id: string;
+      household_id: string;
+      owner_id: string;
+      entry: unknown;
+    }): BorrowItem | null => {
+      if (!row.entry || typeof row.entry !== "object") return null;
+      const entry = row.entry as Partial<BorrowItem>;
+      if (
+        typeof entry.item !== "string" ||
+        typeof entry.borrowedFrom !== "string" ||
+        typeof entry.dueDate !== "string"
+      ) return null;
+      return {
+        ...entry,
+        id: row.id,
+        item: entry.item,
+        borrowedFrom: entry.borrowedFrom,
+        dueDate: entry.dueDate,
+        householdId: row.household_id,
+        creatorId: row.owner_id,
+        ownerId: row.owner_id,
+        visibility: "private",
+        returned: Boolean(entry.returned),
+        borrowedAt: entry.borrowedAt ?? new Date().toISOString(),
+      };
+    };
+
+    void AsyncStorage.getItem(cacheKey)
+      .then((raw) => {
+        if (!active || !raw) return;
+        const cached = JSON.parse(raw) as BorrowItem[];
+        setPrivateBorrowItems(
+          cached.filter(
+            (entry) =>
+              entry.ownerId === userId &&
+              entry.householdId === householdId &&
+              entry.visibility === "private",
+          ),
+        );
+      })
+      .catch((error) =>
+        reportRuntimeError("hydrate private borrowing cache", error, { householdId }),
+      );
+
+    void supabase
+      .from("private_borrow_items")
+      .select("id, household_id, owner_id, entry")
+      .eq("household_id", householdId)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          reportSupabaseError("load private borrowing entries", error, { householdId });
+          return;
+        }
+        setPrivateBorrowItems(
+          (data ?? [])
+            .map((row) => normalizeRow(row))
+            .filter((entry): entry is BorrowItem => entry !== null),
+        );
+      });
+
+    channel
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "private_borrow_items",
+          filter: `owner_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (!active) return;
+          if (payload.eventType === "DELETE") {
+            const deleted = payload.old as { id?: string };
+            if (deleted.id) {
+              setPrivateBorrowItems((current) =>
+                current.filter((entry) => entry.id !== deleted.id),
+              );
+            }
+            return;
+          }
+          const normalized = normalizeRow(payload.new as {
+            id: string;
+            household_id: string;
+            owner_id: string;
+            entry: unknown;
+          });
+          if (!normalized || normalized.householdId !== householdId) return;
+          setPrivateBorrowItems((current) => [
+            ...current.filter((entry) => entry.id !== normalized.id),
+            normalized,
+          ]);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [householdId, session?.user.id]);
+
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId || !householdId) return;
+    void AsyncStorage.setItem(
+      privateBorrowStateKey(userId, householdId),
+      JSON.stringify(privateBorrowItems),
+    ).catch((error) =>
+      reportRuntimeError("cache private borrowing entries", error, { householdId }),
+    );
+  }, [householdId, privateBorrowItems, session?.user.id]);
 
   // Load the shared household document and subscribe to other devices.
   useEffect(() => {
@@ -2884,11 +3047,43 @@ export function AppProvider({
     );
   }, [recordShoppingVersions]);
 
+  const persistPrivateBorrowItem = useCallback((
+    entry: BorrowItem,
+    rollback?: BorrowItem,
+  ) => {
+    const userId = session?.user.id;
+    if (
+      !userId ||
+      !householdId ||
+      entry.ownerId !== userId ||
+      entry.visibility !== "private"
+    ) return;
+    void supabase.from("private_borrow_items").upsert({
+      id: entry.id,
+      household_id: householdId,
+      owner_id: userId,
+      entry,
+      updated_at: entry.updatedAt ?? new Date().toISOString(),
+    }).then(({ error }) => {
+      if (error) {
+        reportSupabaseError("save private borrowing entry", error, { householdId });
+        setPrivateBorrowItems((current) => rollback
+          ? [
+              ...current.filter((candidate) => candidate.id !== entry.id),
+              rollback,
+            ]
+          : current.filter((candidate) => candidate.id !== entry.id),
+        );
+      }
+    });
+  }, [householdId, session?.user.id]);
+
   const addBorrowItem = useCallback((item: Omit<BorrowItem, "id">) => {
     const owner = roommates.find((member) => member.id === item.borrowedFrom);
     const borrower = roommates.find((member) => member.id === item.borrowedBy);
+    const userId = session?.user.id;
     if (
-      !session?.user.id ||
+      !userId ||
       !owner ||
       !borrower ||
       owner.id === borrower.id ||
@@ -2901,27 +3096,41 @@ export function AppProvider({
     }
     const id = makeId();
     const now = new Date().toISOString();
-    setBorrowItems((prev) => [...prev, {
+    const entry: BorrowItem = {
       ...item,
       id,
       householdId: householdId ?? undefined,
-      creatorId: session.user.id,
+      creatorId: userId,
+      ownerId: userId,
+      visibility: item.visibility === "private" ? "private" : "shared",
       ownerName: owner.name,
       borrowerName: borrower.name,
       createdAt: now,
       updatedAt: now,
-    }]);
+    };
+    if (entry.visibility === "private") {
+      setPrivateBorrowItems((prev) => [...prev, entry]);
+      persistPrivateBorrowItem(entry);
+    } else {
+      setBorrowItems((prev) => [...prev, entry]);
+    }
     track.borrowingItemAdded();
     return id;
-  }, [householdId, roommates, session?.user.id]);
+  }, [householdId, persistPrivateBorrowItem, roommates, session?.user.id]);
 
   const updateBorrowItem = useCallback(
     (id: string, updates: Partial<Omit<BorrowItem, "id">>): boolean => {
-      const current = borrowItems.find((item) => item.id === id);
+      const current = visibleBorrowItems.find((item) => item.id === id);
+      const isPrivate = current?.visibility === "private";
       const canManageLegacy =
         !current?.creatorId &&
         (current?.borrowedBy === currentUserId || current?.borrowedFrom === currentUserId);
-      if (!current || (!isHost && current.creatorId !== currentUserId && !canManageLegacy)) return false;
+      if (
+        !current ||
+        (isPrivate
+          ? current.ownerId !== currentUserId
+          : !isHost && current.creatorId !== currentUserId && !canManageLegacy)
+      ) return false;
       const ownerId = updates.borrowedFrom ?? current.borrowedFrom;
       const borrowerId = updates.borrowedBy ?? current.borrowedBy;
       const owner = roommates.find((member) => member.id === ownerId);
@@ -2937,79 +3146,117 @@ export function AppProvider({
         !Number.isFinite(new Date(borrowedAt).getTime()) ||
         !Number.isFinite(new Date(dueDate).getTime())
       ) return false;
-      setBorrowItems((prev) =>
-        prev.map((item) => item.id === id
-          ? {
-              ...item,
-              ...updates,
-              ownerName: owner.name,
-              borrowerName: borrower.name,
-              creatorId: item.creatorId ?? currentUserId,
-              householdId: item.householdId ?? householdId ?? undefined,
-              updatedAt: new Date().toISOString(),
-            }
-          : item)
-      );
+      const updated: BorrowItem = {
+        ...current,
+        ...updates,
+        id,
+        ownerName: owner.name,
+        borrowerName: borrower.name,
+        creatorId: current.creatorId ?? currentUserId,
+        ownerId: current.ownerId ?? currentUserId,
+        householdId: current.householdId ?? householdId ?? undefined,
+        visibility: isPrivate ? "private" : "shared",
+        updatedAt: new Date().toISOString(),
+      };
+      if (isPrivate) {
+        setPrivateBorrowItems((prev) =>
+          prev.map((item) => item.id === id ? updated : item),
+        );
+        persistPrivateBorrowItem(updated, current);
+      } else {
+        setBorrowItems((prev) =>
+          prev.map((item) => item.id === id ? updated : item),
+        );
+      }
       return true;
     },
-    [borrowItems, currentUserId, householdId, isHost, roommates],
+    [currentUserId, householdId, isHost, persistPrivateBorrowItem, roommates, visibleBorrowItems],
   );
 
   const returnBorrowItem = useCallback((id: string) => {
-    const current = borrowItems.find((item) => item.id === id);
+    const current = visibleBorrowItems.find((item) => item.id === id);
     if (!current) return false;
+    const isPrivate = current.visibility === "private";
+    if (isPrivate && current.ownerId !== currentUserId) return false;
     const isOwner = current.borrowedFrom === currentUserId;
     const isBorrower = current.borrowedBy === currentUserId;
-    if (!isOwner && !isBorrower && !isHost) return false;
+    if (!isPrivate && !isOwner && !isBorrower && !isHost) return false;
+    if (current.returned && !isPrivate && !isOwner && !isHost) return false;
     track.borrowingItemReturned();
     const now = new Date().toISOString();
-    setBorrowItems((prev) =>
-      prev.map((b) => {
-        if (b.id !== id) return b;
-        const identity = {
-          creatorId: b.creatorId ?? currentUserId,
-          householdId: b.householdId ?? householdId ?? undefined,
-          ownerName: b.ownerName ?? roommates.find((member) => member.id === b.borrowedFrom)?.name,
-          borrowerName: b.borrowerName ?? roommates.find((member) => member.id === b.borrowedBy)?.name,
-        };
-        if (b.returned) {
-          if (!isOwner && !isHost) return b;
-          return {
-            ...b,
-            ...identity,
-            returned: false,
-            returnedAt: undefined,
-            returnRequestedAt: undefined,
-            returnConfirmedBy: undefined,
-            updatedAt: now,
-          };
+    const identity = {
+      creatorId: current.creatorId ?? currentUserId,
+      ownerId: current.ownerId ?? currentUserId,
+      householdId: current.householdId ?? householdId ?? undefined,
+      ownerName: current.ownerName ?? roommates.find((member) => member.id === current.borrowedFrom)?.name,
+      borrowerName: current.borrowerName ?? roommates.find((member) => member.id === current.borrowedBy)?.name,
+    };
+    const updated: BorrowItem = current.returned
+      ? {
+          ...current,
+          ...identity,
+          returned: false,
+          returnedAt: undefined,
+          returnRequestedAt: undefined,
+          returnConfirmedBy: undefined,
+          updatedAt: now,
         }
-        if (isOwner || isHost) {
-          return {
-            ...b,
+      : isPrivate || isOwner || isHost
+        ? {
+            ...current,
             ...identity,
             returned: true,
             returnedAt: now,
-            returnRequestedAt: b.returnRequestedAt ?? now,
+            returnRequestedAt: current.returnRequestedAt ?? now,
             returnConfirmedBy: currentUserId,
             updatedAt: now,
-          };
-        }
-        return { ...b, ...identity, returnRequestedAt: now, updatedAt: now };
-      })
-    );
+          }
+        : { ...current, ...identity, returnRequestedAt: now, updatedAt: now };
+    if (isPrivate) {
+      setPrivateBorrowItems((prev) =>
+        prev.map((entry) => entry.id === id ? updated : entry),
+      );
+      persistPrivateBorrowItem(updated, current);
+    } else {
+      setBorrowItems((prev) =>
+        prev.map((entry) => entry.id === id ? updated : entry),
+      );
+    }
     return true;
-  }, [borrowItems, currentUserId, householdId, isHost, roommates]);
+  }, [currentUserId, householdId, isHost, persistPrivateBorrowItem, roommates, visibleBorrowItems]);
 
   const deleteBorrowItem = useCallback((id: string) => {
-    const current = borrowItems.find((item) => item.id === id);
+    const current = visibleBorrowItems.find((item) => item.id === id);
+    const isPrivate = current?.visibility === "private";
     const canManageLegacy =
       !current?.creatorId &&
       (current?.borrowedBy === currentUserId || current?.borrowedFrom === currentUserId);
-    if (!current || (!isHost && current.creatorId !== currentUserId && !canManageLegacy)) return false;
-    setBorrowItems((prev) => prev.filter((b) => b.id !== id));
+    if (
+      !current ||
+      (isPrivate
+        ? current.ownerId !== currentUserId
+        : !isHost && current.creatorId !== currentUserId && !canManageLegacy)
+    ) return false;
+    if (isPrivate) {
+      setPrivateBorrowItems((prev) => prev.filter((entry) => entry.id !== id));
+      void supabase
+        .from("private_borrow_items")
+        .delete()
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) {
+            reportSupabaseError("delete private borrowing entry", error, { householdId });
+            setPrivateBorrowItems((prev) => [
+              ...prev.filter((entry) => entry.id !== current.id),
+              current,
+            ]);
+          }
+        });
+    } else {
+      setBorrowItems((prev) => prev.filter((entry) => entry.id !== id));
+    }
     return true;
-  }, [borrowItems, currentUserId, isHost]);
+  }, [currentUserId, householdId, isHost, visibleBorrowItems]);
 
   const setEssentialAssignee = useCallback((sectionKey: string, item: string, roommateId: string | null) => {
     setEssentialsAssignees((prev) => {
@@ -3492,7 +3739,7 @@ export function AppProvider({
     expenses,
     shoppingLists,
     shoppingItems,
-    borrowItems,
+    borrowItems: visibleBorrowItems,
     nudges,
     nudgesReady,
     addChore,
@@ -3565,7 +3812,7 @@ export function AppProvider({
     refreshMembers, refreshHousehold, createHousehold, joinHousehold, switchSweet, leaveSweet,
     deleteHousehold, removeRoommate, deleteOwnAccount, currentUserId,
     setCurrentUser, roommates, chores, expenses, shoppingLists, shoppingItems,
-    borrowItems, nudges, nudgesReady, addChore, updateChore, addChores, completeChore, pickUpChore, deleteChore,
+    visibleBorrowItems, nudges, nudgesReady, addChore, updateChore, addChores, completeChore, pickUpChore, deleteChore,
     addExpense, updateExpense, settleExpense, deleteExpense, markPersonPaid,
     addShoppingList, reorderShoppingLists, pinShoppingList, deleteShoppingList,
     addShoppingItem, toggleShoppingItem, deleteShoppingItem,
