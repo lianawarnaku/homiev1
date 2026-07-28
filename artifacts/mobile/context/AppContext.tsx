@@ -32,6 +32,7 @@ import {
   choreLocalDateKey,
   materializeRecurringOccurrences,
 } from "@/lib/choreOccurrences";
+import { choreCompletionTransition } from "@/lib/choreCompletion";
 
 export type RoommateStatus = "home" | "away" | "asleep" | "unknown";
 export type LeaderboardPeriod = "weekly" | "alltime";
@@ -409,6 +410,7 @@ interface AppContextType {
   addChore: (chore: Omit<Chore, "id">) => string | null;
   updateChore: (id: string, updates: Partial<Omit<Chore, "id">>) => boolean;
   addChores: (chores: Omit<Chore, "id">[]) => number;
+  setChoreCompleted: (id: string, completed: boolean) => void;
   completeChore: (id: string) => void;
   pickUpChore: (choreId: string, completedById: string) => void;
   deleteChore: (id: string, scope?: RecurringChoreDeleteScope) => boolean;
@@ -1942,7 +1944,17 @@ export function AppProvider({
     // this device. Shared tab collections all come from the cloud snapshot.
     // Snapshot roommates carry scores/avatars only. They can update active
     // members but can never add or remove membership identities.
-    if (Array.isArray(next.roommates)) {
+    const remoteChores = Array.isArray(next.chores) ? next.chores : null;
+    const remoteChoresById = new Map(
+      (remoteChores ?? []).map((chore) => [chore.id, chore]),
+    );
+    const hasNewerLocalChoreChange = remoteChores
+      ? choresRef.current.some((local) => {
+          const remote = remoteChoresById.get(local.id);
+          return remote && (local.updatedAt ?? "") > (remote.updatedAt ?? "");
+        })
+      : false;
+    if (Array.isArray(next.roommates) && !hasNewerLocalChoreChange) {
       const snapshotById = new Map(next.roommates.map((member) => [member.id, member]));
       memberMetadataRef.current = snapshotById;
       setRoommates((activeMembers) =>
@@ -1959,7 +1971,16 @@ export function AppProvider({
         }),
       );
     }
-    if (Array.isArray(next.chores)) setChores(next.chores);
+    if (remoteChores) {
+      const mergedChores = remoteChores.map((remote) => {
+        const local = choresRef.current.find((candidate) => candidate.id === remote.id);
+        return local && (local.updatedAt ?? "") > (remote.updatedAt ?? "")
+          ? local
+          : remote;
+      });
+      choresRef.current = mergedChores;
+      setChores(mergedChores);
+    }
     if (Array.isArray(next.expenses)) setExpenses(next.expenses);
     const remoteMeta = next.shoppingSyncMeta ?? EMPTY_SHOPPING_SYNC_META;
     const localMeta = shoppingSyncMetaRef.current;
@@ -1985,7 +2006,8 @@ export function AppProvider({
     // A remote snapshot normally suppresses the persistence echo. If it raced
     // with a newer local shopping mutation, however, the merged snapshot must
     // be written back so the other member receives the local addition too.
-    applyingRemoteRef.current = !hasNewerLocalShoppingChange;
+    applyingRemoteRef.current =
+      !hasNewerLocalShoppingChange && !hasNewerLocalChoreChange;
     const maxVersions = (
       local: Record<string, string>,
       remote: Record<string, string>,
@@ -2641,19 +2663,23 @@ export function AppProvider({
     return accepted.length;
   }, [currentUserId, householdId, session?.user.id]);
 
-  // Toggle: complete an open chore (award points) or un-complete a done chore
-  // (deduct the same points). Only the original assignee's points are moved —
-  // picked-up chores would ideally track a separate creditee, but this keeps
-  // the model simple and matches the "unclick to uncross out" UX the user asked
-  // for on their own chores in My Home / Group.
-  const completeChore = useCallback((id: string) => {
+  // Apply an explicit desired state. Repeated completion intents are no-ops,
+  // preventing delayed presses/realtime rerenders from reversing the result or
+  // awarding points twice.
+  const setChoreCompleted = useCallback((id: string, completed: boolean) => {
     const chore = choresRef.current.find((c) => c.id === id);
     if (!chore) return;
-    if (!chore.completed) {
+    const transition = choreCompletionTransition(
+      chore.completed,
+      completed,
+      chore.points,
+    );
+    if (!transition.changed) return;
+    if (completed) {
       track.choreCompleted({ recurring: Boolean(chore.recurring) });
     }
     const wasCompleted = chore.completed;
-    const delta = wasCompleted ? -chore.points : chore.points;
+    const delta = transition.pointsDelta;
     const completedAt = new Date().toISOString();
 
     let nextChores: Chore[];
@@ -2760,6 +2786,11 @@ export function AppProvider({
       )
     );
   }, [roommates]);
+
+  const completeChore = useCallback((id: string) => {
+    const chore = choresRef.current.find((candidate) => candidate.id === id);
+    if (chore) setChoreCompleted(id, !chore.completed);
+  }, [setChoreCompleted]);
 
   const PICKUP_BONUS = 25;
 
@@ -3745,6 +3776,7 @@ export function AppProvider({
     addChore,
     updateChore,
     addChores,
+    setChoreCompleted,
     completeChore,
     pickUpChore,
     deleteChore,

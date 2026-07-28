@@ -20,8 +20,6 @@ import {
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
-// Lighter tan brown revealed behind a chore row as it slides out on complete.
-const COMPLETE_REVEAL_BROWN = "#A87C50";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -155,12 +153,12 @@ const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
 export default function GroupChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, currentUserId, completeChore, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, choreChart, choreChartStartedAt, pointsEnabled, plantEnabled, isHost, deleteChore } =
+  const { roommates, chores, currentUserId, setChoreCompleted, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, choreChart, choreChartStartedAt, pointsEnabled, plantEnabled, isHost, deleteChore } =
     useAppContextSelector((context) => ({
       roommates: context.roommates,
       chores: context.chores,
       currentUserId: context.currentUserId,
-      completeChore: context.completeChore,
+      setChoreCompleted: context.setChoreCompleted,
       pickUpChore: context.pickUpChore,
       sendNudge: context.sendNudge,
       removeNudge: context.removeNudge,
@@ -392,7 +390,7 @@ export default function GroupChoresScreen() {
           "Uncomplete chore?",
           `Mark "${choreName}" as not done?`,
           () => {
-            completeChore(choreId);
+            setChoreCompleted(choreId, false);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           },
           { confirmText: "Uncomplete" }
@@ -406,12 +404,9 @@ export default function GroupChoresScreen() {
         "complete_chore",
         "Complete chore?",
         `Mark "${choreName}" as done?`,
-        async () => {
+        () => {
           hapticSuccess();
-          // Slide right, then apply the completion (which triggers the sort
-          // that moves the row to the bottom of the section).
-          await runSlideRight(choreId);
-          completeChore(choreId);
+          setChoreCompleted(choreId, true);
         },
         { confirmText: "Done ✓" }
       );
@@ -422,9 +417,8 @@ export default function GroupChoresScreen() {
         pointsEnabled
           ? `Complete "${choreName}" for them and earn ${chorePoints + 25} pts (${chorePoints} + 25 bonus)!`
           : `Complete "${choreName}" for them?`,
-        async () => {
+        () => {
           hapticSuccess();
-          await runSlideRight(choreId);
           pickUpChore(choreId, currentUserId);
           setPickedUpChores((prev) => new Set([...prev, choreId]));
           info(
@@ -489,58 +483,6 @@ export default function GroupChoresScreen() {
       ),
     }));
   }, [chores, roommates]);
-
-  // Per-chore Animated values for the slide-out animation on completion.
-  // Keyed by chore id so the animation applies to the right row even when the
-  // list re-renders. `x` slides the row right (clipped by the outer wrapper's
-  // overflow: hidden, so it stays within the row's own bounds), `dark` is a
-  // fast-fading black overlay so the row darkens the instant it's checked. The
-  // brown reveal panel + "Done!" label is only mounted for ids currently in
-  // `animatingChores` — already-completed rows never show brown behind them at
-  // rest, since chore rows have transparent backgrounds.
-  const slideAnimRefs = useRef<
-    Map<string, { x: Animated.Value; dark: Animated.Value }>
-  >(new Map());
-  const getSlideAnim = (id: string) => {
-    let entry = slideAnimRefs.current.get(id);
-    if (!entry) {
-      entry = {
-        x: new Animated.Value(0),
-        dark: new Animated.Value(0),
-      };
-      slideAnimRefs.current.set(id, entry);
-    }
-    return entry;
-  };
-  const [animatingChores, setAnimatingChores] = useState<Set<string>>(new Set());
-  const runSlideRight = (id: string): Promise<void> => {
-    const { x, dark } = getSlideAnim(id);
-    setAnimatingChores((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-    return new Promise((resolve) => {
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(dark, { toValue: 0.55, duration: 90, useNativeDriver: true }),
-          Animated.timing(x, { toValue: SCREEN_WIDTH, duration: 320, useNativeDriver: true }),
-        ]),
-        Animated.delay(160),
-      ]).start(() => {
-        // Reset atomically so the row appears at its new (bottom) position in
-        // its normal state on the next render.
-        x.setValue(0);
-        dark.setValue(0);
-        setAnimatingChores((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-        resolve();
-      });
-    });
-  };
 
   const handleNudge = (
     roommateId: string,
@@ -1071,49 +1013,10 @@ export default function GroupChoresScreen() {
                       const nudged = nudgedChores.has(key);
                       const isPickedUp = pickedUpChores.has(chore.id);
                       const isSomeoneElse = chore.assignedTo !== currentUserId;
-                      const slideAnim = getSlideAnim(chore.id);
-
                       return (
                         <View
                           key={chore.id}
                           style={{ overflow: "hidden", position: "relative" }}
-                        >
-                        {/* Brown reveal panel behind the row — only mounted
-                            while the row is animating, so already-completed
-                            rows never show brown behind their transparent bg. */}
-                        {animatingChores.has(chore.id) && (
-                          <View
-                            pointerEvents="none"
-                            style={{
-                              position: "absolute",
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              backgroundColor: COMPLETE_REVEAL_BROWN,
-                              alignItems: "center",
-                              justifyContent: "center",
-                              flexDirection: "row",
-                              gap: 8,
-                            }}
-                          >
-                            <Feather name="check" size={14} color="#FFFFFF" />
-                            <Text
-                              style={{
-                                color: "#FFFFFF",
-                                fontFamily: "Inter_600SemiBold",
-                                fontSize: 13,
-                                letterSpacing: 0.2,
-                              }}
-                            >
-                              Done!
-                            </Text>
-                          </View>
-                        )}
-                        <Animated.View
-                          style={{
-                            transform: [{ translateX: slideAnim.x }],
-                          }}
                         >
                         <TouchableOpacity
                           activeOpacity={0.7}
@@ -1243,31 +1146,19 @@ export default function GroupChoresScreen() {
                           )}
                           {canManageChore(chore) && (
                             <TouchableOpacity
-                              onPress={() => openChoreActions(chore)}
+                              onPress={(event) => {
+                                event.stopPropagation();
+                                openChoreActions(chore);
+                              }}
                               accessibilityRole="button"
                               accessibilityLabel={`More actions for ${chore.title}`}
-                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                              style={styles.nudgeBtn}
+                              activeOpacity={0.55}
+                              style={styles.moreActionsButton}
                             >
                               <Feather name="more-vertical" size={15} color={colors.mutedForeground} />
                             </TouchableOpacity>
                           )}
                         </TouchableOpacity>
-                        {/* Darkening overlay — fades in fast on top of the row
-                            so it darkens the instant it's checked. */}
-                        <Animated.View
-                          pointerEvents="none"
-                          style={{
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            backgroundColor: "#000",
-                            opacity: slideAnim.dark,
-                          }}
-                        />
-                        </Animated.View>
                         </View>
                       );
                     })
@@ -1466,6 +1357,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   nudgeTxt: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
+  moreActionsButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -8,
+    marginRight: -8,
+  },
 
   // ── Roommate Activity ──
   activityCard: {

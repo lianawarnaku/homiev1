@@ -76,9 +76,6 @@ const SECTION_NAMES: Record<string, string> = {
 type Filter = "all" | "today" | "done" | "day";
 type HomeSectionId = "my-chores" | "to-buy" | "shopping";
 
-// Lighter tan brown revealed behind a chore row while it slides out on complete.
-const COMPLETE_REVEAL_BROWN = "#A87C50";
-
 function CollapsibleSectionHeader({
   title,
   count,
@@ -165,7 +162,7 @@ interface ChoreRowProps {
     recurring?: "daily" | "weekly" | "biweekly" | "monthly";
     assignmentMode?: "specific-person" | "round-robin" | "unassigned";
   };
-  onComplete: (id: string) => void;
+  onSetCompleted: (id: string, completed: boolean) => void;
   onAddToCalendar: () => Promise<boolean>;
   onChangeCalendarDestination: () => void;
   calendarDestinationLabel: string;
@@ -174,7 +171,7 @@ interface ChoreRowProps {
 
 function ChoreRow({
   chore,
-  onComplete,
+  onSetCompleted,
   onAddToCalendar,
   onChangeCalendarDestination,
   calendarDestinationLabel,
@@ -190,44 +187,10 @@ function ChoreRow({
     "idle" | "loading" | "done" | "error"
   >("idle");
 
-  // Slide-out animation on completion — the row slides right within its own
-  // bounds (clipped by the outer wrapper) revealing a brown "Done!" panel
-  // behind it. The panel is only mounted while `isAnimating` is true so already-
-  // completed rows never show brown behind them at rest. A dark overlay fades
-  // in fast so the row darkens the instant it's checked.
-  const slideX = useRef(new Animated.Value(0)).current;
-  const darkenOpacity = useRef(new Animated.Value(0)).current;
-  const [isAnimating, setIsAnimating] = useState(false);
   const handleCheckPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (chore.completed) {
-      // Un-complete: no animation, just flip
-      onComplete(chore.id);
-      return;
-    }
-    setIsAnimating(true);
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(darkenOpacity, {
-          toValue: 0.55,
-          duration: 90,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideX, {
-          toValue: SCREEN_WIDTH,
-          duration: 320,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.delay(160),
-    ]).start(({ finished }) => {
-      if (!finished) return;
-      slideX.setValue(0);
-      darkenOpacity.setValue(0);
-      setIsAnimating(false);
-      onComplete(chore.id);
-      hapticSuccess();
-    });
+    onSetCompleted(chore.id, !chore.completed);
+    if (!chore.completed) hapticSuccess();
   };
 
   const dueDateColor = chore.completed
@@ -270,44 +233,12 @@ function ChoreRow({
 
   return (
     <View style={{ borderRadius: 12, overflow: "hidden", position: "relative" }}>
-      {/* Brown reveal panel — only mounted while the slide-out is running so
-          completed rows never show brown behind them at rest. */}
-      {isAnimating && (
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: COMPLETE_REVEAL_BROWN,
-            alignItems: "center",
-            justifyContent: "center",
-            flexDirection: "row",
-            gap: 8,
-          }}
-        >
-          <Feather name="check" size={16} color="#FFFFFF" />
-          <Text
-            style={{
-              color: "#FFFFFF",
-              fontFamily: "Inter_600SemiBold",
-              fontSize: 14,
-              letterSpacing: 0.2,
-            }}
-          >
-            Done!
-          </Text>
-        </View>
-      )}
-      <Animated.View
+      <View
         style={[
           styles.choreRow,
           {
             backgroundColor: colors.card,
             borderColor: overdue ? colors.warning + "44" : colors.border,
-            transform: [{ translateX: slideX }],
             overflow: "hidden",
           },
         ]}
@@ -327,11 +258,20 @@ function ChoreRow({
         ) : null}
       </TouchableOpacity>
 
-      <View
-        style={[styles.categoryIcon, { backgroundColor: colors.secondary }]}
-      >
-        <Feather name={cat.icon} size={14} color={colors.primary} />
-      </View>
+      {pointsEnabled ? (
+        <View
+          accessible
+          accessibilityRole="text"
+          accessibilityLabel={`${chore.points} points`}
+          style={[styles.categoryIcon, { backgroundColor: colors.secondary }]}
+        >
+          <Text style={[styles.leftPointsText, { color: colors.primary }]}>{chore.points} pts</Text>
+        </View>
+      ) : (
+        <View style={[styles.categoryIcon, { backgroundColor: colors.secondary }]}>
+          <Feather name={cat.icon} size={14} color={colors.primary} />
+        </View>
+      )}
 
       <TouchableOpacity
         style={styles.choreInfo}
@@ -363,19 +303,6 @@ function ChoreRow({
       </TouchableOpacity>
 
       <View style={styles.trailingActions}>
-        {pointsEnabled && (
-          <View
-            accessible
-            accessibilityRole="text"
-            accessibilityLabel={`${chore.points} points`}
-            style={[styles.pointsBadge, { backgroundColor: colors.primary + "18" }]}
-          >
-            <Text style={[styles.pointsText, { color: colors.primary }]}>
-              +{chore.points}
-            </Text>
-          </View>
-        )}
-
         <TouchableOpacity
           onPress={handleCalendar}
           onLongPress={onChangeCalendarDestination}
@@ -419,21 +346,7 @@ function ChoreRow({
           </TouchableOpacity>
         )}
       </View>
-      {/* Darkening overlay — fades in fast on top of the row so it darkens
-          the instant the checkbox is tapped. */}
-      <Animated.View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "#000",
-          opacity: darkenOpacity,
-        }}
-      />
-      </Animated.View>
+      </View>
     </View>
   );
 }
@@ -525,14 +438,14 @@ export default function MyChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const { scrollBottomPadding } = useFloatingActionMetrics();
-  const { currentUserId, householdId, chores, roommates, expenses, completeChore, deleteChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
+  const { currentUserId, householdId, chores, roommates, expenses, setChoreCompleted, deleteChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
     useAppContextSelector((context) => ({
       currentUserId: context.currentUserId,
       householdId: context.householdId,
       chores: context.chores,
       roommates: context.roommates,
       expenses: context.expenses,
-      completeChore: context.completeChore,
+      setChoreCompleted: context.setChoreCompleted,
       deleteChore: context.deleteChore,
       essentialsAssignees: context.essentialsAssignees,
       setEssentialAssignee: context.setEssentialAssignee,
@@ -1138,7 +1051,7 @@ export default function MyChoresScreen() {
             />
 
             {expandedHomeSections["my-chores"] && <View style={styles.filterRow}>
-              {(["all", "today", "done"] as Filter[]).map((f) => (
+              {(["today", "done", "all"] as Filter[]).map((f) => (
                 <TouchableOpacity
                   key={f}
                   style={[
@@ -1179,7 +1092,7 @@ export default function MyChoresScreen() {
         renderItem={({ item }) => (
           <ChoreRow
             chore={item}
-            onComplete={completeChore}
+            onSetCompleted={setChoreCompleted}
             calendarDestinationLabel={calendarDestinationLabel}
             onManage={canManageChore(item) ? () => openChoreActions(item) : undefined}
             onChangeCalendarDestination={() => {
@@ -1566,12 +1479,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   categoryIcon: {
-    width: 30,
+    minWidth: 42,
     height: 30,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 5,
   },
+  leftPointsText: { fontFamily: "Inter_700Bold", fontSize: 10 },
   choreInfo: { flex: 1, minWidth: 0 },
   choreTitle: { fontFamily: "Inter_500Medium", fontSize: 15 },
   choreMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
