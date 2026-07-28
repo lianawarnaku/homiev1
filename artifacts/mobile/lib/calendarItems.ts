@@ -123,24 +123,28 @@ export function deriveCalendarItems(
       chore.assignedTo !== sources.currentUserId ||
       (sources.householdId && chore.householdId && chore.householdId !== sources.householdId)
     ) continue;
-    const start = chore.initialDueDate ?? chore.dueDate;
-    for (const date of occurrencesInRange(start, chore.recurring, rangeStart, rangeEnd)) {
-      const key = occurrenceKey("chore", chore.recurrenceSeriesId ?? chore.id, date);
-      const isStoredOccurrence = localDateKey(localCalendarDate(chore.dueDate) ?? date) === localDateKey(date);
-      result.set(key, {
-        id: key,
-        sourceId: chore.id,
-        occurrenceId: key,
-        type: "chore",
-        title: chore.title,
-        description: `Assigned to ${roommateName.get(chore.assignedTo) ?? "you"}`,
-        date: localDateKey(date),
-        isRecurring: Boolean(chore.recurring),
-        recurrenceLabel: chore.recurring,
-        completed: isStoredOccurrence ? chore.completed : false,
-        assigneeId: chore.assignedTo,
-      });
-    }
+    // Chores are durable occurrence records. Do not project a recurring
+    // occurrence from every stored row: that creates duplicates and can
+    // regenerate historical work. Completed occurrences live on their
+    // completion day; unresolved/future occurrences live on their due day.
+    const date = localCalendarDate(
+      chore.completed && chore.completedAt ? chore.completedAt : chore.dueDate,
+    );
+    if (!date || date < rangeStart || date > rangeEnd) continue;
+    const key = occurrenceKey("chore", chore.id, date);
+    result.set(key, {
+      id: key,
+      sourceId: chore.id,
+      occurrenceId: chore.id,
+      type: "chore",
+      title: chore.title,
+      description: `Assigned to ${roommateName.get(chore.assignedTo) ?? "you"} · due ${localDateKey(localCalendarDate(chore.dueDate) ?? date)}`,
+      date: localDateKey(date),
+      isRecurring: Boolean(chore.recurring),
+      recurrenceLabel: chore.recurring,
+      completed: chore.completed,
+      assigneeId: chore.assignedTo,
+    });
   }
 
   for (const list of sources.shoppingLists) {

@@ -20,7 +20,7 @@ const oneOff: Chore = {
   assignedTo: "a",
   dueDate: new Date(2026, 6, 27, 23, 59).toISOString(),
   completed: true,
-  completedAt: new Date(2026, 6, 27, 20).toISOString(),
+  completedAt: new Date(2026, 6, 29, 20).toISOString(),
   points: 10,
   category: "other",
 };
@@ -32,14 +32,23 @@ const recurring: Chore = {
   dueDate: new Date(2026, 6, 27, 23, 59).toISOString(),
   initialDueDate: new Date(2026, 6, 27, 23, 59).toISOString(),
   completed: true,
+  completedAt: new Date(2026, 6, 28, 10).toISOString(),
   points: 10,
   category: "cleaning",
   recurring: "weekly",
   recurrenceSeriesId: "weekly-series",
 };
+const nextRecurring: Chore = {
+  ...recurring,
+  id: "next-monday",
+  dueDate: new Date(2026, 7, 3, 23, 59).toISOString(),
+  completed: false,
+  completedAt: undefined,
+  occurrenceIndex: 1,
+};
 const items = deriveCalendarItems(
   {
-    chores: [oneOff, recurring],
+    chores: [oneOff, recurring, nextRecurring],
     shoppingItems: [],
     shoppingLists: [],
     expenses: [],
@@ -51,11 +60,13 @@ const items = deriveCalendarItems(
   new Date(2026, 7, 5),
 );
 const oneOffItems = items.filter((item) => item.sourceId === "one");
-assert(oneOffItems.length === 1 && oneOffItems[0].completed === true, "a completed one-off must remain only on its due date");
+assert(oneOffItems.length === 1 && oneOffItems[0].completed === true, "a completed one-off must remain on its completion date");
+assert(oneOffItems[0].date === "2026-07-29", "completed history must use the completion day");
 const recurringItems = items.filter((item) => item.type === "chore" && item.title === "Recurring");
-assert(recurringItems.length === 2, "weekly recurrence must project both visible dates");
+assert(recurringItems.length === 2, "calendar must show only durable recurring occurrence records");
 assert(recurringItems[0].completed === true, "stored recurring occurrence must retain completion");
-assert(recurringItems[1].completed === false, "future projected occurrence must start unchecked");
+assert(recurringItems[1].completed === false, "explicit future occurrence must remain unchecked");
+assert(new Set(recurringItems.map((item) => item.occurrenceId)).size === 2, "recurring occurrence IDs must remain distinct");
 
 const otherHousehold = deriveCalendarItems(
   {

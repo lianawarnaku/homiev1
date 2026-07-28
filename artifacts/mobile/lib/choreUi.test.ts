@@ -13,8 +13,8 @@ const expenses = readFileSync(resolve(appRoot, "expenses.tsx"), "utf8");
 const shopping = readFileSync(resolve(appRoot, "shopping.tsx"), "utf8");
 
 assert(
-  home.includes('(["today", "done", "all"] as Filter[])'),
-  "My Chores filters must render Today, Done, All",
+  home.includes('(["today", "done", "week"] as Filter[])'),
+  "My Chores filters must render Today, Done, Week",
 );
 assert(
   home.includes("{chore.points} pts") && home.includes("pointsEnabled ?"),
@@ -48,6 +48,11 @@ assert(
 assert(
   !group.includes("styles.activityHeaderIcon, { backgroundColor:"),
   "Room Health and Roommates heading icons must render without tiles",
+);
+assert(
+  group.includes("const visibleChores = rc.slice(0, visibleLimit)") &&
+    group.includes("visibleLimit + 50"),
+  "Group Chores must render large sections in bounded batches",
 );
 assert(
   !expenses.includes("styles.expCatIcon, { backgroundColor:"),

@@ -36,9 +36,11 @@ import { useTheme } from "@/constants/colors";
 import { error as hapticError, success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
+import { useChoreLifecycleNow } from "@/hooks/useChoreLifecycleNow";
 import { removeMappedReminderIfPresent } from "@/lib/externalTasks";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import { choreLocalDateKey } from "@/lib/choreOccurrences";
+import { activeChores } from "@/lib/choreLifecycle";
 
 function isOverdue(dateStr: string) {
   return new Date(dateStr) < new Date();
@@ -172,6 +174,7 @@ export default function GroupChoresScreen() {
       isHost: context.isHost,
       deleteChore: context.deleteChore,
     }));
+  const lifecycleNow = useChoreLifecycleNow(chores);
 
   const { confirm, info } = useConfirm();
   const [nudgedChores, setNudgedChores] = useState<Set<string>>(new Set());
@@ -179,6 +182,7 @@ export default function GroupChoresScreen() {
   const [viewMode] = useState<"activity" | "calendar">("activity");
   const [monthOffset, setMonthOffset] = useState(0);
   const [roommatesExpanded, setRoommatesExpanded] = useState(true);
+  const [visibleChoreLimits, setVisibleChoreLimits] = useState<Record<string, number>>({});
   const previousScrollOffsetRef = useRef(0);
   const taskListTopRef = useRef(0);
   const autoCollapseTriggeredRef = useRef(false);
@@ -437,10 +441,14 @@ export default function GroupChoresScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
 
-  const totalChores = chores.length;
+  const activeHouseholdChores = useMemo(
+    () => activeChores(chores, lifecycleNow),
+    [chores, lifecycleNow],
+  );
+  const totalChores = activeHouseholdChores.length;
   const completedChores = useMemo(
-    () => chores.filter((chore) => chore.completed).length,
-    [chores],
+    () => activeHouseholdChores.filter((chore) => chore.completed).length,
+    [activeHouseholdChores],
   );
   const healthPct = totalChores > 0 ? completedChores / totalChores : 0;
 
@@ -469,8 +477,8 @@ export default function GroupChoresScreen() {
   const msg = HEALTH_MESSAGES[stage];
 
   const roommatesWithChores = useMemo(() => {
-    const choresByRoommate = new Map<string, typeof chores>();
-    chores.forEach((chore) => {
+    const choresByRoommate = new Map<string, typeof activeHouseholdChores>();
+    activeHouseholdChores.forEach((chore) => {
       const current = choresByRoommate.get(chore.assignedTo);
       if (current) current.push(chore);
       else choresByRoommate.set(chore.assignedTo, [chore]);
@@ -482,7 +490,7 @@ export default function GroupChoresScreen() {
         a.completed === b.completed ? 0 : a.completed ? 1 : -1,
       ),
     }));
-  }, [chores, roommates]);
+  }, [activeHouseholdChores, roommates]);
 
   const handleNudge = (
     roommateId: string,
@@ -896,6 +904,8 @@ export default function GroupChoresScreen() {
               const pending = rc.filter((c) => !c.completed);
               const done = rc.filter((c) => c.completed);
               const isExpanded = expandedChoreSections.has(roommate.id);
+              const visibleLimit = visibleChoreLimits[roommate.id] ?? 50;
+              const visibleChores = rc.slice(0, visibleLimit);
               return (
                 <View
                   key={roommate.id}
@@ -1006,18 +1016,19 @@ export default function GroupChoresScreen() {
                       No chores assigned
                     </Text>
                   ) : (
-                    rc.map((chore) => {
-                      const overdue =
-                        !chore.completed && isOverdue(chore.dueDate);
-                      const key = `${roommate.id}-${chore.id}`;
-                      const nudged = nudgedChores.has(key);
-                      const isPickedUp = pickedUpChores.has(chore.id);
-                      const isSomeoneElse = chore.assignedTo !== currentUserId;
-                      return (
-                        <View
-                          key={chore.id}
-                          style={{ overflow: "hidden", position: "relative" }}
-                        >
+                    <>
+                      {visibleChores.map((chore) => {
+                        const overdue =
+                          !chore.completed && isOverdue(chore.dueDate);
+                        const key = `${roommate.id}-${chore.id}`;
+                        const nudged = nudgedChores.has(key);
+                        const isPickedUp = pickedUpChores.has(chore.id);
+                        const isSomeoneElse = chore.assignedTo !== currentUserId;
+                        return (
+                          <View
+                            key={chore.id}
+                            style={{ overflow: "hidden", position: "relative" }}
+                          >
                         <TouchableOpacity
                           activeOpacity={0.7}
                           delayLongPress={450}
@@ -1159,9 +1170,27 @@ export default function GroupChoresScreen() {
                             </TouchableOpacity>
                           )}
                         </TouchableOpacity>
-                        </View>
-                      );
-                    })
+                          </View>
+                        );
+                      })}
+                      {visibleChores.length < rc.length ? (
+                        <TouchableOpacity
+                          style={styles.loadMoreChores}
+                          onPress={() =>
+                            setVisibleChoreLimits((current) => ({
+                              ...current,
+                              [roommate.id]: visibleLimit + 50,
+                            }))
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={`Show 50 more chores for ${roommate.name}`}
+                        >
+                          <Text style={[styles.loadMoreChoresText, { color: colors.primary }]}>
+                            Show more ({rc.length - visibleChores.length} remaining)
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </>
                   ))}
                 </View>
               );
@@ -1330,6 +1359,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingBottom: 12,
   },
+  loadMoreChores: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  loadMoreChoresText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
   choreRow: {
     flexDirection: "row",
     alignItems: "center",

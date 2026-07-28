@@ -33,6 +33,7 @@ import {
 import { useTheme } from "@/constants/colors";
 import { success as hapticSuccess } from "@/lib/haptics";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
+import { useChoreLifecycleNow } from "@/hooks/useChoreLifecycleNow";
 import {
   exportChoreToDestinations,
   getExternalTaskDestination,
@@ -53,6 +54,11 @@ import {
   choreLocalDateKey,
   isChoreActiveOnDay,
 } from "@/lib/choreOccurrences";
+import {
+  activeChores,
+  isChoreInCurrentWeek,
+  isRecentlyCompleted,
+} from "@/lib/choreLifecycle";
 
 const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feather.glyphMap }[] = [
   { key: "cleaning", label: "Cleaning", icon: "wind" },
@@ -73,7 +79,7 @@ const SECTION_NAMES: Record<string, string> = {
   food: "Food",
 };
 
-type Filter = "all" | "today" | "done" | "day";
+type Filter = "week" | "today" | "done" | "day";
 type HomeSectionId = "my-chores" | "to-buy" | "shopping";
 
 function CollapsibleSectionHeader({
@@ -457,7 +463,8 @@ export default function MyChoresScreen() {
     }));
 
   const currentUser = roommates.find((r) => r.id === currentUserId);
-  const [filter, setFilter] = useState<Filter>("all");
+  const lifecycleNow = useChoreLifecycleNow(chores);
+  const [filter, setFilter] = useState<Filter>("today");
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [weekOffset, setWeekOffset] = useState(0);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
@@ -573,6 +580,10 @@ export default function MyChoresScreen() {
   const activePersonalChoreCount = useMemo(
     () => myChores.reduce((count, chore) => count + (chore.completed ? 0 : 1), 0),
     [myChores],
+  );
+  const activePersonalChores = useMemo(
+    () => activeChores(myChores, lifecycleNow),
+    [lifecycleNow, myChores],
   );
   const displayedPersonalChoreCount =
     activePersonalChoreCount > 99 ? "99+" : String(activePersonalChoreCount);
@@ -699,24 +710,27 @@ export default function MyChoresScreen() {
     Haptics.selectionAsync();
   };
   const filtered = useMemo(
-    () =>
-      myChores
+    () => {
+      const now = lifecycleNow;
+      return activePersonalChores
         .filter((chore) => {
-          if (filter === "today") return isChoreActiveOnDay(chore, new Date());
-          if (filter === "done") return chore.completed;
+          if (filter === "today") return isChoreActiveOnDay(chore, now);
+          if (filter === "done") return isRecentlyCompleted(chore, now);
+          if (filter === "week") return isChoreInCurrentWeek(chore, now);
           if (filter === "day") return isChoreActiveOnDay(chore, selectedDate);
-          return true;
+          return false;
         })
         // Completed chores auto-move to the bottom of the visible list.
-        .sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1)),
-    [filter, myChores, selectedDate],
+        .sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1));
+    },
+    [activePersonalChores, filter, lifecycleNow, selectedDate],
   );
 
   const completedCount = useMemo(
-    () => myChores.filter((chore) => chore.completed).length,
-    [myChores],
+    () => activePersonalChores.filter((chore) => chore.completed).length,
+    [activePersonalChores],
   );
-  const totalCount = myChores.length;
+  const totalCount = activePersonalChores.length;
   const healthPct = totalCount > 0 ? completedCount / totalCount : 0;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -1046,7 +1060,7 @@ export default function MyChoresScreen() {
             />
 
             {expandedHomeSections["my-chores"] && <View style={styles.filterRow}>
-              {(["today", "done", "all"] as Filter[]).map((f) => (
+              {(["today", "done", "week"] as Filter[]).map((f) => (
                 <TouchableOpacity
                   key={f}
                   style={[
@@ -1057,7 +1071,21 @@ export default function MyChoresScreen() {
                     },
                   ]}
                   onPress={() => setFilter(f)}
+                  accessibilityLabel={
+                    f === "today"
+                      ? "Show today's chores"
+                      : f === "done"
+                        ? "Show chores completed in the last 7 days"
+                        : "Show this week's chores"
+                  }
                 >
+                  {f === "week" ? (
+                    <Feather
+                      name="calendar"
+                      size={13}
+                      color={filter === f ? "#fff" : colors.mutedForeground}
+                    />
+                  ) : null}
                   <Text
                     style={[
                       styles.filterText,
@@ -1066,11 +1094,16 @@ export default function MyChoresScreen() {
                       },
                     ]}
                   >
-                    {f === "all" ? "All" : f === "today" ? "Today" : "Done"}
+                    {f === "today" ? "Today" : f === "done" ? "Done" : "Week"}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>}
+            {expandedHomeSections["my-chores"] && filter === "done" ? (
+              <Text style={[styles.doneRetentionHint, { color: colors.mutedForeground }]}>
+                Completed chores stay here for 7 days. Older activity is available in Calendar.
+              </Text>
+            ) : null}
           </>
         }
         ListEmptyComponent={expandedHomeSections["my-chores"] ? (
@@ -1446,11 +1479,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   filterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     paddingHorizontal: 16,
     paddingVertical: 7,
     borderRadius: 20,
   },
   filterText: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  doneRetentionHint: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 17,
+    marginHorizontal: 16,
+    marginTop: -4,
+    marginBottom: 12,
+  },
   listContent: { paddingHorizontal: 16, gap: 12 },
   choreRow: {
     flexDirection: "row",
