@@ -29,7 +29,6 @@ import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import {
   useAppContextSelector,
-  type PendingIouDraft,
   type ShoppingItem,
   type ShoppingList,
 } from "@/context/AppContext";
@@ -65,7 +64,8 @@ export default function ShoppingScreen() {
     assignShoppingList,
     assignShoppingItem,
     updateShoppingItemPrice,
-    setPendingIouDraft,
+    addExpense,
+    linkShoppingItemsToExpense,
     currentUserId,
   } = useAppContextSelector((context) => ({
     roommates: context.roommates,
@@ -82,7 +82,8 @@ export default function ShoppingScreen() {
     assignShoppingList: context.assignShoppingList,
     assignShoppingItem: context.assignShoppingItem,
     updateShoppingItemPrice: context.updateShoppingItemPrice,
-    setPendingIouDraft: context.setPendingIouDraft,
+    addExpense: context.addExpense,
+    linkShoppingItemsToExpense: context.linkShoppingItemsToExpense,
     currentUserId: context.currentUserId,
   }));
 
@@ -111,10 +112,6 @@ export default function ShoppingScreen() {
 
   // "Fill in missing prices" prompt: kicked off when the user taps the list-
   // level $ and some assigned items don't yet have a price. Keyed by item id.
-  const [pricePromptSource, setPricePromptSource] = useState<{ listId: string; itemIds: string[] } | null>(null);
-  const [pricePromptDrafts, setPricePromptDrafts] = useState<Record<string, string>>({});
-  const [conversionListId, setConversionListId] = useState<string | null>(null);
-  const [conversionItemIds, setConversionItemIds] = useState<string[]>([]);
 
   const toggleListCollapse = (id: string) => {
     setCollapsedLists((prev) => {
@@ -226,118 +223,43 @@ export default function ShoppingScreen() {
 
   const saveItemPicker = () => {
     if (!itemPickerId) return;
-    assignShoppingItem(itemPickerId, itemPickerAssignees);
+    const item = shoppingItems.find((entry) => entry.id === itemPickerId);
+    if (!item) return;
+    const list = shoppingLists.find((entry) => entry.id === item.listId);
+    const itemId = itemPickerId;
+    const assignees = [...itemPickerAssignees];
     const priceCents = parseMoneyToCents(itemPickerPrice);
-    updateShoppingItemPrice(itemPickerId, priceCents === null ? null : centsToDollars(priceCents));
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (priceCents === null || !assignees.length) return;
+    const price = centsToDollars(priceCents);
+    assignShoppingItem(itemId, assignees);
+    updateShoppingItemPrice(itemId, price);
+    const activeIds = new Set(roommates.map((roommate) => roommate.id));
+    const paidBy =
+      list?.assignedTo && activeIds.has(list.assignedTo)
+        ? list.assignedTo
+        : currentUserId;
+    const splitCents = buildEvenSplitCents(priceCents, assignees);
+    const expenseId = addExpense({
+      title: item.name,
+      amount: price,
+      paidBy,
+      sharedWith: assignees,
+      splits: Object.fromEntries(
+        Object.entries(splitCents).map(([id, cents]) => [
+          id,
+          centsToDollars(cents),
+        ]),
+      ),
+      category: "other",
+      date: new Date().toISOString(),
+      settled: false,
+    });
+    linkShoppingItemsToExpense([itemId], expenseId);
     setItemPickerId(null);
     setItemPickerAssignees([]);
     setItemPickerPrice("");
-  };
-
-  // Seed the shared expense editor from one item or a whole list. Item
-  // assignments are suggestions only: the expense editor always opens in
-  // editable custom mode and performs the authoritative cents validation.
-  const buildIouFromItems = (
-    listId: string,
-    itemIds: string[],
-    priceOverrides: Record<string, number> = {},
-  ) => {
-    const list = shoppingLists.find((l) => l.id === listId);
-    if (!list) return;
-    const activeIds = new Set(roommates.map((roommate) => roommate.id));
-    const selected = shoppingItems.filter(
-      (item) => item.listId === listId && itemIds.includes(item.id) && !item.convertedExpenseId,
-    );
-    if (!selected.length) return;
-    const paidBy = list.assignedTo && activeIds.has(list.assignedTo) ? list.assignedTo : currentUserId;
-    const allocationCents: Record<string, number> = {};
-    let totalCents = 0;
-    selected.forEach((item) => {
-      const price = priceOverrides[item.id] ?? item.price;
-      const cents = price == null ? 0 : Math.round(price * 100);
-      totalCents += cents;
-      const assignees = normalizeAssignees(item).filter((id) => activeIds.has(id));
-      Object.entries(buildEvenSplitCents(cents, assignees)).forEach(([id, share]) => {
-        allocationCents[id] = (allocationCents[id] ?? 0) + share;
-      });
-    });
-    const suggestedIds = Object.keys(allocationCents);
-    const participants = suggestedIds.length
-      ? suggestedIds
-      : roommates.filter((roommate) => roommate.id !== paidBy).map((roommate) => roommate.id);
-    if (!participants.length) participants.push(paidBy);
-    const effectiveAllocationCents = suggestedIds.length
-      ? allocationCents
-      : buildEvenSplitCents(totalCents, participants);
-    const splits = Object.fromEntries(
-      participants.map((id) => [
-        id,
-        effectiveAllocationCents[id] == null
-          ? ""
-          : centsToDollars(effectiveAllocationCents[id]).toFixed(2),
-      ]),
-    );
-
-    const draft: PendingIouDraft = {
-      title: selected.length === 1 ? selected[0].name : list.name,
-      category: "other",
-      paidBy,
-      totalAmount: totalCents > 0 ? centsToDollars(totalCents).toFixed(2) : "",
-      participants,
-      splits,
-      source: {
-        type: selected.length === 1 ? "shopping-item" : "shopping-list",
-        itemIds: selected.map((item) => item.id),
-      },
-    };
-    setPendingIouDraft(draft);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.navigate("/(tabs)/expenses");
-  };
-
-  // List-level "$" handler: if any items have a person but no price, open the
-  // price prompt first; otherwise build the IOU straight away.
-  const handleItemsToIou = (listId: string, itemIds: string[]) => {
-    const selected = shoppingItems.filter(
-      (item) => item.listId === listId && itemIds.includes(item.id) && !item.convertedExpenseId,
-    );
-    const missing = selected.filter((item) => item.price == null || item.price <= 0);
-    if (missing.length > 0) {
-      const initial: Record<string, string> = {};
-      missing.forEach((m) => {
-        initial[m.id] = "";
-      });
-      setPricePromptDrafts(initial);
-      setPricePromptSource({ listId, itemIds: selected.map((item) => item.id) });
-      return;
-    }
-    buildIouFromItems(listId, selected.map((item) => item.id));
-  };
-
-  const handleListToIou = (listId: string) => {
-    const availableIds = shoppingItems
-      .filter((item) => item.listId === listId && !item.convertedExpenseId)
-      .map((item) => item.id);
-    if (!availableIds.length) return;
-    setConversionListId(listId);
-    setConversionItemIds(availableIds);
-  };
-
-  const submitPricePrompts = () => {
-    if (!pricePromptSource) return;
-    const overrides: Record<string, number> = {};
-    Object.entries(pricePromptDrafts).forEach(([itemId, val]) => {
-      const cents = parseMoneyToCents(val);
-      if (cents !== null) {
-        const amount = centsToDollars(cents);
-        updateShoppingItemPrice(itemId, amount);
-        overrides[itemId] = amount;
-      }
-    });
-    buildIouFromItems(pricePromptSource.listId, pricePromptSource.itemIds, overrides);
-    setPricePromptSource(null);
-    setPricePromptDrafts({});
   };
 
   return (
@@ -468,14 +390,6 @@ export default function ShoppingScreen() {
                       </View>
                     )}
                   </TouchableOpacity>
-                  {/* $ — turn this list into an IOU in the Expenses tab */}
-                  <TouchableOpacity
-                    style={[styles.listDollarBtn, { backgroundColor: colors.success + "18", borderColor: colors.success + "40" }]}
-                    onPress={() => handleListToIou(list.id)}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Feather name="dollar-sign" size={14} color={colors.success} />
-                  </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.listAddBtn, { backgroundColor: colors.primary + "18" }]}
                     onPress={() => {
@@ -601,28 +515,6 @@ export default function ShoppingScreen() {
                                     name="dollar-sign"
                                     size={11}
                                     color={primaryColor ?? colors.mutedForeground}
-                                  />
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                  onPress={() => handleItemsToIou(list.id, [item.id])}
-                                  disabled={!!item.convertedExpenseId}
-                                  accessibilityLabel={
-                                    item.convertedExpenseId ? "Already added to expenses" : `Add ${item.name} to expenses`
-                                  }
-                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                  style={[
-                                    styles.itemMoneyBtn,
-                                    {
-                                      borderColor: item.convertedExpenseId ? colors.border : colors.success + "55",
-                                      backgroundColor: item.convertedExpenseId ? colors.muted : colors.success + "18",
-                                    },
-                                  ]}
-                                >
-                                  <Feather
-                                    name={item.convertedExpenseId ? "check" : "arrow-right"}
-                                    size={12}
-                                    color={item.convertedExpenseId ? colors.mutedForeground : colors.success}
                                   />
                                 </TouchableOpacity>
 
@@ -923,7 +815,7 @@ export default function ShoppingScreen() {
               })}
             </View>
 
-            <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>Amount (optional)</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>Amount</Text>
             <View style={[styles.priceInputRow, { backgroundColor: colors.muted, borderColor: colors.border }]}>
               <Text style={[styles.priceDollar, { color: colors.mutedForeground }]}>$</Text>
               <TextInput
@@ -960,12 +852,36 @@ export default function ShoppingScreen() {
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={[styles.addBtn, { backgroundColor: itemPickerAssignees.length > 0 ? colors.primary : colors.border, flex: 2 }]}
-                disabled={itemPickerAssignees.length === 0}
+                style={[
+                  styles.addBtn,
+                  {
+                    backgroundColor:
+                      itemPickerAssignees.length > 0 &&
+                      parseMoneyToCents(itemPickerPrice) !== null
+                        ? colors.primary
+                        : colors.border,
+                    flex: 2,
+                  },
+                ]}
+                disabled={
+                  itemPickerAssignees.length === 0 ||
+                  parseMoneyToCents(itemPickerPrice) === null
+                }
                 onPress={saveItemPicker}
               >
-                <Text style={[styles.addBtnText, { color: itemPickerAssignees.length > 0 ? "#fff" : colors.mutedForeground }]}>
-                  Save
+                <Text
+                  style={[
+                    styles.addBtnText,
+                    {
+                      color:
+                        itemPickerAssignees.length > 0 &&
+                        parseMoneyToCents(itemPickerPrice) !== null
+                          ? "#fff"
+                          : colors.mutedForeground,
+                    },
+                  ]}
+                >
+                  Save & create IOU
                 </Text>
               </TouchableOpacity>
             </View>
@@ -973,162 +889,6 @@ export default function ShoppingScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Choose which list items become one expense ── */}
-      <Modal
-        visible={!!conversionListId}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setConversionListId(null)}
-      >
-        <Pressable style={styles.overlay} onPress={() => setConversionListId(null)} />
-        <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 }]}>
-          <View style={[styles.handle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Create expense</Text>
-          <Text style={[styles.assignPickerItemName, { color: colors.mutedForeground, marginBottom: 8 }]}>
-            Select the items to combine. Already converted items are excluded.
-          </Text>
-          <ScrollView style={{ maxHeight: 340 }}>
-            {shoppingItems
-              .filter((item) => item.listId === conversionListId && !item.convertedExpenseId)
-              .map((item) => {
-                const selected = conversionItemIds.includes(item.id);
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[styles.promptRow, { borderBottomColor: colors.border, borderBottomWidth: 1 }]}
-                    onPress={() =>
-                      setConversionItemIds((current) =>
-                        selected ? current.filter((id) => id !== item.id) : [...current, item.id],
-                      )
-                    }
-                  >
-                    <View
-                      style={[
-                        styles.shopCheck,
-                        {
-                          borderColor: selected ? colors.primary : colors.border,
-                          backgroundColor: selected ? colors.primary : "transparent",
-                        },
-                      ]}
-                    >
-                      {selected ? <Feather name="check" size={12} color="#fff" /> : null}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.promptItemName, { color: colors.foreground }]}>{item.name}</Text>
-                      <Text style={[styles.promptItemOwner, { color: colors.mutedForeground }]}>
-                        {item.price == null ? "Price needed" : `$${item.price.toFixed(2)}`}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-          </ScrollView>
-          <TouchableOpacity
-            disabled={!conversionItemIds.length}
-            style={[
-              styles.addBtn,
-              {
-                backgroundColor: conversionItemIds.length ? colors.primary : colors.border,
-                marginTop: 12,
-              },
-            ]}
-            onPress={() => {
-              if (!conversionListId || !conversionItemIds.length) return;
-              const listId = conversionListId;
-              const itemIds = conversionItemIds;
-              setConversionListId(null);
-              setConversionItemIds([]);
-              handleItemsToIou(listId, itemIds);
-            }}
-          >
-            <Text style={[styles.addBtnText, { color: conversionItemIds.length ? "#fff" : colors.mutedForeground }]}>
-              Continue with {conversionItemIds.length} {conversionItemIds.length === 1 ? "item" : "items"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-
-      {/* ── Price Prompt Modal (fill in prices for assigned items before IOU) ── */}
-      <Modal
-        visible={!!pricePromptSource}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPricePromptSource(null)}
-      >
-        <Pressable style={styles.overlay} onPress={() => setPricePromptSource(null)} />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} pointerEvents="box-none">
-          <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 }]}>
-            <View style={[styles.handle, { backgroundColor: colors.border }]} />
-            <Text style={[styles.sheetTitle, { color: colors.foreground }]}>How much for each?</Text>
-            <Text style={[styles.assignPickerItemName, { color: colors.mutedForeground, marginBottom: 8 }]}>
-              Add a price before creating the expense.
-            </Text>
-            <ScrollView style={{ maxHeight: 320 }} keyboardShouldPersistTaps="handled">
-              {pricePromptSource
-                ? shoppingItems
-                    .filter((item) => pricePromptSource.itemIds.includes(item.id) && (item.price == null || item.price <= 0))
-                    .map((item) => {
-                      const owners = normalizeAssignees(item)
-                        .map((id) => roommates.find((r) => r.id === id))
-                        .filter((r): r is NonNullable<typeof r> => !!r);
-                      const ownerLabel =
-                        owners.length === 0
-                          ? ""
-                          : owners.length === 1
-                          ? owners[0].id === currentUserId
-                            ? "You"
-                            : owners[0].name
-                          : owners.map((o) => (o.id === currentUserId ? "You" : o.name.split(" ")[0])).join(", ");
-                      return (
-                        <View key={item.id} style={styles.promptRow}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.promptItemName, { color: colors.foreground }]} numberOfLines={1}>
-                              {item.name}
-                            </Text>
-                            <Text style={[styles.promptItemOwner, { color: owners[0]?.color ?? colors.mutedForeground }]}>
-                              {ownerLabel}
-                            </Text>
-                          </View>
-                          <View style={[styles.priceInputRow, { backgroundColor: colors.muted, borderColor: colors.border, minWidth: 110 }]}>
-                            <Text style={[styles.priceDollar, { color: colors.mutedForeground }]}>$</Text>
-                            <TextInput
-                              style={[styles.priceInput, { color: colors.foreground }]}
-                              placeholder="0.00"
-                              placeholderTextColor={colors.mutedForeground}
-                              value={pricePromptDrafts[item.id] ?? ""}
-                              onChangeText={(v) => setPricePromptDrafts((prev) => ({ ...prev, [item.id]: v }))}
-                              keyboardType="decimal-pad"
-                            />
-                          </View>
-                        </View>
-                      );
-                    })
-                : null}
-            </ScrollView>
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-              <TouchableOpacity
-                style={[styles.clearAssignBtn, { borderColor: colors.border, flex: 1 }]}
-                onPress={() => {
-                  // Skip prices → build with only fully-priced items (may fall through to default split)
-                  if (!pricePromptSource) return;
-                  const source = pricePromptSource;
-                  setPricePromptSource(null);
-                  setPricePromptDrafts({});
-                  buildIouFromItems(source.listId, source.itemIds);
-                }}
-              >
-                <Text style={[styles.clearAssignText, { color: colors.mutedForeground }]}>Skip</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.addBtn, { backgroundColor: colors.primary, flex: 2 }]}
-                onPress={submitPricePrompts}
-              >
-                <Text style={[styles.addBtnText, { color: "#fff" }]}>Save & Send</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </View>
   );
 }
@@ -1196,14 +956,6 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  listDollarBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },

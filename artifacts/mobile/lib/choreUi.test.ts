@@ -47,9 +47,11 @@ assert(
 );
 assert(
   home.includes("style={styles.categoryVisual}") &&
-    home.includes("style={styles.pointsVisual}") &&
+    home.includes(
+      "style={[styles.pointsVisual, { backgroundColor: colors.secondary }]}",
+    ) &&
     !home.includes("styles.categoryIcon"),
-  "My Chores category and points visuals must render without icon tiles",
+  "My Chores must keep category icons unboxed and render points in their compact badge",
 );
 assert(
   !group.includes("styles.activityHeaderIcon, { backgroundColor:"),
@@ -70,12 +72,26 @@ assert(
   "the current-user shopping assignment must render as plain inline text",
 );
 assert(
-  shopping.includes('router.navigate("/(tabs)/expenses")') &&
-    !shopping.includes('router.navigate("/expenses")'),
-  "shopping expense handoff must navigate to the Expenses tab route",
+  shopping.includes("const expenseId = addExpense({") &&
+    shopping.includes("Save & create IOU") &&
+    shopping.includes("linkShoppingItemsToExpense([itemId], expenseId)"),
+  "saving an individual shopping item must immediately create and link its IOU",
 );
 assert(
-  shopping.includes("buildEvenSplitCents(totalCents, participants)") &&
-    shopping.includes("effectiveAllocationCents"),
-  "shopping expense handoff must create a valid even split when items have no assignees",
+  !shopping.includes("listDollarBtn") &&
+    !shopping.includes("handleListToIou") &&
+    !shopping.includes('name={item.convertedExpenseId ? "check" : "arrow-right"}'),
+  "shopping must expose expense conversion only through the item-level money control",
+);
+assert(
+  expenses.includes("<ActionMenuModal") &&
+    !expenses.includes('<Feather name="edit-2" size={15}') &&
+    !expenses.includes('name="trash-2"\n                              size={15}'),
+  "expense rows must use the shared long-press menu instead of edit and trash icons",
+);
+assert(
+  home.includes("<ActionMenuModal") &&
+    group.includes("<ActionMenuModal") &&
+    shopping.includes("<ActionMenuModal"),
+  "Shopping, Group, and My Sweet must share the app action-menu presentation",
 );

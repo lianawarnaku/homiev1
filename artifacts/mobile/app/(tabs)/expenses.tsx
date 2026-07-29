@@ -28,6 +28,8 @@ const SCREEN_HEIGHT = Dimensions.get("window").height;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { ActionMenuModal } from "@/components/ActionMenuModal";
+import { HistoryDisclosure } from "@/components/HistoryDisclosure";
 import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
@@ -35,7 +37,9 @@ import { useTheme } from "@/constants/colors";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import { success as hapticSuccess } from "@/lib/haptics";
+import { tapLight } from "@/lib/haptics";
 import { buildEvenSplitCents, centsToDollars, parseMoneyToCents, validateExpenseAllocation } from "@/lib/money";
+import { historyPage, isHistoricalResolution } from "@/lib/resolutionHistory";
 import {
   type ExpenseCategory,
   type Expense,
@@ -94,6 +98,7 @@ export default function ExpensesScreen() {
     pendingIouDraft,
     setPendingIouDraft,
     linkShoppingItemsToExpense,
+    canManageExpense,
   } = useAppContextSelector((context) => ({
     roommates: context.roommates,
     expenses: context.expenses,
@@ -107,12 +112,17 @@ export default function ExpensesScreen() {
     pendingIouDraft: context.pendingIouDraft,
     setPendingIouDraft: context.setPendingIouDraft,
     linkShoppingItemsToExpense: context.linkShoppingItemsToExpense,
+    canManageExpense: context.canManageExpense,
   }));
 
   const { confirm } = useConfirm();
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [detailExpenseId, setDetailExpenseId] = useState<string | null>(null);
+  const [actionExpenseId, setActionExpenseId] = useState<string | null>(null);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [historyPages, setHistoryPages] = useState(1);
+  const longPressedExpenseRef = useRef<string | null>(null);
   const [submittingIou, setSubmittingIou] = useState(false);
   const submittingIouRef = useRef(false);
 
@@ -215,6 +225,7 @@ export default function ExpensesScreen() {
 
   const {
     activeExpenses,
+    historicalExpenses,
     firstIOweIndex,
     firstOwedToMeIndex,
     iOwe,
@@ -222,12 +233,22 @@ export default function ExpensesScreen() {
     owedToMe,
   } = useMemo(() => {
     const balances = getBalances();
-    const active = expenses.filter((expense) => !expense.settled);
+    const historical = expenses.filter(
+      (expense) =>
+        expense.settled &&
+        isHistoricalResolution(expense.resolvedAt),
+    );
+    const active = expenses.filter(
+      (expense) =>
+        !expense.settled ||
+        !isHistoricalResolution(expense.resolvedAt),
+    );
+    const unresolved = active.filter((expense) => !expense.settled);
 
     // Gross amounts in each direction — exclude entries already paid back.
     let nextOwedToMe = 0;
     let nextIOwe = 0;
-    active.forEach((expense) => {
+    unresolved.forEach((expense) => {
       if (expense.paidBy === currentUserId) {
         Object.entries(expense.splits ?? {}).forEach(([id, amount]) => {
           if (id !== expense.paidBy && !(expense.paidBack ?? {})[id]) {
@@ -241,19 +262,35 @@ export default function ExpensesScreen() {
 
     return {
       activeExpenses: active,
+      historicalExpenses: historical,
       firstIOweIndex: active.findIndex(
         (expense) =>
+          !expense.settled &&
           expense.paidBy !== currentUserId &&
           ((expense.splits ?? {})[currentUserId] as number || 0) > 0,
       ),
       firstOwedToMeIndex: active.findIndex(
-        (expense) => expense.paidBy === currentUserId,
+        (expense) => !expense.settled && expense.paidBy === currentUserId,
       ),
       iOwe: nextIOwe,
       myBalance: balances[currentUserId] ?? 0,
       owedToMe: nextOwedToMe,
     };
   }, [currentUserId, expenses, getBalances]);
+  const visibleHistory = useMemo(
+    () =>
+      historyExpanded
+        ? historyPage(
+            historicalExpenses,
+            (expense) => expense.resolvedAt,
+            historyPages,
+          )
+        : [],
+    [historicalExpenses, historyExpanded, historyPages],
+  );
+  const actionExpense = actionExpenseId
+    ? expenses.find((expense) => expense.id === actionExpenseId)
+    : undefined;
 
   const scrollToExpense = (index: number) => {
     if (index < 0) return;
@@ -546,7 +583,28 @@ export default function ExpensesScreen() {
               return (
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={() => setDetailExpenseId(item.id)}
+                  delayLongPress={450}
+                  onLongPress={
+                    canManageExpense(item) && !item.settled
+                      ? () => {
+                          longPressedExpenseRef.current = item.id;
+                          setActionExpenseId(item.id);
+                          tapLight();
+                        }
+                      : undefined
+                  }
+                  onPress={() => {
+                    if (longPressedExpenseRef.current === item.id) {
+                      longPressedExpenseRef.current = null;
+                      return;
+                    }
+                    setDetailExpenseId(item.id);
+                  }}
+                  accessibilityHint={
+                    canManageExpense(item) && !item.settled
+                      ? "Tap for details. Press and hold to edit or delete."
+                      : "Tap for details."
+                  }
                   style={[
                     styles.expenseCard,
                     {
@@ -604,14 +662,8 @@ export default function ExpensesScreen() {
                       >
                         ${item.amount.toFixed(2)}
                       </Text>
-                      {item.paidBy === currentUserId ? (
+                      {item.paidBy === currentUserId && !item.settled ? (
                         <View style={styles.expActions}>
-                          <TouchableOpacity
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            onPress={() => openEditModal(item)}
-                          >
-                            <Feather name="edit-2" size={15} color={colors.primary} />
-                          </TouchableOpacity>
                           <TouchableOpacity
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             onPress={() =>
@@ -625,18 +677,6 @@ export default function ExpensesScreen() {
                               name="check-circle"
                               size={15}
                               color={colors.success}
-                            />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            onPress={() =>
-                              confirm("delete_expense", "Delete IOU", "Remove this expense?", () => deleteExpense(item.id), { confirmText: "Delete", destructive: true })
-                            }
-                          >
-                            <Feather
-                              name="trash-2"
-                              size={15}
-                              color={colors.mutedForeground}
                             />
                           </TouchableOpacity>
                         </View>
@@ -716,6 +756,83 @@ export default function ExpensesScreen() {
                 </TouchableOpacity>
               );
             }}
+            ListFooterComponent={
+              <HistoryDisclosure
+                count={historicalExpenses.length}
+                expanded={historyExpanded}
+                onToggle={() => {
+                  setHistoryExpanded((value) => !value);
+                  setHistoryPages(1);
+                }}
+              >
+                <View style={{ gap: 10 }}>
+                  {visibleHistory.map((expense) => (
+                    <TouchableOpacity
+                      key={expense.id}
+                      onPress={() => setDetailExpenseId(expense.id)}
+                      style={[
+                        styles.expenseCard,
+                        { backgroundColor: colors.card, borderColor: colors.border },
+                      ]}
+                    >
+                      <View style={styles.expenseCardTop}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.expTitle, { color: colors.foreground }]}>
+                            {expense.title}
+                          </Text>
+                          <Text style={[styles.expMeta, { color: colors.mutedForeground }]}>
+                            Resolved {formatDate(expense.resolvedAt ?? expense.date)}
+                          </Text>
+                        </View>
+                        <Text style={[styles.expAmount, { color: colors.foreground }]}>
+                          ${expense.amount.toFixed(2)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  {visibleHistory.length < historicalExpenses.length ? (
+                    <TouchableOpacity
+                      style={[styles.detailCloseBtn, { backgroundColor: colors.muted }]}
+                      onPress={() => setHistoryPages((page) => page + 1)}
+                    >
+                      <Text style={[styles.detailCloseBtnText, { color: colors.foreground }]}>
+                        Load more
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </HistoryDisclosure>
+            }
+          />
+          <ActionMenuModal
+            visible={!!actionExpense}
+            title={actionExpense?.title ?? "Expense"}
+            subtitle="Expense actions"
+            onClose={() => setActionExpenseId(null)}
+            actions={
+              actionExpense && canManageExpense(actionExpense)
+                ? [
+                    {
+                      key: "edit",
+                      label: "Edit expense",
+                      icon: "edit-2",
+                      onPress: () => openEditModal(actionExpense),
+                    },
+                    {
+                      key: "delete",
+                      label: "Delete expense",
+                      icon: "trash-2",
+                      destructive: true,
+                      confirmation: {
+                        title: `Delete “${actionExpense.title}”?`,
+                        message: "This permanently removes the expense.",
+                        confirmLabel: "Delete expense",
+                      },
+                      onPress: () => void deleteExpense(actionExpense.id),
+                    },
+                  ]
+                : []
+            }
           />
           {/* ── IOU Detail Modal ── */}
           {(() => {

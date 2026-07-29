@@ -22,6 +22,7 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { ActionMenuModal } from "@/components/ActionMenuModal";
 import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
 import { ManualChoreForm } from "@/components/ManualChoreForm";
@@ -269,7 +270,7 @@ function ChoreRow({
           accessible
           accessibilityRole="text"
           accessibilityLabel={`${chore.points} points`}
-          style={styles.pointsVisual}
+          style={[styles.pointsVisual, { backgroundColor: colors.secondary }]}
         >
           <Text style={[styles.leftPointsText, { color: colors.primary }]}>{chore.points} pts</Text>
         </View>
@@ -474,6 +475,7 @@ export default function MyChoresScreen() {
   >({ "my-chores": true, "to-buy": true, shopping: true });
   const [showModal, setShowModal] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
+  const [actionChoreId, setActionChoreId] = useState<string | null>(null);
 
   // Full-screen slide-up animation for the Add Chore modal (matches New IOU).
   const addChoreTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -738,6 +740,9 @@ export default function MyChoresScreen() {
   const editingChore = editingChoreId
     ? chores.find((chore) => chore.id === editingChoreId)
     : undefined;
+  const actionChore = actionChoreId
+    ? chores.find((chore) => chore.id === actionChoreId)
+    : undefined;
   const canManageChore = (chore: Chore) =>
     isHost || chore.creatorId === currentUserId;
   const confirmDeleteChore = (chore: Chore) => {
@@ -776,27 +781,8 @@ export default function MyChoresScreen() {
   };
   const openChoreActions = (chore: Chore) => {
     if (!canManageChore(chore)) return;
-    const edit = () => {
-      setEditingChoreId(chore.id);
-      setShowModal(true);
-    };
-    Alert.alert(
-      chore.title,
-      "Manage this chore",
-      Platform.OS === "android"
-        ? [
-            { text: "Edit / Reassign", onPress: edit },
-            { text: "Delete", style: "destructive", onPress: () => confirmDeleteChore(chore) },
-            { text: "Cancel", style: "cancel" },
-          ]
-        : [
-            { text: "Edit chore", onPress: edit },
-            { text: "Reassign chore", onPress: edit },
-            { text: "Change recurrence", onPress: edit },
-            { text: "Delete chore", style: "destructive", onPress: () => confirmDeleteChore(chore) },
-            { text: "Cancel", style: "cancel" },
-          ],
-    );
+    setActionChoreId(chore.id);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   return (
@@ -1267,6 +1253,38 @@ export default function MyChoresScreen() {
         }}
       />
 
+      <ActionMenuModal
+        visible={!!actionChore}
+        title={actionChore?.title ?? "Chore"}
+        subtitle="Manage this chore"
+        onClose={() => setActionChoreId(null)}
+        actions={actionChore ? [
+          {
+            key: "edit",
+            label: "Edit or reassign",
+            icon: "edit-2",
+            onPress: () => {
+              setEditingChoreId(actionChore.id);
+              setShowModal(true);
+            },
+          },
+          {
+            key: "delete",
+            label: "Delete chore",
+            icon: "trash-2",
+            destructive: true,
+            confirmation: actionChore.recurring || actionChore.recurrenceSeriesId
+              ? undefined
+              : {
+                  title: `Delete “${actionChore.title}”?`,
+                  message: "This removes the chore for everyone in your Sweet.",
+                  confirmLabel: "Delete chore",
+                },
+            onPress: () => confirmDeleteChore(actionChore),
+          },
+        ] : []}
+      />
+
       <Modal visible={showModal} transparent animationType="none" onRequestClose={closeAddChore}>
         <Animated.View
           style={[
@@ -1519,8 +1537,11 @@ const styles = StyleSheet.create({
   },
   pointsVisual: {
     minWidth: 42,
+    height: 30,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 5,
   },
   leftPointsText: { fontFamily: "Inter_700Bold", fontSize: 10 },
   choreInfo: { flex: 1, minWidth: 0 },

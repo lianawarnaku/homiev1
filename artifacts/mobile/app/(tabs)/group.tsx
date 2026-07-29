@@ -23,6 +23,7 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { ActionMenuModal } from "@/components/ActionMenuModal";
 import { HeaderActions } from "@/components/HeaderActions";
 import { HomePlant } from "@/components/HomePlant";
 import { ManualChoreForm } from "@/components/ManualChoreForm";
@@ -246,6 +247,7 @@ export default function GroupChoresScreen() {
   // ── Add-chore-to-any-roommate modal state ──
   const [showAddChoreModal, setShowAddChoreModal] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
+  const [actionChoreId, setActionChoreId] = useState<string | null>(null);
   const longPressedChoreRef = useRef<string | null>(null);
 
   // Full-screen slide-up animation for the Add Chore modal (matches New IOU).
@@ -310,6 +312,9 @@ export default function GroupChoresScreen() {
   const editingChore = editingChoreId
     ? chores.find((chore) => chore.id === editingChoreId)
     : undefined;
+  const actionChore = actionChoreId
+    ? chores.find((chore) => chore.id === actionChoreId)
+    : undefined;
   const confirmDeleteChore = (chore: Chore) => {
     const remove = (scope: "occurrence" | "future" | "series") => {
       if (deleteChore(chore.id, scope)) {
@@ -346,28 +351,8 @@ export default function GroupChoresScreen() {
   };
   const openChoreActions = (chore: Chore) => {
     if (!canManageChore(chore)) return;
-    const edit = () => {
-      setEditingChoreId(chore.id);
-      setAddChoreTargetId(chore.assignedTo);
-      setShowAddChoreModal(true);
-    };
-    Alert.alert(
-      chore.title,
-      "Manage this chore",
-      Platform.OS === "android"
-        ? [
-            { text: "Edit / Reassign", onPress: edit },
-            { text: "Delete", style: "destructive", onPress: () => confirmDeleteChore(chore) },
-            { text: "Cancel", style: "cancel" },
-          ]
-        : [
-            { text: "Edit chore", onPress: edit },
-            { text: "Reassign chore", onPress: edit },
-            { text: "Change recurrence", onPress: edit },
-            { text: "Delete chore", style: "destructive", onPress: () => confirmDeleteChore(chore) },
-            { text: "Cancel", style: "cancel" },
-          ],
-    );
+    setActionChoreId(chore.id);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   // Cycle a roommate's mood: home (😊) → asleep (😴) → away (🤫) → home
@@ -1201,6 +1186,39 @@ export default function GroupChoresScreen() {
       )}
 
       {/* ── Add Chore Modal (full-screen, matches New IOU) ── */}
+      <ActionMenuModal
+        visible={!!actionChore}
+        title={actionChore?.title ?? "Chore"}
+        subtitle="Manage this chore"
+        onClose={() => setActionChoreId(null)}
+        actions={actionChore ? [
+          {
+            key: "edit",
+            label: "Edit or reassign",
+            icon: "edit-2",
+            onPress: () => {
+              setEditingChoreId(actionChore.id);
+              setAddChoreTargetId(actionChore.assignedTo);
+              setShowAddChoreModal(true);
+            },
+          },
+          {
+            key: "delete",
+            label: "Delete chore",
+            icon: "trash-2",
+            destructive: true,
+            confirmation: actionChore.recurring || actionChore.recurrenceSeriesId
+              ? undefined
+              : {
+                  title: `Delete “${actionChore.title}”?`,
+                  message: "This removes the chore for everyone in your Sweet.",
+                  confirmLabel: "Delete chore",
+                },
+            onPress: () => confirmDeleteChore(actionChore),
+          },
+        ] : []}
+      />
+
       <Modal visible={showAddChoreModal} transparent animationType="none" onRequestClose={closeAddChoreSheet}>
         <Animated.View
           style={[

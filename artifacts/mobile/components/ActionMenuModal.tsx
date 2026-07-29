@@ -197,7 +197,7 @@ export function ActionMenuModal({
           ) : (
             <>
               <Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>
-                List actions
+                Actions
               </Text>
               <Text
                 style={[styles.title, { color: colors.foreground }]}

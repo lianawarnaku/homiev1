@@ -26,6 +26,7 @@ import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContextSelector, type BorrowItem } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { useConfirm } from "@/hooks/useConfirm";
+import { historyPage, isHistoricalResolution } from "@/lib/resolutionHistory";
 
 function daysBetween(a: string, b: string) {
   return Math.round(
@@ -110,16 +111,26 @@ export default function BorrowScreen() {
   // Collapse the "Returned" section into a single tile when there are more
   // than 3 returned items. Tap the tile to expand.
   const [showAllReturned, setShowAllReturned] = useState(false);
+  const [historyPages, setHistoryPages] = useState(1);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
 
   const { activeBorrows, returnedBorrows, overdue } = useMemo(() => {
-    const active = borrowItems.filter((borrow) => !borrow.returned);
+    const history = borrowItems.filter(
+      (borrow) =>
+        borrow.returned &&
+        isHistoricalResolution(borrow.returnedAt),
+    );
+    const active = borrowItems.filter(
+      (borrow) =>
+        !borrow.returned ||
+        !isHistoricalResolution(borrow.returnedAt),
+    );
     return {
       activeBorrows: active,
-      returnedBorrows: borrowItems.filter((borrow) => borrow.returned),
-      overdue: active.filter((borrow) => new Date(borrow.dueDate) < new Date()),
+      returnedBorrows: history,
+      overdue: active.filter((borrow) => !borrow.returned && new Date(borrow.dueDate) < new Date()),
     };
   }, [borrowItems]);
 
@@ -256,7 +267,9 @@ export default function BorrowScreen() {
         // renders a single "Returned (N)" tile instead.
         data={[
           ...activeBorrows,
-          ...(returnedBorrows.length > 3 && !showAllReturned ? [] : returnedBorrows),
+          ...(showAllReturned
+            ? historyPage(returnedBorrows, (borrow) => borrow.returnedAt, historyPages)
+            : []),
         ]}
         keyExtractor={(b) => b.id}
         contentContainerStyle={[
@@ -265,7 +278,7 @@ export default function BorrowScreen() {
         ]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          returnedBorrows.length > 3 && !showAllReturned && activeBorrows.length === 0 ? null : (
+          returnedBorrows.length > 0 && !showAllReturned && activeBorrows.length === 0 ? null : (
             <EmptyState
               icon="repeat"
             title="Nothing borrowed"
@@ -286,13 +299,19 @@ export default function BorrowScreen() {
           ) : null
         }
         ListFooterComponent={
-          returnedBorrows.length > 3 && !showAllReturned ? (
+          returnedBorrows.length > 0 && !showAllReturned ? (
             <TouchableOpacity
               style={[
                 styles.returnedTile,
                 { backgroundColor: colors.card, borderColor: colors.border },
               ]}
-              onPress={() => setShowAllReturned(true)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: false }}
+              accessibilityLabel={`History, ${returnedBorrows.length} records`}
+              onPress={() => {
+                setHistoryPages(1);
+                setShowAllReturned(true);
+              }}
               activeOpacity={0.7}
             >
               <View style={[styles.returnedTileIcon, { backgroundColor: colors.success + "18" }]}>
@@ -300,7 +319,7 @@ export default function BorrowScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.returnedTileTitle, { color: colors.foreground }]}>
-                  Returned ({returnedBorrows.length})
+                  History ({returnedBorrows.length})
                 </Text>
                 <Text style={[styles.returnedTileSub, { color: colors.mutedForeground }]}>
                   Tap to expand
@@ -308,18 +327,21 @@ export default function BorrowScreen() {
               </View>
               <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
             </TouchableOpacity>
-          ) : returnedBorrows.length > 3 && showAllReturned ? (
+          ) : returnedBorrows.length > 0 && showAllReturned ? (
             <TouchableOpacity
               style={[
                 styles.hideReturnedBtn,
                 { borderColor: colors.border },
               ]}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: true }}
+              accessibilityLabel={`History, ${returnedBorrows.length} records`}
               onPress={() => setShowAllReturned(false)}
               activeOpacity={0.7}
             >
               <Feather name="chevron-up" size={14} color={colors.mutedForeground} />
               <Text style={[styles.hideReturnedText, { color: colors.mutedForeground }]}>
-                Hide returned
+                Hide history
               </Text>
             </TouchableOpacity>
           ) : null
@@ -385,7 +407,7 @@ export default function BorrowScreen() {
                     },
                   ]}
                 >
-                  Returned ({returnedBorrows.length})
+                  History ({returnedBorrows.length})
                 </Text>
               ) : null}
               <View

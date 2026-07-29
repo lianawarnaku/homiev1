@@ -130,6 +130,10 @@ export interface Expense {
   recurring?: RecurringInterval;
   recurringCustom?: string;
   paidBack?: Record<string, boolean>; // person id → true if they've paid back
+  creatorId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  resolvedAt?: string;
 }
 
 export interface ShoppingList {
@@ -415,9 +419,10 @@ interface AppContextType {
   pickUpChore: (choreId: string, completedById: string) => void;
   deleteChore: (id: string, scope?: RecurringChoreDeleteScope) => boolean;
   addExpense: (expense: Omit<Expense, "id">) => string;
-  updateExpense: (id: string, updates: Partial<Omit<Expense, "id">>) => void;
-  settleExpense: (id: string) => void;
-  deleteExpense: (id: string) => void;
+  updateExpense: (id: string, updates: Partial<Omit<Expense, "id">>) => boolean;
+  settleExpense: (id: string) => boolean;
+  deleteExpense: (id: string) => boolean;
+  canManageExpense: (expense: Expense) => boolean;
   markPersonPaid: (expenseId: string, personId: string) => void;
   addShoppingList: (name: string, plannedDate?: string) => string;
   reorderShoppingLists: (newIds: string[]) => void;
@@ -2846,30 +2851,61 @@ export function AppProvider({
 
   const addExpense = useCallback((expense: Omit<Expense, "id">) => {
     const id = makeId();
-    setExpenses((prev) => [...prev, { ...expense, id }]);
+    const now = new Date().toISOString();
+    setExpenses((prev) => [...prev, {
+      ...expense,
+      id,
+      creatorId: currentUserId,
+      createdAt: expense.createdAt ?? now,
+      updatedAt: now,
+      resolvedAt: expense.settled ? expense.resolvedAt ?? now : undefined,
+    }]);
     track.expenseCreated({ recurring: Boolean(expense.recurring) });
     return id;
-  }, []);
+  }, [currentUserId]);
+
+  const canManageExpense = useCallback(
+    (expense: Expense) =>
+      isHost ||
+      (expense.creatorId
+        ? expense.creatorId === currentUserId
+        : expense.paidBy === currentUserId),
+    [currentUserId, isHost],
+  );
 
   const updateExpense = useCallback(
     (id: string, updates: Partial<Omit<Expense, "id">>) => {
-      setExpenses((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, ...updates } : e))
-      );
+      const current = expenses.find((expense) => expense.id === id);
+      if (!current || !canManageExpense(current)) return false;
+      setExpenses((prev) => prev.map((expense) =>
+        expense.id === id
+          ? { ...expense, ...updates, creatorId: expense.creatorId ?? currentUserId, updatedAt: new Date().toISOString() }
+          : expense,
+      ));
+      return true;
     },
-    []
+    [canManageExpense, currentUserId, expenses],
   );
 
   const settleExpense = useCallback((id: string) => {
-    setExpenses((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, settled: true } : e))
-    );
+    const current = expenses.find((expense) => expense.id === id);
+    if (!current || !canManageExpense(current)) return false;
+    const now = new Date().toISOString();
+    setExpenses((prev) => prev.map((expense) =>
+      expense.id === id
+        ? { ...expense, settled: true, resolvedAt: expense.resolvedAt ?? now, updatedAt: now }
+        : expense,
+    ));
     track.iouSettled();
-  }, []);
+    return true;
+  }, [canManageExpense, expenses]);
 
   const deleteExpense = useCallback((id: string) => {
-    setExpenses((prev) => prev.filter((e) => e.id !== id));
-  }, []);
+    const current = expenses.find((expense) => expense.id === id);
+    if (!current || !canManageExpense(current)) return false;
+    setExpenses((prev) => prev.filter((expense) => expense.id !== id));
+    return true;
+  }, [canManageExpense, expenses]);
 
   const markPersonPaid = useCallback((expenseId: string, personId: string) => {
     setExpenses((prev) =>
@@ -2879,7 +2915,8 @@ export function AppProvider({
         const allPaid = Object.keys(e.splits ?? {}).every(
           (id) => id === e.paidBy || paidBack[id]
         );
-        return { ...e, paidBack, settled: allPaid ? true : e.settled };
+        const resolvedAt = allPaid ? e.resolvedAt ?? new Date().toISOString() : e.resolvedAt;
+        return { ...e, paidBack, settled: allPaid ? true : e.settled, resolvedAt };
       })
     );
   }, []);
@@ -3784,6 +3821,7 @@ export function AppProvider({
     updateExpense,
     settleExpense,
     deleteExpense,
+    canManageExpense,
     markPersonPaid,
     addShoppingList,
     reorderShoppingLists,
@@ -3845,7 +3883,7 @@ export function AppProvider({
     deleteHousehold, removeRoommate, deleteOwnAccount, currentUserId,
     setCurrentUser, roommates, chores, expenses, shoppingLists, shoppingItems,
     visibleBorrowItems, nudges, nudgesReady, addChore, updateChore, addChores, completeChore, pickUpChore, deleteChore,
-    addExpense, updateExpense, settleExpense, deleteExpense, markPersonPaid,
+    addExpense, updateExpense, settleExpense, deleteExpense, canManageExpense, markPersonPaid,
     addShoppingList, reorderShoppingLists, pinShoppingList, deleteShoppingList,
     addShoppingItem, toggleShoppingItem, deleteShoppingItem,
     reorderShoppingItems, assignShoppingList, assignShoppingItem,
