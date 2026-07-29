@@ -69,3 +69,13 @@ assert(
     !shopping.includes('listAssignee.id === currentUserId ? "You" : listAssignee.name'),
   "the current-user shopping assignment must render as plain inline text",
 );
+assert(
+  shopping.includes('router.navigate("/(tabs)/expenses")') &&
+    !shopping.includes('router.navigate("/expenses")'),
+  "shopping expense handoff must navigate to the Expenses tab route",
+);
+assert(
+  shopping.includes("buildEvenSplitCents(totalCents, participants)") &&
+    shopping.includes("effectiveAllocationCents"),
+  "shopping expense handoff must create a valid even split when items have no assignees",
+);

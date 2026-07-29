@@ -193,7 +193,7 @@ export default function LeaderboardScreen() {
       {top3.length > 0 ? (
         <View style={styles.podiumSection}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-            Sweetest this {period === "weekly" ? "week" : "season"}
+            Top Performers
           </Text>
           <View style={styles.podium}>
             {top3.length > 1 ? (
@@ -345,7 +345,7 @@ export default function LeaderboardScreen() {
           <Feather name="gift" size={15} color={CANDY.caramel} />
         </View>
         <Text style={[styles.sectionTitle, styles.rankingsTitle, { color: colors.foreground }]}>
-          Candy counter
+          Full Rankings
         </Text>
       </View>
 

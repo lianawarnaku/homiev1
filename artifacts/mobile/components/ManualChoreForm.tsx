@@ -18,7 +18,12 @@ import {
   useAppContextSelector,
 } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
-import { parseDueDate, tomorrowDateInput } from "@/lib/choreForm";
+import {
+  dateInput,
+  parseDueDate,
+  todayDateInput,
+  tomorrowDateInput,
+} from "@/lib/choreForm";
 import {
   removeMappedReminderIfPresent,
   updateMappedReminderIfPresent,
@@ -97,8 +102,8 @@ export function ManualChoreForm({
   );
   const [dueDateInput, setDueDateInput] = useState(() =>
     initialChore
-      ? new Date(initialChore.dueDate).toISOString().slice(0, 10)
-      : tomorrowDateInput(),
+      ? dateInput(new Date(initialChore.dueDate))
+      : todayDateInput(),
   );
   const [category, setCategory] = useState<ChoreCategory>(
     initialChore?.category ?? "cleaning",
@@ -302,6 +307,37 @@ export function ManualChoreForm({
         ))}
       </View>
       <Text style={[styles.label, { color: colors.mutedForeground }]}>First due date</Text>
+      <View style={styles.wrap}>
+        {[
+          { label: "Today", value: todayDateInput() },
+          { label: "Tomorrow", value: tomorrowDateInput() },
+        ].map((option) => (
+          <TouchableOpacity
+            key={option.label}
+            accessibilityRole="button"
+            accessibilityState={{ selected: dueDateInput === option.value }}
+            onPress={() => {
+              setDueDateInput(option.value);
+              setError(null);
+            }}
+            style={[styles.chip, chip(dueDateInput === option.value)]}
+          >
+            <Text
+              style={[
+                styles.chipText,
+                {
+                  color:
+                    dueDateInput === option.value
+                      ? colors.primary
+                      : colors.mutedForeground,
+                },
+              ]}
+            >
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
       <TextInput
         value={dueDateInput}
         onChangeText={setDueDateInput}

@@ -267,10 +267,15 @@ export default function ShoppingScreen() {
       ? suggestedIds
       : roommates.filter((roommate) => roommate.id !== paidBy).map((roommate) => roommate.id);
     if (!participants.length) participants.push(paidBy);
+    const effectiveAllocationCents = suggestedIds.length
+      ? allocationCents
+      : buildEvenSplitCents(totalCents, participants);
     const splits = Object.fromEntries(
       participants.map((id) => [
         id,
-        allocationCents[id] == null ? "" : centsToDollars(allocationCents[id]).toFixed(2),
+        effectiveAllocationCents[id] == null
+          ? ""
+          : centsToDollars(effectiveAllocationCents[id]).toFixed(2),
       ]),
     );
 
@@ -288,7 +293,7 @@ export default function ShoppingScreen() {
     };
     setPendingIouDraft(draft);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.navigate("/expenses");
+    router.navigate("/(tabs)/expenses");
   };
 
   // List-level "$" handler: if any items have a person but no price, open the

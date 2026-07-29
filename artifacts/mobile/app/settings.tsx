@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { ReactNode, useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Alert,
@@ -88,6 +88,66 @@ const COLOR_PALETTE = [
   "#A47C64",
   "#5F493A",
 ];
+
+function CollapsibleSettingsSection({
+  title,
+  subtitle,
+  icon,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ComponentProps<typeof Feather>["name"];
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const colors = useTheme();
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <View style={styles.collapsibleSection}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${title}, ${open ? "collapse" : "expand"}`}
+        onPress={() => setOpen((current) => !current)}
+        style={[
+          styles.collapsibleHeader,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <View
+          style={[
+            styles.linkIcon,
+            { backgroundColor: colors.primary + "18" },
+          ]}
+        >
+          <Feather name={icon} size={18} color={colors.primary} />
+        </View>
+        <View style={styles.collapsibleHeaderCopy}>
+          <Text style={[styles.collapsibleTitle, { color: colors.foreground }]}>
+            {title}
+          </Text>
+          <Text
+            style={[
+              styles.collapsibleSubtitle,
+              { color: colors.mutedForeground },
+            ]}
+          >
+            {subtitle}
+          </Text>
+        </View>
+        <Feather
+          name={open ? "chevron-up" : "chevron-down"}
+          size={19}
+          color={colors.mutedForeground}
+        />
+      </TouchableOpacity>
+      {open ? <View style={styles.collapsibleContent}>{children}</View> : null}
+    </View>
+  );
+}
 
 export default function SettingsScreen() {
   const colors = useTheme();
@@ -606,7 +666,6 @@ export default function SettingsScreen() {
           <View
             style={[styles.settingsIntro, { borderBottomColor: colors.border }]}
           >
-            <Text style={styles.settingsIntroEmoji}>⚙️</Text>
             <View style={{ flex: 1 }}>
               <Text
                 style={[
@@ -626,157 +685,12 @@ export default function SettingsScreen() {
               </Text>
             </View>
           </View>
-          <Text
-            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
-          >
-            🎨 APPEARANCE & FEATURES
-          </Text>
-          <UserPreferencesPanel />
-          {session?.user.id ? (
-            <>
-              <Text
-                style={[styles.sectionLabel, { color: colors.mutedForeground }]}
-              >
-                🔒 PRIVACY & DIAGNOSTICS
-              </Text>
-              <AnalyticsPreferencesPanel userId={session.user.id} />
-            </>
-          ) : null}
-          <Text
-            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
-          >
-            ⓘ HELP
-          </Text>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Open Quick guide"
-            style={[
-              styles.linkRow,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              track.quickGuideOpened({ source: "settings" });
-              openQuickGuide();
-            }}
-          >
-            <View
-              style={[
-                styles.linkIcon,
-                { backgroundColor: colors.primary + "18" },
-              ]}
-            >
-              <Feather name="info" size={18} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.linkTitle, { color: colors.foreground }]}>
-                QUICK GUIDE
-              </Text>
-              <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
-                Revisit a few helpful SweetMate features
-              </Text>
-            </View>
-            <Feather
-              name="chevron-right"
-              size={18}
-              color={colors.mutedForeground}
-            />
-          </TouchableOpacity>
-          {/* Cloud Account — Supabase session. Shown above the legacy local
-              account section. Signing out here drops the whole app back to
-              the SignInScreen via AuthGate. */}
-          <Text
-            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
-          >
-            ☁️ CLOUD ACCOUNT
-          </Text>
-          <View
-            style={[
-              styles.card,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.accountRow}>
-              <View
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 24,
-                  backgroundColor: colors.primary + "18",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Text style={styles.rowEmoji}>☁️</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[styles.accountName, { color: colors.foreground }]}
-                >
-                  Signed in
-                </Text>
-                <Text
-                  style={[
-                    styles.accountUsername,
-                    { color: colors.mutedForeground },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {session?.user.email ?? "—"}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[
-                styles.switchUserBtn,
-                {
-                  backgroundColor: colors.destructive,
-                  opacity: signingOut ? 0.6 : 1,
-                },
-              ]}
-              onPress={handleSignOut}
-              disabled={signingOut}
-            >
-              <Feather name="log-out" size={14} color="#fff" />
-              <Text style={styles.switchUserBtnText}>
-                {signingOut ? "Signing out…" : "Sign out"}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.outlineDangerBtn,
-                {
-                  borderColor: colors.destructive,
-                  opacity: deletingAccount ? 0.6 : 1,
-                },
-              ]}
-              onPress={confirmDeleteOwnAccount}
-              disabled={deletingAccount}
-            >
-              <Feather name="user-x" size={14} color={colors.destructive} />
-              <Text
-                style={[
-                  styles.outlineDangerBtnText,
-                  { color: colors.destructive },
-                ]}
-              >
-                {deletingAccount ? "Deleting account…" : "Delete my account"}
-              </Text>
-            </TouchableOpacity>
-            <Text
-              style={[styles.accountHint, { color: colors.mutedForeground }]}
-            >
-              Permanently deletes your login. This is separate from leaving or
-              removing someone from a household.
-            </Text>
-          </View>
-
           {/* Profile section */}
           {/* Account section — login / switch / logout */}
           <Text
             style={[styles.sectionLabel, { color: colors.mutedForeground }]}
           >
-            🏠 YOUR HOUSEHOLD
+            YOUR HOUSEHOLD
           </Text>
           <View
             style={[
@@ -1167,7 +1081,7 @@ export default function SettingsScreen() {
           <Text
             style={[styles.sectionLabel, { color: colors.mutedForeground }]}
           >
-            🙂 YOUR PROFILE
+            YOUR PROFILE
           </Text>
           <View
             style={[
@@ -1223,7 +1137,7 @@ export default function SettingsScreen() {
             <Text
               style={[styles.fieldLabel, { color: colors.mutedForeground }]}
             >
-              ✏️ DISPLAY NAME
+              DISPLAY NAME
             </Text>
             <TextInput
               style={[
@@ -1245,7 +1159,7 @@ export default function SettingsScreen() {
             <Text
               style={[styles.fieldLabel, { color: colors.mutedForeground }]}
             >
-              🎨 PROFILE COLOR
+              PROFILE COLOR
             </Text>
             <View style={styles.colorRow}>
               {COLOR_PALETTE.map((c) => {
@@ -1281,7 +1195,7 @@ export default function SettingsScreen() {
           <Text
             style={[styles.sectionLabel, { color: colors.mutedForeground }]}
           >
-            🏠 HOUSEHOLD
+            HOUSEHOLD TOOLS
           </Text>
           <HouseholdCompletionControl />
           <TouchableOpacity
@@ -1297,7 +1211,7 @@ export default function SettingsScreen() {
                 { backgroundColor: colors.accent + "18" },
               ]}
             >
-              <Text style={styles.linkEmoji}>⚖️</Text>
+              <Feather name="bar-chart-2" size={19} color={colors.accent} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.linkTitle, { color: colors.foreground }]}>
@@ -1411,6 +1325,150 @@ export default function SettingsScreen() {
               color={colors.mutedForeground}
             />
           </TouchableOpacity>
+
+          <CollapsibleSettingsSection
+            title="APP PREFERENCES"
+            subtitle="Appearance, features, and behavior"
+            icon="sliders"
+          >
+            <UserPreferencesPanel />
+          </CollapsibleSettingsSection>
+
+          {session?.user.id ? (
+            <CollapsibleSettingsSection
+              title="PRIVACY & DIAGNOSTICS"
+              subtitle="Analytics and diagnostic sharing"
+              icon="shield"
+            >
+              <AnalyticsPreferencesPanel userId={session.user.id} />
+            </CollapsibleSettingsSection>
+          ) : null}
+
+          <Text
+            style={[styles.sectionLabel, { color: colors.mutedForeground }]}
+          >
+            HELP
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Open Quick guide"
+            style={[
+              styles.linkRow,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              track.quickGuideOpened({ source: "settings" });
+              openQuickGuide();
+            }}
+          >
+            <View
+              style={[
+                styles.linkIcon,
+                { backgroundColor: colors.primary + "18" },
+              ]}
+            >
+              <Feather name="info" size={18} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.linkTitle, { color: colors.foreground }]}>
+                QUICK GUIDE
+              </Text>
+              <Text style={[styles.linkSub, { color: colors.mutedForeground }]}>
+                Revisit a few helpful SweetMate features
+              </Text>
+            </View>
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={colors.mutedForeground}
+            />
+          </TouchableOpacity>
+
+          <CollapsibleSettingsSection
+            title="ACCOUNT"
+            subtitle={session?.user.email ?? "Sign-in and account controls"}
+            icon="user"
+          >
+            <View
+              style={[
+                styles.card,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.accountRow}>
+                <View
+                  style={[
+                    styles.accountIcon,
+                    { backgroundColor: colors.primary + "18" },
+                  ]}
+                >
+                  <Feather name="cloud" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={[styles.accountName, { color: colors.foreground }]}
+                  >
+                    Signed in
+                  </Text>
+                  <Text
+                    style={[
+                      styles.accountUsername,
+                      { color: colors.mutedForeground },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {session?.user.email ?? "—"}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.switchUserBtn,
+                  {
+                    backgroundColor: colors.destructive,
+                    opacity: signingOut ? 0.6 : 1,
+                  },
+                ]}
+                onPress={handleSignOut}
+                disabled={signingOut}
+              >
+                <Feather name="log-out" size={14} color="#fff" />
+                <Text style={styles.switchUserBtnText}>
+                  {signingOut ? "Signing out…" : "Sign out"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.outlineDangerBtn,
+                  {
+                    borderColor: colors.destructive,
+                    opacity: deletingAccount ? 0.6 : 1,
+                  },
+                ]}
+                onPress={confirmDeleteOwnAccount}
+                disabled={deletingAccount}
+              >
+                <Feather name="user-x" size={14} color={colors.destructive} />
+                <Text
+                  style={[
+                    styles.outlineDangerBtnText,
+                    { color: colors.destructive },
+                  ]}
+                >
+                  {deletingAccount
+                    ? "Deleting account…"
+                    : "Delete my account"}
+                </Text>
+              </TouchableOpacity>
+              <Text
+                style={[styles.accountHint, { color: colors.mutedForeground }]}
+              >
+                Permanently deletes your login. This is separate from leaving
+                or removing someone from a household.
+              </Text>
+            </View>
+          </CollapsibleSettingsSection>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -2012,12 +2070,8 @@ const styles = StyleSheet.create({
   settingsIntro: {
     marginHorizontal: 20,
     paddingVertical: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  settingsIntroEmoji: { fontSize: 32 },
   settingsIntroTitle: {
     fontFamily: "Inter_700Bold",
     fontSize: 19,
@@ -2028,7 +2082,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 2,
   },
-  rowEmoji: { fontSize: 24 },
+  collapsibleSection: {
+    marginTop: 20,
+  },
+  collapsibleHeader: {
+    minHeight: 72,
+    marginHorizontal: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  collapsibleHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  collapsibleTitle: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 15,
+    letterSpacing: 1,
+  },
+  collapsibleSubtitle: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  collapsibleContent: {
+    gap: 10,
+    paddingTop: 10,
+  },
+  accountIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   avatarRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2103,7 +2196,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  linkEmoji: { fontSize: 23 },
   linkTitle: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 16,

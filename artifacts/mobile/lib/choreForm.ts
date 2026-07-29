@@ -1,11 +1,19 @@
-export function tomorrowDateInput(now = new Date()): string {
-  const date = new Date(now);
-  date.setDate(date.getDate() + 1);
+export function dateInput(date: Date): string {
   return [
     date.getFullYear(),
     String(date.getMonth() + 1).padStart(2, "0"),
     String(date.getDate()).padStart(2, "0"),
   ].join("-");
+}
+
+export function todayDateInput(now = new Date()): string {
+  return dateInput(now);
+}
+
+export function tomorrowDateInput(now = new Date()): string {
+  const date = new Date(now);
+  date.setDate(date.getDate() + 1);
+  return dateInput(date);
 }
 
 export function parseDueDate(value: string): string | null {
