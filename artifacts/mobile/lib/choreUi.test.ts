@@ -46,6 +46,22 @@ assert(
   "borrowing rows must not render or reserve space for the leading status circle",
 );
 assert(
+  borrowing.includes("<ActionMenuModal") &&
+    borrowing.includes("onLongPress=") &&
+    borrowing.includes("actionBorrowId") &&
+    borrowing.includes('label: "Edit"') &&
+    borrowing.includes('label: "Delete"') &&
+    !borrowing.includes('<Feather name="edit-2" size={15}') &&
+    !borrowing.includes('<Feather name="trash-2" size={15}'),
+  "borrowing rows must use one shared long-press action menu without inline edit/delete icons",
+);
+assert(
+  borrowing.includes("accessibilityActions=") &&
+    borrowing.includes('label: "More actions"') &&
+    borrowing.includes("showReturnAction ? ("),
+  "borrowing actions must remain accessible without nesting the return control in the long-press target",
+);
+assert(
   home.includes("style={styles.categoryVisual}") &&
     home.includes(
       "style={[styles.pointsVisual, { backgroundColor: colors.secondary }]}",

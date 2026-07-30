@@ -8,6 +8,27 @@ export function hasValidBorrowParticipants(
   return members.has(ownerId) && members.has(borrowerId);
 }
 
+export function canManageBorrowItem(
+  item: {
+    visibility?: "shared" | "private";
+    ownerId?: string;
+    creatorId?: string;
+    borrowedBy?: string;
+    borrowedFrom: string;
+  },
+  currentUserId: string,
+  isHost: boolean,
+) {
+  if (item.visibility === "private") {
+    return item.ownerId === currentUserId;
+  }
+  const canManageLegacy =
+    !item.creatorId &&
+    (item.borrowedBy === currentUserId ||
+      item.borrowedFrom === currentUserId);
+  return isHost || item.creatorId === currentUserId || canManageLegacy;
+}
+
 export function canSaveBorrowDraft({
   item,
   ownerId,

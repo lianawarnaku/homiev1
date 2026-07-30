@@ -4,7 +4,6 @@ import * as Haptics from "expo-haptics";
 import React, { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -21,14 +20,17 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
+import { ActionMenuModal } from "@/components/ActionMenuModal";
 import { FloatingActionButton, useFloatingActionMetrics } from "@/components/FloatingActionButton";
 import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContextSelector, type BorrowItem } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
-import { useConfirm } from "@/hooks/useConfirm";
 import { historyPage, isHistoricalResolution } from "@/lib/resolutionHistory";
-import { canSaveBorrowDraft } from "@/lib/borrowValidation";
+import {
+  canManageBorrowItem,
+  canSaveBorrowDraft,
+} from "@/lib/borrowValidation";
 
 function daysBetween(a: string, b: string) {
   return Math.round(
@@ -97,7 +99,6 @@ export default function BorrowScreen() {
     isHost: context.isHost,
   }));
 
-  const { confirm } = useConfirm();
   const [showModal, setShowModal] = useState(false);
   // `editingId` = null → modal is in ADD mode. Otherwise the id of the borrow
   // being edited; the same modal UI is reused for both flows.
@@ -116,6 +117,9 @@ export default function BorrowScreen() {
   // than 3 returned items. Tap the tile to expand.
   const [showAllReturned, setShowAllReturned] = useState(false);
   const [historyPages, setHistoryPages] = useState(1);
+  const [actionBorrowId, setActionBorrowId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const deletePendingRef = useRef(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
@@ -144,6 +148,12 @@ export default function BorrowScreen() {
         : [],
     [historyPages, returnedBorrows, showAllReturned],
   );
+  const actionBorrow = actionBorrowId
+    ? borrowItems.find((borrow) => borrow.id === actionBorrowId)
+    : undefined;
+  const canManageActionBorrow = actionBorrow
+    ? canManageBorrowItem(actionBorrow, currentUserId, isHost)
+    : false;
 
   const resetForm = () => {
     setItem("");
@@ -172,6 +182,32 @@ export default function BorrowScreen() {
     setNotes(b.notes ?? "");
     setPrivateEntry(b.visibility === "private");
     setShowModal(true);
+  };
+
+  const openBorrowActions = (borrowId: string) => {
+    if (
+      actionBorrowId &&
+      borrowItems.some((entry) => entry.id === actionBorrowId)
+    ) return;
+    const borrow = borrowItems.find((entry) => entry.id === borrowId);
+    if (!borrow || !canManageBorrowItem(borrow, currentUserId, isHost)) return;
+    setActionError(null);
+    setActionBorrowId(borrowId);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleDeleteBorrow = async (borrowId: string) => {
+    if (deletePendingRef.current) return;
+    deletePendingRef.current = true;
+    try {
+      const deleted = await deleteBorrowItem(borrowId);
+      if (deleted) return;
+      setActionError("This borrowing record could not be deleted.");
+    } catch {
+      setActionError("This borrowing record could not be deleted.");
+    } finally {
+      deletePendingRef.current = false;
+    }
   };
 
   const handleSave = () => {
@@ -275,6 +311,23 @@ export default function BorrowScreen() {
           <Feather name="alert-circle" size={16} color={colors.warning} />
           <Text style={[styles.overdueText, { color: colors.warning }]}>
             {overdue.length} item{overdue.length > 1 ? "s" : ""} overdue — time to return!
+          </Text>
+        </View>
+      ) : null}
+      {actionError ? (
+        <View
+          accessibilityLiveRegion="assertive"
+          style={[
+            styles.actionError,
+            {
+              backgroundColor: colors.destructive + "12",
+              borderColor: colors.destructive + "44",
+            },
+          ]}
+        >
+          <Feather name="alert-circle" size={16} color={colors.destructive} />
+          <Text style={[styles.overdueText, { color: colors.destructive }]}>
+            {actionError}
           </Text>
         </View>
       ) : null}
@@ -400,11 +453,11 @@ export default function BorrowScreen() {
           const isOwner = borrow.borrowedFrom === currentUserId;
           const isBorrower = borrow.borrowedBy === currentUserId;
           const isPrivate = borrow.visibility === "private";
-          const canManageLegacy =
-            !borrow.creatorId && (isOwner || isBorrower);
-          const canManage = isPrivate
-            ? borrow.ownerId === currentUserId
-            : isHost || borrow.creatorId === currentUserId || canManageLegacy;
+          const canManage = canManageBorrowItem(
+            borrow,
+            currentUserId,
+            isHost,
+          );
           const canUndoReturn = borrow.returned && (isPrivate || isOwner || isHost);
           const canConfirmReturn =
             !borrow.returned &&
@@ -461,7 +514,38 @@ export default function BorrowScreen() {
                   },
                 ]}
               >
-                <View style={styles.cardContent}>
+                <TouchableOpacity
+                  style={styles.cardContent}
+                  activeOpacity={canManage ? 0.7 : 1}
+                  delayLongPress={450}
+                  onLongPress={
+                    canManage
+                      ? () => openBorrowActions(borrow.id)
+                      : undefined
+                  }
+                  accessible
+                  accessibilityRole={canManage ? "button" : undefined}
+                  accessibilityLabel={`${borrow.item}. ${borrowerName} borrowed from ${ownerName}. ${dueText}`}
+                  accessibilityHint={
+                    canManage
+                      ? "Long press for Edit and Delete actions"
+                      : undefined
+                  }
+                  accessibilityActions={
+                    canManage
+                      ? [{ name: "activate", label: "More actions" }]
+                      : undefined
+                  }
+                  onAccessibilityAction={
+                    canManage
+                      ? (event) => {
+                          if (event.nativeEvent.actionName === "activate") {
+                            openBorrowActions(borrow.id);
+                          }
+                        }
+                      : undefined
+                  }
+                >
                   <Text
                     style={[
                       styles.borrowItemName,
@@ -543,10 +627,11 @@ export default function BorrowScreen() {
                   >
                     {dueText}
                   </Text>
-                </View>
+                </TouchableOpacity>
 
+                {showReturnAction ? (
                 <View style={styles.cardActions}>
-                  {showReturnAction && <TouchableOpacity
+                  <TouchableOpacity
                     style={[
                       styles.returnBtn,
                       borrow.returned
@@ -569,27 +654,9 @@ export default function BorrowScreen() {
                     >
                       {returnLabel}
                     </Text>
-                  </TouchableOpacity>}
-                  {canManage && <TouchableOpacity
-                    onPress={() => openEdit(borrow)}
-                    accessibilityLabel={`Edit ${borrow.item}`}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Feather name="edit-2" size={15} color={colors.mutedForeground} />
-                  </TouchableOpacity>}
-                  {canManage && <TouchableOpacity
-                    onPress={() =>
-                      confirm("delete_borrow", "Delete", "Remove this item?", () => {
-                        if (!deleteBorrowItem(borrow.id)) {
-                          Alert.alert("Not allowed", "Only the record creator or Sweet host can delete it.");
-                        }
-                      }, { confirmText: "Delete", destructive: true })
-                    }
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Feather name="trash-2" size={15} color={colors.mutedForeground} />
-                  </TouchableOpacity>}
+                  </TouchableOpacity>
                 </View>
+                ) : null}
               </View>
             </>
           );
@@ -599,6 +666,39 @@ export default function BorrowScreen() {
       <FloatingActionButton
         accessibilityLabel="Add borrowed item"
         onPress={() => setShowModal(true)}
+      />
+
+      <ActionMenuModal
+        visible={Boolean(actionBorrow && canManageActionBorrow)}
+        title={actionBorrow?.item ?? "Borrowing record"}
+        subtitle="Manage this borrowing record"
+        onClose={() => setActionBorrowId(null)}
+        actions={
+          actionBorrow && canManageActionBorrow
+            ? [
+                {
+                  key: "edit",
+                  label: "Edit",
+                  icon: "edit-2",
+                  onPress: () => openEdit(actionBorrow),
+                },
+                {
+                  key: "delete",
+                  label: "Delete",
+                  icon: "trash-2",
+                  destructive: true,
+                  confirmation: {
+                    title: `Delete “${actionBorrow.item}”?`,
+                    message: "This permanently removes the borrowing record.",
+                    confirmLabel: "Delete",
+                  },
+                  onPress: () => {
+                    void handleDeleteBorrow(actionBorrow.id);
+                  },
+                },
+              ]
+            : []
+        }
       />
 
       <Modal visible={showModal} transparent animationType="slide">
@@ -860,6 +960,16 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   overdueText: { fontFamily: "Inter_600SemiBold", fontSize: 13, flex: 1 },
+  actionError: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 12,
+  },
   list: { paddingHorizontal: 16, gap: 12 },
   sectionHeader: {
     fontFamily: "Inter_600SemiBold",

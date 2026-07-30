@@ -40,7 +40,10 @@ import {
   materializeRecurringOccurrences,
 } from "@/lib/choreOccurrences";
 import { choreCompletionTransition } from "@/lib/choreCompletion";
-import { hasValidBorrowParticipants } from "@/lib/borrowValidation";
+import {
+  canManageBorrowItem,
+  hasValidBorrowParticipants,
+} from "@/lib/borrowValidation";
 import {
   assignmentsFromRows,
   migrateEssentialAssignments,
@@ -477,7 +480,7 @@ interface AppContextType {
   addBorrowItem: (item: Omit<BorrowItem, "id">) => string | null;
   updateBorrowItem: (id: string, updates: Partial<Omit<BorrowItem, "id">>) => boolean;
   returnBorrowItem: (id: string) => boolean;
-  deleteBorrowItem: (id: string) => boolean;
+  deleteBorrowItem: (id: string) => Promise<boolean>;
   sendNudge: (toRoommateId: string, choreId: string) => Promise<void>;
   removeNudge: (toRoommateId: string, choreId: string) => Promise<void>;
   acknowledgeNudge: (nudgeId: string) => Promise<void>;
@@ -3498,16 +3501,11 @@ export function AppProvider({
   const updateBorrowItem = useCallback(
     (id: string, updates: Partial<Omit<BorrowItem, "id">>): boolean => {
       const current = visibleBorrowItems.find((item) => item.id === id);
-      const isPrivate = current?.visibility === "private";
-      const canManageLegacy =
-        !current?.creatorId &&
-        (current?.borrowedBy === currentUserId || current?.borrowedFrom === currentUserId);
       if (
         !current ||
-        (isPrivate
-          ? current.ownerId !== currentUserId
-          : !isHost && current.creatorId !== currentUserId && !canManageLegacy)
+        !canManageBorrowItem(current, currentUserId, isHost)
       ) return false;
+      const isPrivate = current.visibility === "private";
       const ownerId = updates.borrowedFrom ?? current.borrowedFrom;
       const borrowerId = updates.borrowedBy ?? current.borrowedBy;
       const owner = roommates.find((member) => member.id === ownerId);
@@ -3606,33 +3604,27 @@ export function AppProvider({
     return true;
   }, [currentUserId, householdId, isHost, persistPrivateBorrowItem, roommates, visibleBorrowItems]);
 
-  const deleteBorrowItem = useCallback((id: string) => {
+  const deleteBorrowItem = useCallback(async (id: string) => {
     const current = visibleBorrowItems.find((item) => item.id === id);
-    const isPrivate = current?.visibility === "private";
-    const canManageLegacy =
-      !current?.creatorId &&
-      (current?.borrowedBy === currentUserId || current?.borrowedFrom === currentUserId);
     if (
       !current ||
-      (isPrivate
-        ? current.ownerId !== currentUserId
-        : !isHost && current.creatorId !== currentUserId && !canManageLegacy)
+      !canManageBorrowItem(current, currentUserId, isHost)
     ) return false;
+    const isPrivate = current.visibility === "private";
     if (isPrivate) {
       setPrivateBorrowItems((prev) => prev.filter((entry) => entry.id !== id));
-      void supabase
+      const { error } = await supabase
         .from("private_borrow_items")
         .delete()
-        .eq("id", id)
-        .then(({ error }) => {
-          if (error) {
-            reportSupabaseError("delete private borrowing entry", error, { householdId });
-            setPrivateBorrowItems((prev) => [
-              ...prev.filter((entry) => entry.id !== current.id),
-              current,
-            ]);
-          }
-        });
+        .eq("id", id);
+      if (error) {
+        reportSupabaseError("delete private borrowing entry", error, { householdId });
+        setPrivateBorrowItems((prev) => [
+          ...prev.filter((entry) => entry.id !== current.id),
+          current,
+        ]);
+        return false;
+      }
     } else {
       setBorrowItems((prev) => prev.filter((entry) => entry.id !== id));
     }
