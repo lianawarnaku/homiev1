@@ -88,16 +88,18 @@ assert(
   "the current-user shopping assignment must render as plain inline text",
 );
 assert(
-  shopping.includes("const expenseId = addExpense({") &&
-    shopping.includes("Save & create IOU") &&
-    shopping.includes("linkShoppingItemsToExpense([itemId], expenseId)"),
-  "saving an individual shopping item must immediately create and link its IOU",
+  shopping.includes('"Create item expense"') &&
+    shopping.includes('type: "shopping-item"') &&
+    shopping.includes("setPendingIouDraft(draft)") &&
+    expenses.includes('expenseSource?.type === "shopping-item"'),
+  "individual Shopping expenses must open the standard editable IOU draft and link only after save",
 );
 assert(
   !shopping.includes("listDollarBtn") &&
-    !shopping.includes("handleListToIou") &&
-    !shopping.includes('name={item.convertedExpenseId ? "check" : "arrow-right"}'),
-  "shopping must expose expense conversion only through the item-level money control",
+    !shopping.includes("styles.itemMoneyBtn") &&
+    shopping.includes('badge: "$$$"') &&
+    shopping.includes('label: "Create expense from list"'),
+  "Shopping expense actions must live only in the shared list/item long-press menu",
 );
 assert(
   expenses.includes("<ActionMenuModal") &&
@@ -118,4 +120,9 @@ assert(
     group.includes('key: "calendar"') &&
     !group.includes("styles.nudgeBtn"),
   "chore row secondary actions must live in the shared action menu",
+);
+assert(
+  group.includes("initialConfirmationAction={completionAction}") &&
+    !group.includes('"complete_chore",\\n        "Complete chore?"'),
+  "chore completion must use the shared app-styled confirmation shell",
 );

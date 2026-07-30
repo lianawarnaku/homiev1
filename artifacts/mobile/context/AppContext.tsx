@@ -185,6 +185,24 @@ export interface Expense {
   createdAt?: string;
   updatedAt?: string;
   resolvedAt?: string;
+  shoppingSource?: ShoppingExpenseSource;
+  notes?: string;
+}
+
+export interface ShoppingExpenseSource {
+  type: "shopping-item" | "shopping-list";
+  shoppingListId: string;
+  shoppingListName: string;
+  shoppingItemIds: string[];
+  shoppingItemName?: string;
+  listTotalCents?: number;
+  individuallyAllocatedCents?: number;
+  individualAllocations?: Array<{
+    itemId: string;
+    itemName: string;
+    expenseId: string;
+    amountCents: number;
+  }>;
 }
 
 export interface ShoppingList {
@@ -241,7 +259,8 @@ export interface PendingIouDraft {
   totalAmount: string;
   participants: string[];
   splits: Record<string, string>;
-  source?: { type: "shopping-item" | "shopping-list"; itemIds: string[] };
+  source?: ShoppingExpenseSource;
+  notes?: string;
 }
 
 export interface BorrowItem {

@@ -23,7 +23,7 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/components/EmptyState";
-import { ActionMenuModal } from "@/components/ActionMenuModal";
+import { ActionMenuModal, type ActionMenuItem } from "@/components/ActionMenuModal";
 import { HeaderActions } from "@/components/HeaderActions";
 import { HomePlant } from "@/components/HomePlant";
 import { ManualChoreForm } from "@/components/ManualChoreForm";
@@ -255,6 +255,7 @@ export default function GroupChoresScreen() {
   const [showAddChoreModal, setShowAddChoreModal] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
   const [actionChoreId, setActionChoreId] = useState<string | null>(null);
+  const [completionChoreId, setCompletionChoreId] = useState<string | null>(null);
   const [calendarDestination, setCalendarDestinationState] =
     useState<ExternalTaskDestination | null | undefined>(undefined);
   const calendarExportsInFlight = useRef(new Set<string>());
@@ -469,54 +470,63 @@ export default function GroupChoresScreen() {
     // correctly refund the bonus points, which we don't store.
     if (chore.completed) {
       if (assignedTo === currentUserId) {
-        confirm(
-          "uncomplete_chore",
-          "Uncomplete chore?",
-          `Mark "${choreName}" as not done?`,
-          () => {
-            setChoreCompleted(choreId, false);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          },
-          { confirmText: "Uncomplete" }
-        );
+        setCompletionChoreId(choreId);
       }
       return;
     }
 
-    if (assignedTo === currentUserId) {
-      confirm(
-        "complete_chore",
-        "Complete chore?",
-        `Mark "${choreName}" as done?`,
-        () => {
-          hapticSuccess();
-          setChoreCompleted(choreId, true);
-        },
-        { confirmText: "Done ✓" }
-      );
-    } else {
-      confirm(
-        "pickup_chore",
-        "Pick up this chore? 🙌",
-        pointsEnabled
-          ? `Complete "${choreName}" for them and earn ${chorePoints + 25} pts (${chorePoints} + 25 bonus)!`
-          : `Complete "${choreName}" for them?`,
-        () => {
-          hapticSuccess();
-          pickUpChore(choreId, currentUserId);
-          setPickedUpChores((prev) => new Set([...prev, choreId]));
-          info(
-            "pickup_success",
-            "Nice one! 🌟",
-            pointsEnabled
-              ? `You earned ${chorePoints + 25} pts — ${chorePoints} for the chore + 25 bonus!`
-              : `You completed "${choreName}" for them.`
-          );
-        },
-        { confirmText: "Pick it up!" }
-      );
-    }
+    setCompletionChoreId(choreId);
   };
+
+  const completionChore = completionChoreId
+    ? chores.find((entry) => entry.id === completionChoreId)
+    : undefined;
+  const completionAction: ActionMenuItem | null = completionChore
+    ? {
+        key: completionChore.completed ? "uncomplete" : "complete",
+        label: completionChore.completed ? "Uncomplete" : "Done ✓",
+        icon: completionChore.completed ? "rotate-ccw" : "check-circle",
+        confirmation: {
+          title: completionChore.completed
+            ? "Uncomplete chore?"
+            : completionChore.assignedTo === currentUserId
+              ? "Complete chore?"
+              : "Pick up this chore? 🙌",
+          message: completionChore.completed
+            ? `Mark "${completionChore.title}" as not done?`
+            : completionChore.assignedTo === currentUserId
+              ? `Mark "${completionChore.title}" as done?`
+              : pointsEnabled
+                ? `Complete "${completionChore.title}" for them and earn ${completionChore.points + 25} pts (${completionChore.points} + 25 bonus)!`
+                : `Complete "${completionChore.title}" for them?`,
+          confirmLabel: completionChore.completed
+            ? "Uncomplete"
+            : completionChore.assignedTo === currentUserId
+              ? "Done ✓"
+              : "Pick it up!",
+        },
+        onPress: () => {
+          if (completionChore.completed) {
+            setChoreCompleted(completionChore.id, false);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          } else if (completionChore.assignedTo === currentUserId) {
+            hapticSuccess();
+            setChoreCompleted(completionChore.id, true);
+          } else {
+            hapticSuccess();
+            pickUpChore(completionChore.id, currentUserId);
+            setPickedUpChores((prev) => new Set([...prev, completionChore.id]));
+            info(
+              "pickup_success",
+              "Nice one! 🌟",
+              pointsEnabled
+                ? `You earned ${completionChore.points + 25} pts — ${completionChore.points} for the chore + 25 bonus!`
+                : `You completed "${completionChore.title}" for them.`,
+            );
+          }
+        },
+      }
+    : null;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
@@ -1243,6 +1253,14 @@ export default function GroupChoresScreen() {
       )}
 
       {/* ── Add Chore Modal (full-screen, matches New IOU) ── */}
+      <ActionMenuModal
+        visible={!!completionAction}
+        title={completionChore?.title ?? "Chore"}
+        subtitle="Confirm this chore update"
+        actions={[]}
+        initialConfirmationAction={completionAction}
+        onClose={() => setCompletionChoreId(null)}
+      />
       <ActionMenuModal
         visible={!!actionChore}
         title={actionChore?.title ?? "Chore"}

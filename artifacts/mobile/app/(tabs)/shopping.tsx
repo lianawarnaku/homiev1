@@ -1,7 +1,7 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -43,7 +43,12 @@ function normalizeAssignees(item: ShoppingItem): string[] {
 }
 import { useTheme } from "@/constants/colors";
 import { tapLight } from "@/lib/haptics";
-import { buildEvenSplitCents, centsToDollars, parseMoneyToCents } from "@/lib/money";
+import { buildEvenSplitCents, centsToDollars } from "@/lib/money";
+import {
+  linkedItemAllocations,
+  pricedListTotalCents,
+  remainingListExpenseCents,
+} from "@/lib/shoppingExpense";
 
 export default function ShoppingScreen() {
   const colors = useTheme();
@@ -62,10 +67,8 @@ export default function ShoppingScreen() {
     deleteShoppingItem,
     reorderShoppingItems,
     assignShoppingList,
-    assignShoppingItem,
-    updateShoppingItemPrice,
-    addExpense,
-    linkShoppingItemsToExpense,
+    expenses,
+    setPendingIouDraft,
     currentUserId,
   } = useAppContextSelector((context) => ({
     roommates: context.roommates,
@@ -80,10 +83,8 @@ export default function ShoppingScreen() {
     deleteShoppingItem: context.deleteShoppingItem,
     reorderShoppingItems: context.reorderShoppingItems,
     assignShoppingList: context.assignShoppingList,
-    assignShoppingItem: context.assignShoppingItem,
-    updateShoppingItemPrice: context.updateShoppingItemPrice,
-    addExpense: context.addExpense,
-    linkShoppingItemsToExpense: context.linkShoppingItemsToExpense,
+    expenses: context.expenses,
+    setPendingIouDraft: context.setPendingIouDraft,
     currentUserId: context.currentUserId,
   }));
 
@@ -101,17 +102,9 @@ export default function ShoppingScreen() {
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [assignPickerListId, setAssignPickerListId] = useState<string | null>(null);
   const [actionListId, setActionListId] = useState<string | null>(null);
+  const [actionItemId, setActionItemId] = useState<string | null>(null);
   const completedLongPressRef = useRef<string | null>(null);
-
-  // Per-item picker: which item are we editing, its selected assignees + price.
-  // The picker now supports MULTI-SELECT — item price is split evenly across
-  // whoever is selected.
-  const [itemPickerId, setItemPickerId] = useState<string | null>(null);
-  const [itemPickerAssignees, setItemPickerAssignees] = useState<string[]>([]);
-  const [itemPickerPrice, setItemPickerPrice] = useState("");
-
-  // "Fill in missing prices" prompt: kicked off when the user taps the list-
-  // level $ and some assigned items don't yet have a price. Keyed by item id.
+  const draftOpeningRef = useRef(false);
 
   const toggleListCollapse = (id: string) => {
     setCollapsedLists((prev) => {
@@ -158,6 +151,9 @@ export default function ShoppingScreen() {
   const actionList = actionListId
     ? shoppingLists.find((list) => list.id === actionListId)
     : null;
+  const actionItem = actionItemId
+    ? shoppingItems.find((item) => item.id === actionItemId)
+    : null;
 
   const openListActions = (listId: string) => {
     completedLongPressRef.current = listId;
@@ -176,6 +172,12 @@ export default function ShoppingScreen() {
       return;
     }
     toggleListCollapse(listId);
+  };
+
+  const openItemActions = (itemId: string) => {
+    setActionListId(null);
+    setActionItemId(itemId);
+    tapLight();
   };
 
   // `shoppingLists` is already in display order — pinned first, then unpinned,
@@ -203,63 +205,120 @@ export default function ShoppingScreen() {
     return [...unchecked, ...checked];
   };
 
-  const pickerItem = itemPickerId
-    ? shoppingItems.find((s) => s.id === itemPickerId)
-    : null;
+  const activeMemberIds = useMemo(
+    () => roommates.map((roommate) => roommate.id),
+    [roommates],
+  );
 
-  const openItemPicker = (itemId: string) => {
-    const item = shoppingItems.find((s) => s.id === itemId);
-    setItemPickerId(itemId);
-    setItemPickerAssignees(item ? normalizeAssignees(item) : []);
-    setItemPickerPrice(item?.price != null ? item.price.toFixed(2) : "");
+  const openExpenseDraft = (draft: Parameters<typeof setPendingIouDraft>[0]) => {
+    if (!draft || draftOpeningRef.current) return;
+    draftOpeningRef.current = true;
+    setPendingIouDraft(draft);
+    setActionListId(null);
+    setActionItemId(null);
+    router.navigate("/(tabs)/expenses");
+    setTimeout(() => {
+      draftOpeningRef.current = false;
+    }, 600);
   };
 
-  const toggleItemPickerAssignee = (id: string) => {
-    setItemPickerAssignees((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const saveItemPicker = () => {
-    if (!itemPickerId) return;
-    const item = shoppingItems.find((entry) => entry.id === itemPickerId);
-    if (!item) return;
+  const createItemExpenseDraft = (itemId: string) => {
+    const item = shoppingItems.find((entry) => entry.id === itemId);
+    if (!item) throw new Error("This Shopping item is no longer available.");
+    if (
+      item.convertedExpenseId &&
+      expenses.some((expense) => expense.id === item.convertedExpenseId)
+    ) {
+      throw new Error("This item already has an expense.");
+    }
     const list = shoppingLists.find((entry) => entry.id === item.listId);
-    const itemId = itemPickerId;
-    const assignees = [...itemPickerAssignees];
-    const priceCents = parseMoneyToCents(itemPickerPrice);
-    if (priceCents === null || !assignees.length) return;
-    const price = centsToDollars(priceCents);
-    assignShoppingItem(itemId, assignees);
-    updateShoppingItemPrice(itemId, price);
-    const activeIds = new Set(roommates.map((roommate) => roommate.id));
-    const paidBy =
-      list?.assignedTo && activeIds.has(list.assignedTo)
-        ? list.assignedTo
-        : currentUserId;
-    const splitCents = buildEvenSplitCents(priceCents, assignees);
-    const expenseId = addExpense({
-      title: item.name,
-      amount: price,
-      paidBy,
-      sharedWith: assignees,
+    if (!list) throw new Error("This Shopping list is no longer available.");
+    const participantIds = normalizeAssignees(item).filter((id) =>
+      activeMemberIds.includes(id),
+    );
+    const participants = participantIds.length ? participantIds : activeMemberIds;
+    const priceCents =
+      item.price === undefined ? null : Math.round(item.price * 100);
+    const splitCents =
+      priceCents && participants.length
+        ? buildEvenSplitCents(priceCents, participants)
+        : {};
+    openExpenseDraft({
+      title: `Shopping: ${item.name}`,
+      category: "groceries",
+      paidBy:
+        list.assignedTo && activeMemberIds.includes(list.assignedTo)
+          ? list.assignedTo
+          : currentUserId,
+      totalAmount: priceCents ? centsToDollars(priceCents).toFixed(2) : "",
+      participants,
       splits: Object.fromEntries(
         Object.entries(splitCents).map(([id, cents]) => [
           id,
-          centsToDollars(cents),
+          centsToDollars(cents).toFixed(2),
         ]),
       ),
-      category: "other",
-      date: new Date().toISOString(),
-      settled: false,
+      notes: `Created from “${list.name}” in Shopping.`,
+      source: {
+        type: "shopping-item",
+        shoppingListId: list.id,
+        shoppingListName: list.name,
+        shoppingItemIds: [item.id],
+        shoppingItemName: item.name,
+      },
     });
-    linkShoppingItemsToExpense([itemId], expenseId);
-    setItemPickerId(null);
-    setItemPickerAssignees([]);
-    setItemPickerPrice("");
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.navigate("/(tabs)/expenses");
+  };
+
+  const createListExpenseDraft = (listId: string) => {
+    const list = shoppingLists.find((entry) => entry.id === listId);
+    if (!list) throw new Error("This Shopping list is no longer available.");
+    const allocations = linkedItemAllocations(listId, shoppingItems, expenses);
+    const allocatedCents = allocations.reduce(
+      (total, allocation) => total + allocation.amountCents,
+      0,
+    );
+    const knownListTotalCents = pricedListTotalCents(listId, shoppingItems);
+    const remainingCents = remainingListExpenseCents(
+      knownListTotalCents,
+      allocations,
+    );
+    const participants = activeMemberIds;
+    const splitCents =
+      remainingCents && participants.length
+        ? buildEvenSplitCents(remainingCents, participants)
+        : {};
+    openExpenseDraft({
+      title: `Shopping: ${list.name}`,
+      category: "groceries",
+      paidBy:
+        list.assignedTo && activeMemberIds.includes(list.assignedTo)
+          ? list.assignedTo
+          : currentUserId,
+      totalAmount:
+        knownListTotalCents > 0
+          ? centsToDollars(knownListTotalCents).toFixed(2)
+          : "",
+      participants,
+      splits: Object.fromEntries(
+        Object.entries(splitCents).map(([id, cents]) => [
+          id,
+          centsToDollars(cents).toFixed(2),
+        ]),
+      ),
+      notes:
+        "This expense covers the remaining Shopping-list total after individual item expenses were accounted for.",
+      source: {
+        type: "shopping-list",
+        shoppingListId: list.id,
+        shoppingListName: list.name,
+        shoppingItemIds: shoppingItems
+          .filter((item) => item.listId === list.id)
+          .map((item) => item.id),
+        listTotalCents: knownListTotalCents || undefined,
+        individuallyAllocatedCents: allocatedCents,
+        individualAllocations: allocations,
+      },
+    });
   };
 
   return (
@@ -443,9 +502,12 @@ export default function ShoppingScreen() {
                             <ScaleDecoratorCompat>
                               <TouchableOpacity
                                 activeOpacity={1}
-                                onLongPress={drag}
-                                delayLongPress={220}
+                                onLongPress={() => openItemActions(item.id)}
+                                delayLongPress={450}
                                 disabled={isActive}
+                                accessibilityRole="button"
+                                accessibilityLabel={item.name}
+                                accessibilityHint="Press and hold for Shopping item actions"
                                 style={[
                                   styles.shopItem,
                                   {
@@ -455,6 +517,16 @@ export default function ShoppingScreen() {
                                   },
                                 ]}
                               >
+                                <TouchableOpacity
+                                  onLongPress={drag}
+                                  delayLongPress={220}
+                                  disabled={isActive}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Reorder ${item.name}`}
+                                  style={styles.dragHandle}
+                                >
+                                  <Feather name="menu" size={15} color={colors.mutedForeground} />
+                                </TouchableOpacity>
                                 <TouchableOpacity
                                   style={[
                                     styles.shopCheck,
@@ -495,29 +567,6 @@ export default function ShoppingScreen() {
                                   </Text>
                                 </View>
 
-                                {/* user-$: assign one or more people + optional amount */}
-                                <TouchableOpacity
-                                  onPress={() => openItemPicker(item.id)}
-                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                  style={[
-                                    styles.itemMoneyBtn,
-                                    primaryColor
-                                      ? { backgroundColor: primaryColor + "22", borderColor: primaryColor + "55" }
-                                      : { borderColor: colors.border },
-                                  ]}
-                                >
-                                  <Feather
-                                    name={itemAssignees.length > 1 ? "users" : "user"}
-                                    size={11}
-                                    color={primaryColor ?? colors.mutedForeground}
-                                  />
-                                  <Feather
-                                    name="dollar-sign"
-                                    size={11}
-                                    color={primaryColor ?? colors.mutedForeground}
-                                  />
-                                </TouchableOpacity>
-
                                 <TouchableOpacity
                                   onPress={() => deleteShoppingItem(item.id)}
                                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -546,13 +595,28 @@ export default function ShoppingScreen() {
       />
 
       <ActionMenuModal
-        visible={!!actionList}
-        title={actionList?.name ?? "Shopping list"}
-        subtitle="Choose what you’d like to do with this list."
-        onClose={() => setActionListId(null)}
+        visible={!!actionList || !!actionItem}
+        title={actionList?.name ?? actionItem?.name ?? "Shopping"}
+        subtitle={
+          actionList
+            ? "Choose what you’d like to do with this list."
+            : "Choose what you’d like to do with this item."
+        }
+        onClose={() => {
+          setActionListId(null);
+          setActionItemId(null);
+        }}
         actions={
           actionList
             ? [
+                {
+                  key: "expense",
+                  label: "Create expense from list",
+                  icon: "dollar-sign",
+                  badge: "$$$",
+                  accentColor: colors.success,
+                  onPress: () => createListExpenseDraft(actionList.id),
+                },
                 {
                   key: "pin",
                   label: actionList.pinned ? "Unpin list" : "Pin list",
@@ -575,6 +639,18 @@ export default function ShoppingScreen() {
                   onPress: () => deleteShoppingList(actionList.id),
                 },
               ]
+            : actionItem
+              ? [
+                  {
+                    key: "expense",
+                    label: actionItem.convertedExpenseId
+                      ? "Item expense already created"
+                      : "Create item expense",
+                    icon: "dollar-sign",
+                    accentColor: colors.success,
+                    onPress: () => createItemExpenseDraft(actionItem.id),
+                  },
+                ]
             : []
         }
       />
@@ -755,136 +831,6 @@ export default function ShoppingScreen() {
                 Create List
               </Text>
             </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── Item Picker Modal (assign person + price to a single item) ── */}
-      <Modal
-        visible={!!itemPickerId}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setItemPickerId(null)}
-      >
-        <Pressable style={styles.overlay} onPress={() => setItemPickerId(null)} />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} pointerEvents="box-none">
-          <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 24 }]}>
-            <View style={[styles.handle, { backgroundColor: colors.border }]} />
-            <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Who's paying?</Text>
-            {pickerItem && (
-              <Text style={[styles.assignPickerItemName, { color: colors.mutedForeground }]}>
-                {pickerItem.name}
-              </Text>
-            )}
-            <Text style={[styles.pickerHint, { color: colors.mutedForeground }]}>
-              Tap multiple people to split this item's price evenly among them.
-            </Text>
-            <View style={styles.assignAvatarGrid}>
-              {roommates.map((r) => {
-                const selected = itemPickerAssignees.includes(r.id);
-                return (
-                  <TouchableOpacity
-                    key={r.id}
-                    style={[
-                      styles.assignAvatarCell,
-                      {
-                        backgroundColor: selected ? r.color + "22" : colors.muted,
-                        borderColor: selected ? r.color : colors.border,
-                        borderWidth: selected ? 2 : 1,
-                      },
-                    ]}
-                    onPress={() => toggleItemPickerAssignee(r.id)}
-                  >
-                    <RoommateAvatar name={r.name} color={r.color} size={40} imageUri={r.avatarUri} />
-                    <Text
-                      style={[
-                        styles.assignAvatarName,
-                        { color: selected ? r.color : colors.foreground, fontFamily: selected ? "Inter_600SemiBold" : "Inter_400Regular" },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {r.id === currentUserId ? "You" : r.name}
-                    </Text>
-                    {selected && (
-                      <View style={[styles.assignSelectedCheck, { backgroundColor: r.color }]}>
-                        <Feather name="check" size={9} color="#fff" />
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>Amount</Text>
-            <View style={[styles.priceInputRow, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-              <Text style={[styles.priceDollar, { color: colors.mutedForeground }]}>$</Text>
-              <TextInput
-                style={[styles.priceInput, { color: colors.foreground }]}
-                placeholder="0.00"
-                placeholderTextColor={colors.mutedForeground}
-                value={itemPickerPrice}
-                onChangeText={setItemPickerPrice}
-                keyboardType="decimal-pad"
-              />
-            </View>
-            {itemPickerAssignees.length > 1 && parseFloat(itemPickerPrice) > 0 ? (
-              <Text style={[styles.pickerHint, { color: colors.mutedForeground }]}>
-                Each of {itemPickerAssignees.length} pays ${(parseFloat(itemPickerPrice) / itemPickerAssignees.length).toFixed(2)}
-              </Text>
-            ) : null}
-
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-              {itemPickerAssignees.length > 0 && (
-                <TouchableOpacity
-                  style={[styles.clearAssignBtn, { borderColor: colors.border, flex: 1 }]}
-                  onPress={() => {
-                    if (!itemPickerId) return;
-                    assignShoppingItem(itemPickerId, []);
-                    updateShoppingItemPrice(itemPickerId, null);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setItemPickerId(null);
-                    setItemPickerAssignees([]);
-                    setItemPickerPrice("");
-                  }}
-                >
-                  <Feather name="x" size={14} color={colors.mutedForeground} />
-                  <Text style={[styles.clearAssignText, { color: colors.mutedForeground }]}>Clear</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[
-                  styles.addBtn,
-                  {
-                    backgroundColor:
-                      itemPickerAssignees.length > 0 &&
-                      parseMoneyToCents(itemPickerPrice) !== null
-                        ? colors.primary
-                        : colors.border,
-                    flex: 2,
-                  },
-                ]}
-                disabled={
-                  itemPickerAssignees.length === 0 ||
-                  parseMoneyToCents(itemPickerPrice) === null
-                }
-                onPress={saveItemPicker}
-              >
-                <Text
-                  style={[
-                    styles.addBtnText,
-                    {
-                      color:
-                        itemPickerAssignees.length > 0 &&
-                        parseMoneyToCents(itemPickerPrice) !== null
-                          ? "#fff"
-                          : colors.mutedForeground,
-                    },
-                  ]}
-                >
-                  Save & create IOU
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>

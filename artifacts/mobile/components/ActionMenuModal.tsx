@@ -21,6 +21,9 @@ export type ActionMenuItem = {
   label: string;
   icon: FeatherIcon;
   onPress: () => void | Promise<void>;
+  successMessage?: string;
+  badge?: string;
+  accentColor?: string;
   destructive?: boolean;
   confirmation?: {
     title: string;
@@ -35,6 +38,7 @@ type Props = {
   subtitle?: string;
   actions: ActionMenuItem[];
   onClose: () => void;
+  initialConfirmationAction?: ActionMenuItem | null;
 };
 
 export function ActionMenuModal({
@@ -43,6 +47,7 @@ export function ActionMenuModal({
   subtitle,
   actions,
   onClose,
+  initialConfirmationAction = null,
 }: Props) {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
@@ -53,7 +58,7 @@ export function ActionMenuModal({
 
   useEffect(() => {
     if (visible) {
-      setConfirming(null);
+      setConfirming(initialConfirmationAction);
       setRunning(false);
       setActionError(null);
       progress.setValue(0);
@@ -88,8 +93,12 @@ export function ActionMenuModal({
     try {
       await action.onPress();
       dismiss(true);
-    } catch {
-      setActionError("That action could not be completed. Please try again.");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "That action could not be completed. Please try again.",
+      );
       setRunning(false);
     }
   };
@@ -101,8 +110,12 @@ export function ActionMenuModal({
     try {
       await confirming.onPress();
       dismiss(true);
-    } catch {
-      setActionError("That action could not be completed. Please try again.");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "That action could not be completed. Please try again.",
+      );
       setRunning(false);
     }
   };
@@ -162,11 +175,19 @@ export function ActionMenuModal({
             <>
               <View
                 style={[
-                  styles.warningIcon,
-                  { backgroundColor: colors.destructive + "14" },
+                styles.warningIcon,
+                  {
+                    backgroundColor: confirming.destructive
+                      ? colors.destructive + "14"
+                      : colors.primary + "14",
+                  },
                 ]}
               >
-                <Feather name="alert-triangle" size={22} color={colors.destructive} />
+                <Feather
+                  name={confirming.destructive ? "alert-triangle" : confirming.icon}
+                  size={22}
+                  color={confirming.destructive ? colors.destructive : colors.primary}
+                />
               </View>
               <Text style={[styles.title, { color: colors.foreground }]}>
                 {confirming.confirmation.title}
@@ -206,18 +227,30 @@ export function ActionMenuModal({
                   accessibilityLabel={confirming.confirmation.confirmLabel}
                   style={[
                     styles.confirmButton,
-                    { backgroundColor: colors.destructive },
+                    {
+                      backgroundColor: confirming.destructive
+                        ? colors.destructive
+                        : colors.primary,
+                    },
                   ]}
                   onPress={() => {
                     void confirmAction();
                   }}
                   disabled={running}
                 >
-                  <Feather name="trash-2" size={16} color={colors.destructiveForeground} />
+                  <Feather
+                    name={confirming.icon}
+                    size={16}
+                    color={confirming.destructive ? colors.destructiveForeground : "#fff"}
+                  />
                   <Text
                     style={[
                       styles.confirmButtonText,
-                      { color: colors.destructiveForeground },
+                      {
+                        color: confirming.destructive
+                          ? colors.destructiveForeground
+                          : "#fff",
+                      },
                     ]}
                   >
                     {confirming.confirmation.confirmLabel}
@@ -261,11 +294,15 @@ export function ActionMenuModal({
                       {
                         backgroundColor: action.destructive
                           ? colors.destructive + (pressed ? "20" : "10")
+                          : action.accentColor
+                            ? action.accentColor + (pressed ? "20" : "10")
                           : pressed
                             ? colors.muted
                             : "transparent",
                         borderColor: action.destructive
                           ? colors.destructive + "35"
+                          : action.accentColor
+                            ? action.accentColor + "45"
                           : colors.border,
                       },
                     ]}
@@ -277,17 +314,27 @@ export function ActionMenuModal({
                       style={[
                         styles.actionIcon,
                         {
-                          backgroundColor: action.destructive
-                            ? colors.destructive + "16"
-                            : colors.primary + "12",
+                        backgroundColor: action.destructive
+                          ? colors.destructive + "16"
+                            : (action.accentColor ?? colors.primary) + "12",
                         },
                       ]}
                     >
-                      <Feather
-                        name={action.icon}
-                        size={18}
-                        color={action.destructive ? colors.destructive : colors.primary}
-                      />
+                      {action.badge ? (
+                        <Text style={{
+                          color: action.accentColor ?? colors.primary,
+                          fontFamily: "Inter_700Bold",
+                          fontSize: 13,
+                        }}>
+                          {action.badge}
+                        </Text>
+                      ) : (
+                        <Feather
+                          name={action.icon}
+                          size={18}
+                          color={action.destructive ? colors.destructive : action.accentColor ?? colors.primary}
+                        />
+                      )}
                     </View>
                     <Text
                       style={[

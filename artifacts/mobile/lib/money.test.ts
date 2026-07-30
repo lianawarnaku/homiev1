@@ -8,6 +8,7 @@ import {
 } from "./money.ts";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import "./shoppingExpense.test.ts";
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);

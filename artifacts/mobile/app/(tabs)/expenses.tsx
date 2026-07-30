@@ -151,6 +151,7 @@ export default function ExpensesScreen() {
   const [expRecurring, setExpRecurring] = useState<RecurringInterval | null>(null);
   const [expRecurringCustom, setExpRecurringCustom] = useState("");
   const [expenseSource, setExpenseSource] = useState<PendingIouDraft["source"]>();
+  const [expNotes, setExpNotes] = useState("");
 
   // Consume a pre-filled IOU draft handed off from the Shopping tab. When
   // present, populate the builder state and pop the modal, then clear the
@@ -166,6 +167,7 @@ export default function ExpensesScreen() {
     setExpSplits(pendingIouDraft.splits);
     setAllocationMode("exact");
     setExpenseSource(pendingIouDraft.source);
+    setExpNotes(pendingIouDraft.notes ?? "");
     setExpRecurring(null);
     setExpRecurringCustom("");
     setShowExpenseModal(true);
@@ -309,26 +311,44 @@ export default function ExpensesScreen() {
   };
 
   // ── Recalculate even split when total or participants change ───────────────
+  const sourceAllocatedCents =
+    expenseSource?.type === "shopping-list"
+      ? expenseSource.individuallyAllocatedCents ?? 0
+      : 0;
+  const enteredTotalCents = parseMoneyToCents(expTotalAmount);
+  const allocatableTotalCents =
+    enteredTotalCents === null || enteredTotalCents < sourceAllocatedCents
+      ? null
+      : enteredTotalCents - sourceAllocatedCents;
+
   const recalcEvenSplit = useCallback(() => {
-    const totalCents = parseMoneyToCents(expTotalAmount);
+    const totalCents = allocatableTotalCents;
     if (totalCents === null || !expParticipants.length) {
       setExpSplits({});
       return;
     }
     setExpSplits(buildEvenSplits(totalCents, expParticipants));
     setAllocationMode("equal");
-  }, [expTotalAmount, expParticipants]);
+  }, [allocatableTotalCents, expParticipants]);
 
   // ── Derived: sum of splits, remainder ─────────────────────────────────────
-  const totalCents = parseMoneyToCents(expTotalAmount);
+  const totalCents = allocatableTotalCents;
   const activeMemberIds = new Set(roommates.map((member) => member.id));
-  const allocationValidation = validateExpenseAllocation({
-    total: expTotalAmount,
+  const baseAllocationValidation = validateExpenseAllocation({
+    total: totalCents === null ? "" : centsToDollars(totalCents).toFixed(2),
     payerId: expPaidBy,
     participantIds: expParticipants,
     allocations: expSplits,
     activeMemberIds,
   });
+  const allocationValidation =
+    enteredTotalCents !== null && enteredTotalCents < sourceAllocatedCents
+      ? {
+          valid: false as const,
+          reason: "List total cannot be less than its individual item expenses.",
+          remainingCents: enteredTotalCents - sourceAllocatedCents,
+        }
+      : baseAllocationValidation;
   const totalParsed = totalCents === null ? 0 : centsToDollars(totalCents);
   const remainingCents = allocationValidation.valid ? 0 : allocationValidation.remainingCents;
   const splitsValid = allocationValidation.valid;
@@ -382,6 +402,7 @@ export default function ExpensesScreen() {
     setExpRecurringCustom("");
     setEditingExpenseId(null);
     setExpenseSource(undefined);
+    setExpNotes("");
     setIouSubmitError(null);
   };
 
@@ -431,7 +452,12 @@ export default function ExpensesScreen() {
     setExpTitle(item.title);
     setExpCategory(item.category);
     setExpPaidBy(item.paidBy);
-    setExpTotalAmount(item.amount.toFixed(2));
+    setExpTotalAmount(
+      item.shoppingSource?.type === "shopping-list" &&
+        item.shoppingSource.listTotalCents !== undefined
+        ? centsToDollars(item.shoppingSource.listTotalCents).toFixed(2)
+        : item.amount.toFixed(2),
+    );
     setExpParticipants(item.sharedWith);
     setExpSplits(
       Object.fromEntries(
@@ -441,7 +467,8 @@ export default function ExpensesScreen() {
     setAllocationMode(item.splitMode ?? "exact");
     setExpRecurring(item.recurring ?? null);
     setExpRecurringCustom(item.recurringCustom ?? "");
-    setExpenseSource(undefined);
+    setExpNotes(item.notes ?? "");
+    setExpenseSource(item.shoppingSource);
     setShowExpenseModal(true);
   };
 
@@ -467,6 +494,16 @@ export default function ExpensesScreen() {
       category: expCategory,
       recurring: expRecurring ?? undefined,
       recurringCustom: expRecurring === "custom" ? expRecurringCustom.trim() || undefined : undefined,
+      notes: expNotes.trim() || undefined,
+      shoppingSource: expenseSource
+        ? {
+            ...expenseSource,
+            listTotalCents:
+              expenseSource.type === "shopping-list"
+                ? enteredTotalCents ?? expenseSource.listTotalCents
+                : undefined,
+          }
+        : undefined,
     };
     try {
       if (editingExpenseId) {
@@ -475,7 +512,9 @@ export default function ExpensesScreen() {
         }
       } else {
         const expenseId = addExpense({ ...payload, date: new Date().toISOString(), settled: false });
-        if (expenseSource) linkShoppingItemsToExpense(expenseSource.itemIds, expenseId);
+        if (expenseSource?.type === "shopping-item") {
+          linkShoppingItemsToExpense(expenseSource.shoppingItemIds, expenseId);
+        }
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       closeIou();
@@ -919,6 +958,32 @@ export default function ExpensesScreen() {
                   {/* Divider */}
                   <View style={[styles.detailDivider, { backgroundColor: colors.border }]} />
 
+                  {detailExp.shoppingSource ? (
+                    <View style={[styles.detailPersonRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <Feather name="shopping-cart" size={16} color={colors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.detailPersonName, { color: colors.foreground }]}>
+                          From Shopping: {detailExp.shoppingSource.shoppingListName}
+                        </Text>
+                        {detailExp.shoppingSource.type === "shopping-list" ? (
+                          <Text style={[styles.detailPersonAmount, { color: colors.mutedForeground }]}>
+                            Individual items: ${centsToDollars(detailExp.shoppingSource.individuallyAllocatedCents ?? 0).toFixed(2)}
+                            {" · "}Group split: ${detailExp.amount.toFixed(2)}
+                          </Text>
+                        ) : (
+                          <Text style={[styles.detailPersonAmount, { color: colors.mutedForeground }]}>
+                            {detailExp.shoppingSource.shoppingItemName}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  ) : null}
+                  {detailExp.notes ? (
+                    <Text style={[styles.detailMeta, { color: colors.mutedForeground }]}>
+                      {detailExp.notes}
+                    </Text>
+                  ) : null}
+
                   {/* Who owes what */}
                   <Text style={[styles.detailSectionLabel, { color: colors.mutedForeground }]}>Who owes</Text>
                   <View style={{ gap: 8 }}>
@@ -1245,7 +1310,9 @@ export default function ExpensesScreen() {
                 <Text
                   style={[styles.label, { color: colors.mutedForeground }]}
                 >
-                  Total amount
+                  {expenseSource?.type === "shopping-list"
+                    ? "Shopping list total"
+                    : "Total amount"}
                 </Text>
                 <View
                   style={[
@@ -1292,6 +1359,56 @@ export default function ExpensesScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
+                {expenseSource ? (
+                  <View
+                    style={{
+                      marginTop: 10,
+                      padding: 12,
+                      borderRadius: 12,
+                      backgroundColor: colors.primary + "0D",
+                      borderWidth: 1,
+                      borderColor: colors.primary + "25",
+                      gap: 4,
+                    }}
+                  >
+                    <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 13 }}>
+                      From Shopping: {expenseSource.shoppingListName}
+                    </Text>
+                    {expenseSource.type === "shopping-list" ? (
+                      <>
+                        <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 12 }}>
+                          Individually allocated: ${centsToDollars(sourceAllocatedCents).toFixed(2)}
+                        </Text>
+                        <Text style={{ color: colors.foreground, fontFamily: "Inter_600SemiBold", fontSize: 12 }}>
+                          Remaining group split: ${centsToDollars(Math.max(0, allocatableTotalCents ?? 0)).toFixed(2)}
+                        </Text>
+                      </>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+
+              <View>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>
+                  Notes
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.muted,
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                      minHeight: 72,
+                      textAlignVertical: "top",
+                    },
+                  ]}
+                  multiline
+                  placeholder="Add a note"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={expNotes}
+                  onChangeText={setExpNotes}
+                />
               </View>
 
               {/* Split between */}
