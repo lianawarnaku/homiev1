@@ -162,7 +162,7 @@ const HEALTH_MESSAGES: Record<string, { title: string; subtitle: string }> = {
 export default function GroupChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const { roommates, chores, currentUserId, setChoreCompleted, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, choreChart, choreChartStartedAt, pointsEnabled, plantEnabled, isHost, deleteChore } =
+  const { roommates, chores, currentUserId, setChoreCompleted, pickUpChore, sendNudge, removeNudge, nudges, roommateStatuses, setRoommateStatus, choreChart, choreChartStartedAt, pointsEnabled, plantEnabled, roommateActivityEnabled, isHost, deleteChore } =
     useAppContextSelector((context) => ({
       roommates: context.roommates,
       chores: context.chores,
@@ -178,6 +178,7 @@ export default function GroupChoresScreen() {
       choreChartStartedAt: context.choreChartStartedAt,
       pointsEnabled: context.pointsEnabled,
       plantEnabled: context.plantEnabled,
+      roommateActivityEnabled: context.roommateActivityEnabled,
       isHost: context.isHost,
       deleteChore: context.deleteChore,
     }));
@@ -902,7 +903,7 @@ export default function GroupChoresScreen() {
             Tap a roommate's emoji to cycle through their vibe:
               😊 (chill / around)  →  😴 (sleeping)  →  🤫 (do not disturb)  →  😊
             Sleeping still auto-reverts after 9 hours via AppContext. */}
-        <View style={[styles.activityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {roommateActivityEnabled ? <View style={[styles.activityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <TouchableOpacity
             style={styles.activityHeader}
             onPress={toggleRoommates}
@@ -958,7 +959,7 @@ export default function GroupChoresScreen() {
               );
             })}
           </View>}
-        </View>
+        </View> : null}
 
         {/* ── Roommate chore sections ───────────────────── */}
         <View

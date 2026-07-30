@@ -15,7 +15,6 @@ import { AppState, InteractionManager } from "react-native";
 
 import { supabase } from "@/lib/supabase";
 import {
-  normalizeColorScheme,
   type ColorScheme,
 } from "@/constants/themeTokens";
 import type { ItemCategory } from "@/constants/itemDifficulty";
@@ -46,6 +45,15 @@ import {
 import { choreCompletionTransition } from "@/lib/choreCompletion";
 import { choreNow } from "@/lib/choreClock";
 import { recurringChoreClaims } from "@/lib/recurringChoreClaims";
+import type {
+  ExpenseSplitMode,
+  StoredExpenseAllocation,
+} from "@/lib/money";
+import { storedExpenseAllocationIsValid } from "@/lib/money";
+import {
+  resolveDisplayPreferenceDefaults,
+  USER_PREFERENCES_VERSION,
+} from "@/lib/userPreferenceDefaults";
 import {
   canManageBorrowItem,
   hasValidBorrowParticipants,
@@ -161,9 +169,12 @@ export interface Expense {
   id: string;
   title: string;
   amount: number;
+  amountCents?: number;
   paidBy: string;
   sharedWith: string[];
   splits: Record<string, number>; // person id → amount they owe payer
+  splitMode?: ExpenseSplitMode;
+  allocations?: StoredExpenseAllocation[];
   date: string;
   category: ExpenseCategory;
   settled: boolean;
@@ -429,6 +440,8 @@ interface AppContextType {
   setPointsEnabled: (enabled: boolean) => void;
   plantEnabled: boolean;
   setPlantEnabled: (enabled: boolean) => void;
+  roommateActivityEnabled: boolean;
+  setRoommateActivityEnabled: (enabled: boolean) => void;
   leaderboardPeriod: LeaderboardPeriod;
   setLeaderboardPeriod: (period: LeaderboardPeriod) => void;
   householdId: string | null;
@@ -727,8 +740,9 @@ export function AppProvider({
   const [currentUserId, setCurrentUserIdState] = useState<string>(CURRENT_USER_ID);
   const [pendingIouDraft, setPendingIouDraftState] = useState<PendingIouDraft | null>(null);
   const [colorScheme, setColorScheme] = useState<ColorScheme>("mono");
-  const [pointsEnabled, setPointsEnabled] = useState(true);
+  const [pointsEnabled, setPointsEnabled] = useState(false);
   const [plantEnabled, setPlantEnabled] = useState(true);
+  const [roommateActivityEnabled, setRoommateActivityEnabled] = useState(false);
   const [leaderboardPeriod, setLeaderboardPeriod] =
     useState<LeaderboardPeriod>("weekly");
   const [localPreferencesLoaded, setLocalPreferencesLoaded] = useState(false);
@@ -819,8 +833,9 @@ export function AppProvider({
   useLayoutEffect(() => {
     setLocalPreferencesLoaded(false);
     setColorScheme("mono");
-    setPointsEnabled(true);
+    setPointsEnabled(false);
     setPlantEnabled(true);
+    setRoommateActivityEnabled(false);
     setLeaderboardPeriod("weekly");
     setPreferencesOnboardingPending(false);
     setHouseholdSetupStepState(null);
@@ -844,6 +859,8 @@ export function AppProvider({
         colorScheme: unknown;
         pointsEnabled: boolean;
         plantEnabled: boolean;
+        roommateActivityEnabled: boolean;
+        preferencesVersion: number;
         leaderboardPeriod: LeaderboardPeriod;
         onboardingPending: boolean;
         householdSetupStep: unknown;
@@ -867,6 +884,8 @@ export function AppProvider({
             colorScheme: legacy.colorScheme,
             pointsEnabled: legacy.pointsEnabled,
             plantEnabled: legacy.plantEnabled,
+            roommateActivityEnabled: legacy.roommateActivityEnabled,
+            preferencesVersion: legacy.preferencesVersion,
             onboardingPending: legacy.onboardingPending,
             householdSetupStep: legacy.householdSetupStep,
             householdSetupVersion: legacy.householdSetupVersion,
@@ -884,13 +903,11 @@ export function AppProvider({
       }
       if (!active) return;
 
-      setColorScheme(normalizeColorScheme(preferences.colorScheme));
-      if (typeof preferences.pointsEnabled === "boolean") {
-        setPointsEnabled(preferences.pointsEnabled);
-      }
-      if (typeof preferences.plantEnabled === "boolean") {
-        setPlantEnabled(preferences.plantEnabled);
-      }
+      const displayPreferences = resolveDisplayPreferenceDefaults(preferences);
+      setColorScheme(displayPreferences.colorScheme);
+      setPointsEnabled(displayPreferences.pointsEnabled);
+      setPlantEnabled(displayPreferences.plantEnabled);
+      setRoommateActivityEnabled(displayPreferences.roommateActivityEnabled);
       if (
         preferences.leaderboardPeriod === "weekly" ||
         preferences.leaderboardPeriod === "alltime"
@@ -935,6 +952,8 @@ export function AppProvider({
           colorScheme,
           pointsEnabled,
           plantEnabled,
+          roommateActivityEnabled,
+          preferencesVersion: USER_PREFERENCES_VERSION,
           leaderboardPeriod,
           onboardingPending: preferencesOnboardingPending,
           householdSetupStep,
@@ -954,6 +973,7 @@ export function AppProvider({
     localPreferencesLoaded,
     plantEnabled,
     pointsEnabled,
+    roommateActivityEnabled,
     preferenceUserId,
     preferencesOnboardingPending,
     householdSetupStep,
@@ -3231,6 +3251,20 @@ export function AppProvider({
   }, [canManageChore]);
 
   const addExpense = useCallback((expense: Omit<Expense, "id">) => {
+    const activeMemberIds = new Set(roommates.map((roommate) => roommate.id));
+    if (
+      !activeMemberIds.has(expense.paidBy) ||
+      expense.sharedWith.some((id) => !activeMemberIds.has(id)) ||
+      (expense.allocations &&
+        !storedExpenseAllocationIsValid(
+          expense.amountCents ?? Math.round(expense.amount * 100),
+          expense.sharedWith,
+          expense.allocations,
+          activeMemberIds,
+        ))
+    ) {
+      throw new Error("Expense participants and allocations must belong to the active household.");
+    }
     const id = makeId();
     const now = new Date().toISOString();
     setExpenses((prev) => [...prev, {
@@ -3243,7 +3277,7 @@ export function AppProvider({
     }]);
     track.expenseCreated({ recurring: Boolean(expense.recurring) });
     return id;
-  }, [currentUserId]);
+  }, [currentUserId, roommates]);
 
   const canManageExpense = useCallback(
     (expense: Expense) =>
@@ -3258,6 +3292,19 @@ export function AppProvider({
     (id: string, updates: Partial<Omit<Expense, "id">>) => {
       const current = expenses.find((expense) => expense.id === id);
       if (!current || !canManageExpense(current)) return false;
+      const candidate = { ...current, ...updates };
+      const activeMemberIds = new Set(roommates.map((roommate) => roommate.id));
+      if (
+        !activeMemberIds.has(candidate.paidBy) ||
+        candidate.sharedWith.some((memberId) => !activeMemberIds.has(memberId)) ||
+        (candidate.allocations &&
+          !storedExpenseAllocationIsValid(
+            candidate.amountCents ?? Math.round(candidate.amount * 100),
+            candidate.sharedWith,
+            candidate.allocations,
+            activeMemberIds,
+          ))
+      ) return false;
       setExpenses((prev) => prev.map((expense) =>
         expense.id === id
           ? { ...expense, ...updates, creatorId: expense.creatorId ?? currentUserId, updatedAt: new Date().toISOString() }
@@ -3265,7 +3312,7 @@ export function AppProvider({
       ));
       return true;
     },
-    [canManageExpense, currentUserId, expenses],
+    [canManageExpense, currentUserId, expenses, roommates],
   );
 
   const settleExpense = useCallback((id: string) => {
@@ -4244,6 +4291,8 @@ export function AppProvider({
     setPointsEnabled,
     plantEnabled,
     setPlantEnabled,
+    roommateActivityEnabled,
+    setRoommateActivityEnabled,
     leaderboardPeriod,
     setLeaderboardPeriod,
     householdId,
@@ -4343,7 +4392,7 @@ export function AppProvider({
     completeHouseholdSetup, quickGuideOpen, openQuickGuide,
     dismissQuickGuide, visibleAppAlerts, markAlertRead, markAllAlertsRead,
     householdComplete, setHouseholdComplete,
-    colorScheme, pointsEnabled, plantEnabled, leaderboardPeriod, householdId, memberships, activeSweet, householdName,
+    colorScheme, pointsEnabled, plantEnabled, roommateActivityEnabled, leaderboardPeriod, householdId, memberships, activeSweet, householdName,
     inviteCode, householdLoading, membersLoading, currentMemberRole,
     refreshMembers, refreshHousehold, createHousehold, joinHousehold, switchSweet, leaveSweet,
     deleteHousehold, removeRoommate, deleteOwnAccount, currentUserId,

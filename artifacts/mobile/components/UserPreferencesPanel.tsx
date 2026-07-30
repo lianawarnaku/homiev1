@@ -22,6 +22,8 @@ export function UserPreferencesPanel() {
     setPointsEnabled,
     plantEnabled,
     setPlantEnabled,
+    roommateActivityEnabled,
+    setRoommateActivityEnabled,
   } = useAppContext();
 
   return (
@@ -61,6 +63,16 @@ export function UserPreferencesPanel() {
             </SmoothPressable>
           );
         })}
+      </View>
+      <View style={[styles.preferenceRow, { borderTopColor: colors.border }]}>
+        <Text style={[styles.preferenceLabel, { color: colors.foreground }]}>
+          Show Roommate Activity
+        </Text>
+        <Switch
+          value={roommateActivityEnabled}
+          onValueChange={setRoommateActivityEnabled}
+          trackColor={{ false: colors.border, true: colors.primary }}
+        />
       </View>
       <View style={[styles.preferenceRow, { borderTopColor: colors.border }]}>
         <Text style={[styles.preferenceLabel, { color: colors.foreground }]}>

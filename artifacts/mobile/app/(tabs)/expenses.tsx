@@ -38,7 +38,16 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import { success as hapticSuccess } from "@/lib/haptics";
 import { tapLight } from "@/lib/haptics";
-import { buildEvenSplitCents, centsToDollars, parseMoneyToCents, validateExpenseAllocation } from "@/lib/money";
+import {
+  allocationsToDollarSplits,
+  buildEvenSplitCents,
+  buildStoredExpenseAllocations,
+  centsToDollars,
+  parseAllocationToCents,
+  parseMoneyToCents,
+  validateExpenseAllocation,
+  type ExpenseSplitMode,
+} from "@/lib/money";
 import { historyPage, isHistoricalResolution } from "@/lib/resolutionHistory";
 import {
   type ExpenseCategory,
@@ -124,6 +133,7 @@ export default function ExpensesScreen() {
   const [historyPages, setHistoryPages] = useState(1);
   const longPressedExpenseRef = useRef<string | null>(null);
   const [submittingIou, setSubmittingIou] = useState(false);
+  const [iouSubmitError, setIouSubmitError] = useState<string | null>(null);
   const submittingIouRef = useRef(false);
 
   // ── IOU builder state ──────────────────────────────────────────────────────
@@ -137,7 +147,7 @@ export default function ExpensesScreen() {
   );
   // splits: person id → dollar string they owe
   const [expSplits, setExpSplits] = useState<Record<string, string>>({});
-  const [allocationMode, setAllocationMode] = useState<"equal" | "custom">("equal");
+  const [allocationMode, setAllocationMode] = useState<ExpenseSplitMode>("equal");
   const [expRecurring, setExpRecurring] = useState<RecurringInterval | null>(null);
   const [expRecurringCustom, setExpRecurringCustom] = useState("");
   const [expenseSource, setExpenseSource] = useState<PendingIouDraft["source"]>();
@@ -154,7 +164,7 @@ export default function ExpensesScreen() {
     setExpTotalAmount(pendingIouDraft.totalAmount);
     setExpParticipants(pendingIouDraft.participants);
     setExpSplits(pendingIouDraft.splits);
-    setAllocationMode("custom");
+    setAllocationMode("exact");
     setExpenseSource(pendingIouDraft.source);
     setExpRecurring(null);
     setExpRecurringCustom("");
@@ -343,8 +353,18 @@ export default function ExpensesScreen() {
 
   // ── Update individual split ────────────────────────────────────────────────
   const updateSplit = (id: string, val: string) => {
-    setAllocationMode("custom");
+    setAllocationMode("exact");
     setExpSplits((prev) => ({ ...prev, [id]: val }));
+  };
+
+  const assignRemainder = (id: string) => {
+    if (remainingCents <= 0) return;
+    const currentCents = parseAllocationToCents(expSplits[id] ?? "") ?? 0;
+    setAllocationMode("exact");
+    setExpSplits((current) => ({
+      ...current,
+      [id]: centsToDollars(currentCents + remainingCents).toFixed(2),
+    }));
   };
 
   // ── Reset modal ────────────────────────────────────────────────────────────
@@ -362,6 +382,7 @@ export default function ExpensesScreen() {
     setExpRecurringCustom("");
     setEditingExpenseId(null);
     setExpenseSource(undefined);
+    setIouSubmitError(null);
   };
 
   // ── Open / close animation for the New IOU sheet ───────────────────────────
@@ -417,7 +438,7 @@ export default function ExpensesScreen() {
         Object.entries(item.splits ?? {}).map(([id, amt]) => [id, (amt as number).toFixed(2)])
       )
     );
-    setAllocationMode("custom");
+    setAllocationMode(item.splitMode ?? "exact");
     setExpRecurring(item.recurring ?? null);
     setExpRecurringCustom(item.recurringCustom ?? "");
     setExpenseSource(undefined);
@@ -429,28 +450,40 @@ export default function ExpensesScreen() {
     if (submittingIouRef.current || !canSubmit || !allocationValidation.valid) return;
     submittingIouRef.current = true;
     setSubmittingIou(true);
-    const numericSplits: Record<string, number> = {};
-    expParticipants.forEach((id) => {
-      numericSplits[id] = centsToDollars(allocationValidation.allocationCents[id]);
-    });
+    setIouSubmitError(null);
+    const allocations = buildStoredExpenseAllocations(
+      expParticipants,
+      allocationValidation.allocationCents,
+    );
     const payload = {
       title: expTitle.trim() || "IOU",
       amount: centsToDollars(allocationValidation.totalCents),
+      amountCents: allocationValidation.totalCents,
       paidBy: expPaidBy,
       sharedWith: expParticipants,
-      splits: numericSplits,
+      splits: allocationsToDollarSplits(allocations),
+      splitMode: allocationMode,
+      allocations,
       category: expCategory,
       recurring: expRecurring ?? undefined,
       recurringCustom: expRecurring === "custom" ? expRecurringCustom.trim() || undefined : undefined,
     };
-    if (editingExpenseId) {
-      updateExpense(editingExpenseId, payload);
-    } else {
-      const expenseId = addExpense({ ...payload, date: new Date().toISOString(), settled: false });
-      if (expenseSource) linkShoppingItemsToExpense(expenseSource.itemIds, expenseId);
+    try {
+      if (editingExpenseId) {
+        if (!updateExpense(editingExpenseId, payload)) {
+          throw new Error("This IOU could not be updated.");
+        }
+      } else {
+        const expenseId = addExpense({ ...payload, date: new Date().toISOString(), settled: false });
+        if (expenseSource) linkShoppingItemsToExpense(expenseSource.itemIds, expenseId);
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      closeIou();
+    } catch {
+      submittingIouRef.current = false;
+      setSubmittingIou(false);
+      setIouSubmitError("Couldn’t save this IOU. Check the participants and try again.");
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    closeIou();
   };
 
   const handleSendIOU = () => {
@@ -1369,7 +1402,9 @@ export default function ExpensesScreen() {
                                 textAlign: "center",
                               }}
                             >
-                              {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                              {opt === "custom"
+                                ? "Custom interval"
+                                : opt.charAt(0).toUpperCase() + opt.slice(1)}
                             </Text>
                           </TouchableOpacity>
                         );
@@ -1395,14 +1430,58 @@ export default function ExpensesScreen() {
                 ) : null}
               </View>
 
-              {/* Per-person edit */}
+              {/* Allocation mode */}
+              {expParticipants.length > 0 && totalCents !== null ? (
+                <View>
+                  <Text style={[styles.label, { color: colors.mutedForeground }]}>
+                    Split method
+                  </Text>
+                  <View style={styles.recurringOptions}>
+                    {([
+                      { value: "equal" as const, label: "Equal" },
+                      { value: "exact" as const, label: "Custom amounts" },
+                    ]).map((option) => {
+                      const selected = allocationMode === option.value;
+                      return (
+                        <TouchableOpacity
+                          key={option.value}
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: selected }}
+                          style={[
+                            styles.recurringChip,
+                            {
+                              backgroundColor: selected ? colors.primary + "22" : colors.muted,
+                              borderColor: selected ? colors.primary : colors.border,
+                              flex: 1,
+                            },
+                          ]}
+                          onPress={() => {
+                            if (option.value === "equal") recalcEvenSplit();
+                            else setAllocationMode("exact");
+                          }}
+                        >
+                          <Text style={{
+                            color: selected ? colors.primary : colors.mutedForeground,
+                            fontFamily: "Inter_600SemiBold",
+                            fontSize: 13,
+                          }}>
+                            {option.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+
+              {/* Per-person allocation */}
               {expParticipants.length > 0 && (
                 <View>
                   <View style={styles.splitHeaderRow}>
                     <Text
                       style={[styles.label, { color: colors.mutedForeground }]}
                     >
-                      Each person owes
+                      {allocationMode === "equal" ? "Equal allocation" : "Custom allocation"}
                     </Text>
                     {remainingCents !== 0 && totalParsed > 0 && (
                       <Text
@@ -1459,6 +1538,7 @@ export default function ExpensesScreen() {
                               styles.splitName,
                               { color: colors.foreground },
                             ]}
+                            numberOfLines={1}
                           >
                             {id === currentUserId ? "You" : person.name}
                           </Text>
@@ -1483,17 +1563,46 @@ export default function ExpensesScreen() {
                               ]}
                               value={expSplits[id] ?? ""}
                               onChangeText={(v) => updateSplit(id, v)}
+                              editable={allocationMode === "exact"}
                               keyboardType="decimal-pad"
                               placeholder="0.00"
                               placeholderTextColor={colors.mutedForeground}
                             />
                           </View>
+                          {allocationMode === "exact" && remainingCents > 0 ? (
+                            <TouchableOpacity
+                              onPress={() => assignRemainder(id)}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Assign remaining amount to ${person.name}`}
+                            >
+                              <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 11 }}>
+                                Remainder
+                              </Text>
+                            </TouchableOpacity>
+                          ) : null}
                         </View>
                       );
                     })}
                   </View>
                 </View>
               )}
+
+              {!allocationValidation.valid ? (
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={{ color: colors.destructive, fontFamily: "Inter_500Medium", fontSize: 13 }}
+                >
+                  {allocationValidation.reason}
+                </Text>
+              ) : null}
+              {iouSubmitError ? (
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={{ color: colors.destructive, fontFamily: "Inter_500Medium", fontSize: 13 }}
+                >
+                  {iouSubmitError}
+                </Text>
+              ) : null}
 
             </ScrollView>
 

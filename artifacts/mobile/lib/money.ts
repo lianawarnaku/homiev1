@@ -34,6 +34,61 @@ export function buildEvenSplitCents(
   );
 }
 
+export type ExpenseSplitMode = "equal" | "exact";
+
+export interface StoredExpenseAllocation {
+  participantId: string;
+  amountCents: number;
+}
+
+export function buildStoredExpenseAllocations(
+  participantIds: string[],
+  allocationCents: Record<string, number>,
+): StoredExpenseAllocation[] {
+  return [...new Set(participantIds)].map((participantId) => ({
+    participantId,
+    amountCents: allocationCents[participantId] ?? 0,
+  }));
+}
+
+export function allocationsToDollarSplits(
+  allocations: readonly StoredExpenseAllocation[],
+): Record<string, number> {
+  return Object.fromEntries(
+    allocations.map(({ participantId, amountCents }) => [
+      participantId,
+      centsToDollars(amountCents),
+    ]),
+  );
+}
+
+export function storedExpenseAllocationIsValid(
+  totalCents: number,
+  participantIds: readonly string[],
+  allocations: readonly StoredExpenseAllocation[],
+  activeMemberIds: ReadonlySet<string>,
+): boolean {
+  const uniqueParticipants = [...new Set(participantIds)];
+  if (
+    !Number.isSafeInteger(totalCents) ||
+    totalCents <= 0 ||
+    uniqueParticipants.length === 0 ||
+    uniqueParticipants.length !== participantIds.length ||
+    uniqueParticipants.some((id) => !activeMemberIds.has(id)) ||
+    allocations.length !== uniqueParticipants.length
+  ) {
+    return false;
+  }
+  const byParticipant = new Map(
+    allocations.map((allocation) => [allocation.participantId, allocation.amountCents]),
+  );
+  if (byParticipant.size !== allocations.length) return false;
+  return uniqueParticipants.every((id) => {
+    const cents = byParticipant.get(id);
+    return Number.isSafeInteger(cents) && (cents ?? -1) >= 0;
+  }) && [...byParticipant.values()].reduce((sum, cents) => sum + cents, 0) === totalCents;
+}
+
 export interface ExpenseAllocationInput {
   total: string;
   payerId: string;
