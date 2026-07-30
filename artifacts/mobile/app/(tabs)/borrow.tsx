@@ -1,8 +1,9 @@
 // grabbing a specific named export from a package
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
@@ -27,6 +28,7 @@ import { useAppContextSelector, type BorrowItem } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { useConfirm } from "@/hooks/useConfirm";
 import { historyPage, isHistoricalResolution } from "@/lib/resolutionHistory";
+import { canSaveBorrowDraft } from "@/lib/borrowValidation";
 
 function daysBetween(a: string, b: string) {
   return Math.round(
@@ -106,6 +108,8 @@ export default function BorrowScreen() {
   const [borrowedDate, setBorrowedDate] = useState(() => dateInput());
   const [dueDate, setDueDate] = useState(() => dateInput(7));
   const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savePendingRef = useRef(false);
   const [notes, setNotes] = useState("");
   const [privateEntry, setPrivateEntry] = useState(false);
   // Collapse the "Returned" section into a single tile when there are more
@@ -171,14 +175,15 @@ export default function BorrowScreen() {
   };
 
   const handleSave = () => {
+    if (savePendingRef.current) return;
+    savePendingRef.current = true;
+    setSaving(true);
     const borrowedAt = parseDateInput(borrowedDate);
     const due = parseDateInput(dueDate, true);
     if (!item.trim() || !borrowedFrom || !borrowedBy) {
       setFormError("Choose an owner, borrower, and item.");
-      return;
-    }
-    if (borrowedFrom === borrowedBy) {
-      setFormError("Owner and borrower must be different Sweetmates.");
+      savePendingRef.current = false;
+      setSaving(false);
       return;
     }
     if (
@@ -189,6 +194,8 @@ export default function BorrowScreen() {
       new Date(due) < new Date(borrowedAt)
     ) {
       setFormError("Enter valid dates and active Sweetmates.");
+      savePendingRef.current = false;
+      setSaving(false);
       return;
     }
     let saved: boolean;
@@ -216,9 +223,13 @@ export default function BorrowScreen() {
     }
     if (!saved) {
       setFormError("This borrowing record could not be saved.");
+      savePendingRef.current = false;
+      setSaving(false);
       return;
     }
     closeModal();
+    savePendingRef.current = false;
+    setSaving(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
@@ -304,7 +315,7 @@ export default function BorrowScreen() {
           ) : null
         }
         ListFooterComponent={
-          returnedBorrows.length > 0 && !showAllReturned ? (
+          !showAllReturned ? (
             <TouchableOpacity
               style={[
                 styles.returnedTile,
@@ -332,8 +343,15 @@ export default function BorrowScreen() {
               </View>
               <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
             </TouchableOpacity>
-          ) : returnedBorrows.length > 0 && showAllReturned ? (
+          ) : (
             <View style={styles.historyFooter}>
+              {returnedBorrows.length === 0 ? (
+                <EmptyState
+                  icon="archive"
+                  title="No borrowing history"
+                  subtitle="Returned items move here after seven days"
+                />
+              ) : null}
               {visibleReturnedBorrows.length < returnedBorrows.length ? (
                 <TouchableOpacity
                   style={[styles.hideReturnedBtn, { borderColor: colors.border }]}
@@ -362,7 +380,7 @@ export default function BorrowScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-          ) : null
+          )
         }
         renderItem={({ item: borrow, index }) => {
           const showReturnedHeader =
@@ -373,6 +391,7 @@ export default function BorrowScreen() {
           const borrower = roommates.find((r) => r.id === borrow.borrowedBy);
           const ownerName = owner?.name ?? borrow.ownerName ?? "Former Sweetmate";
           const borrowerName = borrower?.name ?? borrow.borrowerName ?? "Former Sweetmate";
+          const isSelfBorrow = borrow.borrowedFrom === borrow.borrowedBy;
           const isOverdueItem =
             !borrow.returned && new Date(borrow.dueDate) < new Date();
           const dueText = borrow.returned
@@ -470,7 +489,14 @@ export default function BorrowScreen() {
                       </Text>
                     </View>
                   ) : null}
-                  {owner ? (
+                  {isSelfBorrow ? (
+                    <Text
+                      style={[styles.ownerText, { color: colors.mutedForeground }]}
+                      accessibilityLabel={`Owner and borrower: ${isOwner ? "You" : ownerName}`}
+                    >
+                      {isOwner ? "Borrowing from yourself" : `Self-borrow · ${ownerName}`}
+                    </Text>
+                  ) : owner ? (
                     <View style={styles.ownerRow}>
                       <RoommateAvatar
                         name={owner.name}
@@ -768,24 +794,32 @@ export default function BorrowScreen() {
             style={[
               styles.saveBtn,
               {
-                backgroundColor:
-                  item.trim() &&
-                  borrowedFrom &&
-                  borrowedBy &&
-                  borrowedFrom !== borrowedBy
-                    ? colors.primary
-                    : colors.muted,
+                backgroundColor: canSaveBorrowDraft({
+                  item,
+                  ownerId: borrowedFrom,
+                  borrowerId: borrowedBy,
+                  householdMemberIds: roommates.map((member) => member.id),
+                }) && !saving
+                  ? colors.primary
+                  : colors.muted,
               },
             ]}
             disabled={
-              !item.trim() ||
-              !borrowedFrom ||
-              !borrowedBy ||
-              borrowedFrom === borrowedBy
+              saving ||
+              !canSaveBorrowDraft({
+                item,
+                ownerId: borrowedFrom,
+                borrowerId: borrowedBy,
+                householdMemberIds: roommates.map((member) => member.id),
+              })
             }
             onPress={handleSave}
           >
-            <Text style={styles.saveBtnText}>Save</Text>
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.saveBtnText}>Save</Text>
+            )}
           </TouchableOpacity>
           </ScrollView>
         </View>

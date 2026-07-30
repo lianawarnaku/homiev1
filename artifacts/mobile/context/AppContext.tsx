@@ -33,6 +33,7 @@ import {
   materializeRecurringOccurrences,
 } from "@/lib/choreOccurrences";
 import { choreCompletionTransition } from "@/lib/choreCompletion";
+import { hasValidBorrowParticipants } from "@/lib/borrowValidation";
 import {
   assignmentsFromRows,
   migrateEssentialAssignments,
@@ -3413,7 +3414,11 @@ export function AppProvider({
       !userId ||
       !owner ||
       !borrower ||
-      owner.id === borrower.id ||
+      !hasValidBorrowParticipants(
+        owner.id,
+        borrower.id,
+        roommates.map((member) => member.id),
+      ) ||
       !item.item.trim() ||
       !Number.isFinite(new Date(item.borrowedAt).getTime()) ||
       !Number.isFinite(new Date(item.dueDate).getTime()) ||
@@ -3468,7 +3473,11 @@ export function AppProvider({
       if (
         !owner ||
         !borrower ||
-        owner.id === borrower.id ||
+        !hasValidBorrowParticipants(
+          owner.id,
+          borrower.id,
+          roommates.map((member) => member.id),
+        ) ||
         !nextItem.trim() ||
         !Number.isFinite(new Date(borrowedAt).getTime()) ||
         !Number.isFinite(new Date(dueDate).getTime())
