@@ -33,13 +33,19 @@ import {
 } from "@/lib/essentialShopping";
 import {
   advanceChoreDueDate,
+  advanceScheduledDate,
   resolveRoundRobinParticipants,
 } from "@/lib/choreSchedule";
 import {
   choreLocalDateKey,
+  choreScheduledDate,
+  deleteRecurringChore,
   materializeRecurringOccurrences,
+  recurringOccurrenceId,
 } from "@/lib/choreOccurrences";
 import { choreCompletionTransition } from "@/lib/choreCompletion";
+import { choreNow } from "@/lib/choreClock";
+import { recurringChoreClaims } from "@/lib/recurringChoreClaims";
 import {
   canManageBorrowItem,
   hasValidBorrowParticipants,
@@ -123,6 +129,12 @@ export interface Chore {
   dueDate: string;
   initialDueDate?: string;
   nextDueDate?: string;
+  /** Stable calendar identity; unlike dueDate it does not change across device timezones. */
+  scheduledDate?: string;
+  initialScheduledDate?: string;
+  monthlyAnchorDay?: number;
+  excludedOccurrenceDates?: string[];
+  recurrenceEndsOn?: string;
   completed: boolean;
   completedAt?: string;
   points: number;
@@ -731,8 +743,9 @@ export function AppProvider({
   const [loaded, setLoaded] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
   const [activeCalendarDay, setActiveCalendarDay] = useState(() =>
-    choreLocalDateKey(new Date()),
+    choreLocalDateKey(choreNow()),
   );
+  const [recurrenceRefreshTick, setRecurrenceRefreshTick] = useState(0);
   const membershipLoadGenerationRef = useRef(0);
   const sweetDataCacheRef = useRef<Record<string, SharedHouseholdState>>({});
   const applyingRemoteRef = useRef(false);
@@ -745,8 +758,11 @@ export function AppProvider({
     localPreferencesLoaded && (!householdId || householdPreferencesReady);
 
   useEffect(() => {
-    const refreshDay = () => setActiveCalendarDay(choreLocalDateKey(new Date()));
-    const now = new Date();
+    const refreshDay = () => {
+      setActiveCalendarDay(choreLocalDateKey(choreNow()));
+      setRecurrenceRefreshTick((current) => current + 1);
+    };
+    const now = choreNow();
     const nextMidnight = new Date(
       now.getFullYear(),
       now.getMonth(),
@@ -771,12 +787,30 @@ export function AppProvider({
     const reconciled = materializeRecurringOccurrences(
       choresRef.current,
       new Date(`${activeCalendarDay}T12:00:00`),
-      makeId,
+      choreNow().toISOString(),
     );
-    if (reconciled === choresRef.current) return;
-    choresRef.current = reconciled;
-    setChores(reconciled);
-  }, [activeCalendarDay, chores, householdId, loaded]);
+    if (reconciled !== choresRef.current) {
+      choresRef.current = reconciled;
+      setChores(reconciled);
+    }
+    const claims = recurringChoreClaims(reconciled, householdId);
+    if (claims.length) {
+      void supabase
+        .from("recurring_chore_occurrence_keys")
+        .upsert(claims, {
+          onConflict: "household_id,recurrence_series_id,scheduled_date",
+          ignoreDuplicates: true,
+        })
+        .then(({ error }) => {
+          if (error) {
+            reportSupabaseError("claim recurring chore occurrences", error, {
+              householdId,
+              count: claims.length,
+            });
+          }
+        });
+    }
+  }, [activeCalendarDay, householdId, loaded, recurrenceRefreshTick]);
 
   const preferenceUserId = session?.user.id;
 
@@ -2066,7 +2100,10 @@ export function AppProvider({
     const hasNewerLocalChoreChange = remoteChores
       ? choresRef.current.some((local) => {
           const remote = remoteChoresById.get(local.id);
-          return remote && (local.updatedAt ?? "") > (remote.updatedAt ?? "");
+          return (
+            (remote && (local.updatedAt ?? "") > (remote.updatedAt ?? "")) ||
+            (!remote && local.id.startsWith("occurrence:"))
+          );
         })
       : false;
     if (Array.isArray(next.roommates) && !hasNewerLocalChoreChange) {
@@ -2092,6 +2129,12 @@ export function AppProvider({
         return local && (local.updatedAt ?? "") > (remote.updatedAt ?? "")
           ? local
           : remote;
+      });
+      const mergedIds = new Set(mergedChores.map((chore) => chore.id));
+      choresRef.current.forEach((local) => {
+        if (local.id.startsWith("occurrence:") && !mergedIds.has(local.id)) {
+          mergedChores.push(local);
+        }
       });
       choresRef.current = mergedChores;
       setChores(mergedChores);
@@ -2850,6 +2893,13 @@ export function AppProvider({
       assignmentMode: chore.assignmentMode ?? "specific-person",
       initialDueDate: chore.initialDueDate ?? chore.dueDate,
       nextDueDate: chore.nextDueDate ?? chore.dueDate,
+      scheduledDate: chore.scheduledDate ?? choreLocalDateKey(chore.dueDate),
+      initialScheduledDate:
+        chore.initialScheduledDate ??
+        choreLocalDateKey(chore.initialDueDate ?? chore.dueDate),
+      monthlyAnchorDay:
+        chore.monthlyAnchorDay ??
+        Number(choreLocalDateKey(chore.initialDueDate ?? chore.dueDate).slice(-2)),
       roundRobinCursor: chore.roundRobinCursor ?? 0,
       occurrenceIndex: chore.occurrenceIndex ?? 0,
       recurrenceSeriesId: chore.recurring
@@ -2884,6 +2934,9 @@ export function AppProvider({
       createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
     };
+    if (updates.dueDate && updates.dueDate !== current.dueDate) {
+      candidate.scheduledDate = choreLocalDateKey(updates.dueDate);
+    }
     const activeMemberIds = new Set(roommates.map((roommate) => roommate.id));
     if (
       !candidate.title.trim() ||
@@ -2925,6 +2978,13 @@ export function AppProvider({
         assignmentMode: chore.assignmentMode ?? "specific-person",
         initialDueDate: chore.initialDueDate ?? chore.dueDate,
         nextDueDate: chore.nextDueDate ?? chore.dueDate,
+        scheduledDate: chore.scheduledDate ?? choreLocalDateKey(chore.dueDate),
+        initialScheduledDate:
+          chore.initialScheduledDate ??
+          choreLocalDateKey(chore.initialDueDate ?? chore.dueDate),
+        monthlyAnchorDay:
+          chore.monthlyAnchorDay ??
+          Number(choreLocalDateKey(chore.initialDueDate ?? chore.dueDate).slice(-2)),
         roundRobinCursor: chore.roundRobinCursor ?? 0,
         occurrenceIndex: chore.occurrenceIndex ?? 0,
         recurrenceSeriesId: chore.recurring
@@ -2959,7 +3019,7 @@ export function AppProvider({
     }
     const wasCompleted = chore.completed;
     const delta = transition.pointsDelta;
-    const completedAt = new Date().toISOString();
+    const completedAt = choreNow().toISOString();
 
     let nextChores: Chore[];
     if (wasCompleted) {
@@ -2984,61 +3044,112 @@ export function AppProvider({
             : candidate,
         );
     } else if (chore.recurring) {
-      let nextDueDate = advanceChoreDueDate(chore.dueDate, chore.recurring);
+      const monthlyAnchorDay =
+        chore.monthlyAnchorDay ??
+        Number(
+          choreLocalDateKey(chore.initialDueDate ?? chore.dueDate).slice(-2),
+        );
+      let nextScheduledDate = advanceScheduledDate(
+        choreScheduledDate(chore),
+        chore.recurring,
+        monthlyAnchorDay,
+      );
+      let nextDueDate = advanceChoreDueDate(
+        chore.dueDate,
+        chore.recurring,
+        monthlyAnchorDay,
+      );
       let recurrenceSteps = 1;
-      while (new Date(nextDueDate).getTime() <= Date.now()) {
-        nextDueDate = advanceChoreDueDate(nextDueDate, chore.recurring);
+      const todayKey = choreLocalDateKey(choreNow());
+      while (nextScheduledDate <= todayKey) {
+        nextScheduledDate = advanceScheduledDate(
+          nextScheduledDate,
+          chore.recurring,
+          monthlyAnchorDay,
+        );
+        nextDueDate = advanceChoreDueDate(
+          nextDueDate,
+          chore.recurring,
+          monthlyAnchorDay,
+        );
         recurrenceSteps += 1;
       }
 
-      const activeMemberIds = roommates.map((roommate) => roommate.id);
-      const participants = resolveRoundRobinParticipants(chore, activeMemberIds);
-      const currentCursor = chore.roundRobinCursor ?? Math.max(
-        participants.indexOf(chore.assignedTo),
-        0,
-      );
-      const nextCursor = participants.length
-        ? (currentCursor + recurrenceSteps) % participants.length
-        : 0;
-      const existingNextOccurrence = choresRef.current.find((candidate) =>
-        candidate.id !== chore.id &&
-        (candidate.recurrenceSeriesId ?? candidate.id) ===
-          (chore.recurrenceSeriesId ?? chore.id) &&
-        choreLocalDateKey(candidate.dueDate) === choreLocalDateKey(nextDueDate)
-      );
-      const nextId = existingNextOccurrence?.id ?? makeId();
-      const nextOccurrence: Chore = {
-        ...chore,
-        id: nextId,
-        assignedTo:
-          chore.assignmentMode === "round-robin"
-            ? participants[nextCursor] ?? chore.assignedTo
-            : chore.assignedTo,
-        roundRobinParticipantIds: participants.length
-          ? participants
-          : chore.roundRobinParticipantIds,
-        roundRobinCursor: nextCursor,
-        dueDate: nextDueDate,
-        nextDueDate,
-        completed: false,
-        completedAt: undefined,
-        occurrenceIndex: (chore.occurrenceIndex ?? 0) + recurrenceSteps,
-        nextOccurrenceId: undefined,
-        createdAt: completedAt,
-        updatedAt: completedAt,
-      };
-      nextChores = choresRef.current.map((candidate) =>
-        candidate.id === id
-          ? {
-              ...candidate,
-              completed: true,
-              completedAt,
-              nextOccurrenceId: nextId,
-              updatedAt: completedAt,
-            }
-          : candidate,
-      );
-      if (!existingNextOccurrence) nextChores.push(nextOccurrence);
+      const recurrenceStopped =
+        Boolean(chore.recurrenceEndsOn && nextScheduledDate >= chore.recurrenceEndsOn) ||
+        (chore.excludedOccurrenceDates ?? []).includes(nextScheduledDate);
+      if (recurrenceStopped) {
+        nextChores = choresRef.current.map((candidate) =>
+          candidate.id === id
+            ? {
+                ...candidate,
+                completed: true,
+                completedAt,
+                nextOccurrenceId: undefined,
+                updatedAt: completedAt,
+              }
+            : candidate,
+        );
+      } else {
+        const activeMemberIds = roommates.map((roommate) => roommate.id);
+        const participants = resolveRoundRobinParticipants(chore, activeMemberIds);
+        const currentCursor = chore.roundRobinCursor ?? Math.max(
+          participants.indexOf(chore.assignedTo),
+          0,
+        );
+        const nextCursor = participants.length
+          ? (currentCursor + recurrenceSteps) % participants.length
+          : 0;
+        const existingNextOccurrence = choresRef.current.find((candidate) =>
+          candidate.id !== chore.id &&
+          (candidate.recurrenceSeriesId ?? candidate.id) ===
+            (chore.recurrenceSeriesId ?? chore.id) &&
+          choreScheduledDate(candidate) === nextScheduledDate
+        );
+        const seriesId = chore.recurrenceSeriesId ?? chore.id;
+        const nextId = existingNextOccurrence?.id ?? recurringOccurrenceId(
+          chore.householdId,
+          seriesId,
+          nextScheduledDate,
+        );
+        const nextOccurrence: Chore = {
+          ...chore,
+          id: nextId,
+          assignedTo:
+            chore.assignmentMode === "round-robin"
+              ? participants[nextCursor] ?? chore.assignedTo
+              : chore.assignedTo,
+          roundRobinParticipantIds: participants.length
+            ? participants
+            : chore.roundRobinParticipantIds,
+          roundRobinCursor: nextCursor,
+          dueDate: nextDueDate,
+          scheduledDate: nextScheduledDate,
+          initialScheduledDate:
+            chore.initialScheduledDate ??
+            choreLocalDateKey(chore.initialDueDate ?? chore.dueDate),
+          monthlyAnchorDay,
+          nextDueDate,
+          completed: false,
+          completedAt: undefined,
+          occurrenceIndex: (chore.occurrenceIndex ?? 0) + recurrenceSteps,
+          nextOccurrenceId: undefined,
+          createdAt: completedAt,
+          updatedAt: completedAt,
+        };
+        nextChores = choresRef.current.map((candidate) =>
+          candidate.id === id
+            ? {
+                ...candidate,
+                completed: true,
+                completedAt,
+                nextOccurrenceId: nextId,
+                updatedAt: completedAt,
+              }
+            : candidate,
+        );
+        if (!existingNextOccurrence) nextChores.push(nextOccurrence);
+      }
     } else {
       nextChores = choresRef.current.map((candidate) =>
         candidate.id === id
@@ -3106,17 +3217,13 @@ export function AppProvider({
   ): boolean => {
     const target = choresRef.current.find((chore) => chore.id === id);
     if (!target || !canManageChore(target)) return false;
-    const seriesId = target.recurrenceSeriesId;
-    const occurrenceIndex = target.occurrenceIndex ?? 0;
-    const next = choresRef.current.filter((chore) => {
-      if (chore.id === id) return false;
-      if (!seriesId || chore.recurrenceSeriesId !== seriesId) return true;
-      if (scope === "series") return false;
-      if (scope === "future") {
-        return (chore.occurrenceIndex ?? 0) < occurrenceIndex;
-      }
-      return true;
-    });
+    const changedAt = choreNow().toISOString();
+    const next = deleteRecurringChore(
+      choresRef.current,
+      target,
+      scope,
+      changedAt,
+    );
     choresRef.current = next;
     setChores(next);
     track.choreDeleted({ recurring: Boolean(target.recurring) });

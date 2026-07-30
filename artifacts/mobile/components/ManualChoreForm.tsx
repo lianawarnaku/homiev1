@@ -306,6 +306,12 @@ export function ManualChoreForm({
           </TouchableOpacity>
         ))}
       </View>
+      {recurrence === "monthly" ? (
+        <Text style={[styles.orderText, { color: colors.mutedForeground }]}>
+          If a month is shorter than the selected date, this chore is due on
+          that month’s final day. Later months return to the original date.
+        </Text>
+      ) : null}
       <Text style={[styles.label, { color: colors.mutedForeground }]}>First due date</Text>
       <View style={styles.wrap}>
         {[

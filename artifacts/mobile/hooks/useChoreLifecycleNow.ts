@@ -3,12 +3,13 @@ import { AppState } from "react-native";
 
 import type { Chore } from "@/context/AppContext";
 import { completedRetentionBoundary } from "@/lib/choreLifecycle";
+import { choreNow } from "@/lib/choreClock";
 
 export function useChoreLifecycleNow(chores: Chore[]): Date {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(choreNow);
 
   useEffect(() => {
-    const current = new Date();
+    const current = choreNow();
     const nextMidnight = new Date(
       current.getFullYear(),
       current.getMonth(),
@@ -24,11 +25,11 @@ export function useChoreLifecycleNow(chores: Chore[]): Date {
       nextRetentionBoundary ?? Number.POSITIVE_INFINITY,
     );
     const timer = setTimeout(
-      () => setNow(new Date()),
+      () => setNow(choreNow()),
       Math.max(1, nextRefresh - current.getTime() + 25),
     );
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") setNow(new Date());
+      if (state === "active") setNow(choreNow());
     });
     return () => {
       clearTimeout(timer);

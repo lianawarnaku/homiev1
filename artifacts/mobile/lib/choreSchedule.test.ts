@@ -1,6 +1,7 @@
 import type { Chore } from "../context/AppContext";
 import {
   advanceChoreDueDate,
+  advanceScheduledDate,
   resolveRoundRobinParticipants,
 } from "./choreSchedule.ts";
 
@@ -15,6 +16,27 @@ assert(monthly.getMonth() === 1 && monthly.getDate() === 28, "monthly recurrence
 const leapBase = new Date(2028, 0, 31, 23, 59).toISOString();
 const leapMonthly = new Date(advanceChoreDueDate(leapBase, "monthly"));
 assert(leapMonthly.getMonth() === 1 && leapMonthly.getDate() === 29, "monthly recurrence must clamp to leap day");
+assert(
+  advanceScheduledDate(
+    advanceScheduledDate("2026-01-31", "monthly", 31),
+    "monthly",
+    31,
+  ) === "2026-03-31",
+  "monthly clamping must return to the anchored day after a short month",
+);
+assert(
+  advanceScheduledDate("2028-01-31", "monthly", 31) === "2028-02-29",
+  "date-only monthly calculation must support leap years",
+);
+assert(
+  advanceScheduledDate("2026-12-15", "monthly", 15) === "2027-01-15",
+  "monthly recurrence must cross year boundaries",
+);
+assert(
+  advanceScheduledDate("2026-07-27", "weekly") === "2026-08-03" &&
+    advanceScheduledDate("2026-07-27", "biweekly") === "2026-08-10",
+  "weekly and biweekly schedules must preserve their interval across month boundaries",
+);
 
 const sunday = new Date(2026, 6, 26, 23, 59).toISOString();
 const weekly = new Date(advanceChoreDueDate(sunday, "weekly"));

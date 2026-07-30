@@ -2,8 +2,11 @@ import type { Chore } from "../context/AppContext";
 import {
   choreLocalDateKey,
   choreOccurrenceIdentity,
+  choreScheduledDate,
+  deleteRecurringChore,
   isChoreActiveOnDay,
   isChoreCarryoverOnDay,
+  MAX_RECURRING_OCCURRENCES_PER_PASS,
   materializeRecurringOccurrences,
 } from "./choreOccurrences.ts";
 
@@ -45,11 +48,9 @@ const recurring: Chore = {
   initialDueDate: due,
   occurrenceIndex: 0,
 };
-let id = 0;
 const materialized = materializeRecurringOccurrences(
   [recurring],
   new Date(2026, 6, 29, 12),
-  () => `generated-${++id}`,
 );
 const daily = materialized
   .filter((chore) => chore.recurrenceSeriesId === "daily-root")
@@ -71,7 +72,6 @@ assert(!mondayDone[2].completed, "completion must not leak to a later occurrence
 const rerun = materializeRecurringOccurrences(
   materialized,
   new Date(2026, 6, 29, 12),
-  () => `duplicate-${++id}`,
 );
 assert(rerun === materialized, "reconciliation must be idempotent and create no daily duplicates");
 
@@ -83,10 +83,115 @@ const otherHousehold = { ...recurring, id: "other-root", householdId: "home-b" }
 const isolated = materializeRecurringOccurrences(
   [recurring, otherHousehold],
   new Date(2026, 6, 28),
-  () => `isolated-${++id}`,
 );
 assert(
   isolated.filter((chore) => chore.householdId === "home-a").length === 2 &&
     isolated.filter((chore) => chore.householdId === "home-b").length === 2,
   "materialization must isolate households",
+);
+
+const weeklyRoot: Chore = {
+  ...recurring,
+  id: "weekly-root",
+  recurrenceSeriesId: "weekly-root",
+  recurring: "weekly",
+  dueDate: new Date(2026, 6, 6, 23, 59).toISOString(),
+  initialDueDate: new Date(2026, 6, 6, 23, 59).toISOString(),
+};
+const weeklyCatchUp = materializeRecurringOccurrences(
+  [weeklyRoot],
+  new Date(2026, 6, 27, 12),
+);
+assert(
+  weeklyCatchUp.filter((chore) => chore.recurrenceSeriesId === "weekly-root").length === 4,
+  "app-closed catch-up must materialize every missed weekly occurrence",
+);
+assert(
+  weeklyCatchUp.every((chore) => choreScheduledDate(chore) !== ""),
+  "every recurring occurrence must persist a timezone-stable scheduled date",
+);
+
+const biweeklyRoot: Chore = {
+  ...weeklyRoot,
+  id: "biweekly-root",
+  recurrenceSeriesId: "biweekly-root",
+  recurring: "biweekly",
+};
+assert(
+  materializeRecurringOccurrences([biweeklyRoot], new Date(2026, 7, 3))
+    .filter((chore) => chore.recurrenceSeriesId === "biweekly-root").length === 3,
+  "biweekly catch-up must preserve the two-week interval",
+);
+
+const historical = materialized.map((chore) => ({
+  ...chore,
+  completed: true,
+  completedAt: "2026-07-30T12:00:00.000Z",
+}));
+assert(
+  materializeRecurringOccurrences(historical, new Date(2026, 6, 29)) === historical,
+  "completed historical occurrence identities must prevent regeneration",
+);
+
+const deterministicA = materializeRecurringOccurrences(
+  [weeklyRoot],
+  new Date(2026, 6, 13),
+);
+const deterministicB = materializeRecurringOccurrences(
+  [weeklyRoot],
+  new Date(2026, 6, 13),
+);
+assert(
+  deterministicA.map((chore) => chore.id).join(",") ===
+    deterministicB.map((chore) => chore.id).join(","),
+  "two clients must derive the same deterministic occurrence IDs",
+);
+
+const longCatchUpFirstPass = materializeRecurringOccurrences(
+  [recurring],
+  new Date(2027, 7, 31),
+);
+assert(
+  longCatchUpFirstPass.length === MAX_RECURRING_OCCURRENCES_PER_PASS + 1,
+  "one catch-up pass must be bounded without dropping the existing anchor",
+);
+const longCatchUpSecondPass = materializeRecurringOccurrences(
+  longCatchUpFirstPass,
+  new Date(2027, 7, 31),
+);
+assert(
+  longCatchUpSecondPass.length > longCatchUpFirstPass.length,
+  "a later lifecycle pass must resume a bounded catch-up",
+);
+
+const deletedOccurrence = deleteRecurringChore(
+  weeklyCatchUp,
+  weeklyCatchUp[1],
+  "occurrence",
+  "2026-07-30T12:00:00.000Z",
+);
+assert(
+  materializeRecurringOccurrences(deletedOccurrence, new Date(2026, 6, 27))
+    .length === deletedOccurrence.length,
+  "deleting one occurrence must persist an exclusion and prevent regeneration",
+);
+const deletedFuture = deleteRecurringChore(
+  weeklyCatchUp,
+  weeklyCatchUp[2],
+  "future",
+  "2026-07-30T12:00:00.000Z",
+);
+assert(
+  materializeRecurringOccurrences(deletedFuture, new Date(2026, 7, 31))
+    .length === deletedFuture.length,
+  "deleting this and future must persist a series end date",
+);
+assert(
+  deleteRecurringChore(
+    weeklyCatchUp,
+    weeklyCatchUp[0],
+    "series",
+    "2026-07-30T12:00:00.000Z",
+  ).length === 0,
+  "deleting a recurring series must remove every durable occurrence",
 );

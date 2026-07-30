@@ -292,6 +292,36 @@ The repository has no React Native component-test harness, Jest/Vitest configura
 
 Recommended next tests are a mounted-context reducer test after extracting chore mutations, Supabase integration tests with two authenticated users, and Maestro/Detox flows for the manual sheet and recurrence deletion prompts.
 
+## 2026-07-30 recurrence reliability update
+
+Recurring chores remain snapshot-backed, but recurrence materialization now has
+one lifecycle owner in `AppContext`: household hydration, local midnight, and
+app foreground activation. My Home and Group only query the resulting durable
+occurrences and never generate them.
+
+Each recurring record persists a calendar-only `scheduledDate`, an
+`initialScheduledDate`, and a monthly anchor day. Generated IDs are
+deterministic from household ID, series ID, and scheduled date. A normalized
+Supabase occurrence-key table enforces the same unique tuple under RLS, while
+the snapshot merge retains deterministic local-only occurrences during
+concurrent client refreshes.
+
+Monthly schedules clamp to the last valid day of a short month and return to
+the original anchor afterward (January 31 → February 28/29 → March 31).
+Daily, weekly, biweekly, monthly, and one-time are the only supported schedule
+types; selected-weekday, annual, pause/resume, and arbitrary interval schedules
+are not currently product features.
+
+Catch-up materializes all missed occurrences through today, preserving their
+original scheduled dates and assignments. A pass adds at most 366 occurrences
+per series; unusually old daily series resume on the next lifecycle pass.
+Schedule traversal is capped at 10,000 dates per pass. Existing completed
+occurrences count as present and are never regenerated.
+
+For development-only clock testing, set `EXPO_PUBLIC_CHORE_NOW` to an ISO
+timestamp and restart or foreground the app. Production builds ignore this
+override.
+
 ## 14. Recommended implementation changes
 
 1. Move chores to normalized database tables: recurring template, dated occurrence, completion record, and occurrence assignee. Add unique `(series_id, scheduled_local_date)` and revision constraints.
