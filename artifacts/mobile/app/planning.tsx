@@ -32,6 +32,7 @@ import {
   type EssentialSubsection,
 } from "@/constants/essentialCatalog";
 import { track } from "@/lib/analytics";
+import { essentialRecommendationsForHousingType } from "@/lib/essentialRecommendations";
 
 type PlanType = "chore-chart" | "home-checklist" | null;
 type HousingType = "traditional" | "suite" | "apartment" | null;
@@ -626,7 +627,11 @@ function SectionCard({
 export default function PlanningScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ type?: string; setup?: string }>();
+  const params = useLocalSearchParams<{
+    type?: string;
+    setup?: string;
+    housingType?: string;
+  }>();
   const setupMode = params.setup === "household";
   const {
     roommates, addChore, addChores, essentialsAssignees, setEssentialSelfAssignment,
@@ -636,6 +641,12 @@ export default function PlanningScreen() {
     addCustomTask, deleteCustomTask, memberPreferences, setMemberPreference,
     currentUserId, setHouseholdSetupStep,
   } = useAppContext();
+  const recommendations = essentialRecommendationsForHousingType(
+    setupMode ? params.housingType : homeProfile?.housingType,
+  );
+  const recommendedKeys = new Set(
+    recommendations.map(({ categoryId, itemId }) => `${categoryId}:${itemId}`),
+  );
 
   const [selectedType, setSelectedType] = useState<PlanType>(() =>
     params.type === "home-checklist" || params.type === "chore-chart"
@@ -758,19 +769,13 @@ export default function PlanningScreen() {
   }
 
   function openShortlist() {
-    const hasSaved = Object.values(essentialShortlist).some((section) =>
-      Object.values(section).some(Boolean),
-    );
     const next = Object.fromEntries(
       ESSENTIAL_CATALOG.map((category) => [
         category.id,
         Object.fromEntries(
           category.items.map((entry) => [
             entry.id,
-            !essentialOwned[category.id]?.[entry.id] &&
-              (hasSaved
-                ? Boolean(essentialShortlist[category.id]?.[entry.id])
-                : entry.subsection !== "optional"),
+            Boolean(essentialShortlist[category.id]?.[entry.id]),
           ]),
         ),
       ]),
@@ -796,6 +801,23 @@ export default function PlanningScreen() {
       ...current,
       [categoryId]: { ...(current[categoryId] ?? {}), [itemId]: selected },
     }));
+  }
+
+  function selectRecommendedItems() {
+    setShortlistSaveMessage(null);
+    setShortlistTransferMessage(null);
+    setShortlistDraft((current) =>
+      recommendations.reduce(
+        (next, { categoryId, itemId }) => ({
+          ...next,
+          [categoryId]: {
+            ...(next[categoryId] ?? {}),
+            [itemId]: true,
+          },
+        }),
+        current,
+      ),
+    );
   }
 
   function toggleOwnedItem(categoryId: string, itemId: string) {
@@ -852,7 +874,7 @@ export default function PlanningScreen() {
     });
     setShortlistSaveMessage(
       count
-        ? "Shortlist saved. Assigned items appear in each Sweetmate’s My Home list."
+        ? "Shortlist saved for your household."
         : "Shortlist cleared.",
     );
     shortlistBaselineRef.current = shortlistDraft;
@@ -895,7 +917,7 @@ export default function PlanningScreen() {
         continuingSetupRef.current = false;
         return;
       }
-      await setHouseholdSetupStep("home");
+      await setHouseholdSetupStep("items");
       router.replace("/sweet-setup" as never);
     } catch (setupError) {
       continuingSetupRef.current = false;
@@ -1990,6 +2012,27 @@ export default function PlanningScreen() {
           </TouchableOpacity>
         </View>
         <ScrollView style={styles.shortlistScroll} contentContainerStyle={styles.shortlistContent}>
+          {recommendations.length > 0 ? (
+            <View style={[styles.recommendationBanner, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "40" }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.shortlistCount, { color: colors.foreground }]}>
+                  Suggested based on your space
+                </Text>
+                <Text style={[styles.shortlistHelper, { color: colors.mutedForeground }]}>
+                  {recommendations.length} chore-related essentials. Suggestions stay unselected until you choose them.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={selectRecommendedItems}
+                accessibilityRole="button"
+                accessibilityLabel="Select recommended Sweet Essentials"
+              >
+                <Text style={[styles.shortlistAction, { color: colors.primary }]}>
+                  Select recommended
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
           {ESSENTIAL_CATALOG.map((category) => (
             <View
               key={category.id}
@@ -2043,7 +2086,13 @@ export default function PlanningScreen() {
                             {entry.label}
                           </Text>
                           <Text style={[styles.shortlistStatus, { color: colors.mutedForeground }]}>
-                            {owned ? "Owned" : subsection === "optional" ? "Optional" : "Needed"}
+                            {owned
+                              ? "Owned"
+                              : recommendedKeys.has(`${category.id}:${entry.id}`)
+                                ? "Recommended"
+                                : subsection === "optional"
+                                  ? "Optional"
+                                  : "Available"}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -2351,6 +2400,7 @@ const styles = StyleSheet.create({
   shortlistUpdatedBy: { fontFamily: "Inter_500Medium", fontSize: 12, marginTop: 5 },
   shortlistScroll: { flex: 1 },
   shortlistContent: { padding: 16, gap: 12 },
+  recommendationBanner: { borderWidth: 1, borderRadius: 16, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
   shortlistCategory: { borderWidth: 1, borderRadius: 16, padding: 14 },
   shortlistSubsectionHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
   shortlistAction: { fontFamily: "Inter_600SemiBold", fontSize: 12, paddingVertical: 8 },

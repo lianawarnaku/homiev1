@@ -43,8 +43,6 @@ import {
   type ExternalTaskDestination,
 } from "@/lib/externalTasks";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
-import { essentialItemById } from "@/constants/essentialCatalog";
-import { personalShortlistedEssentials } from "@/lib/essentialShortlist";
 import {
   deriveCalendarItems,
   groupCalendarItemsByDate,
@@ -71,18 +69,8 @@ const CATEGORIES: { key: ChoreCategory; label: string; icon: keyof typeof Feathe
   { key: "other", label: "Other", icon: "package" },
 ];
 
-const SECTION_NAMES: Record<string, string> = {
-  room: "Room & Bedroom",
-  kitchen: "Kitchen",
-  cleaning: "Cleaning",
-  bedding: "Bedding",
-  bathroom: "Bathroom",
-  utility: "Utility",
-  food: "Food",
-};
-
 type Filter = "week" | "today" | "done" | "day";
-type HomeSectionId = "my-chores" | "to-buy" | "shopping";
+type HomeSectionId = "my-chores" | "shopping";
 
 function CollapsibleSectionHeader({
   title,
@@ -374,7 +362,7 @@ export default function MyChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const { scrollBottomPadding } = useFloatingActionMetrics();
-  const { currentUserId, householdId, chores, roommates, expenses, setChoreCompleted, deleteChore, essentialsAssignees, essentialShortlist, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
+  const { currentUserId, householdId, chores, roommates, expenses, setChoreCompleted, deleteChore, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
     useAppContextSelector((context) => ({
       currentUserId: context.currentUserId,
       householdId: context.householdId,
@@ -383,8 +371,6 @@ export default function MyChoresScreen() {
       expenses: context.expenses,
       setChoreCompleted: context.setChoreCompleted,
       deleteChore: context.deleteChore,
-      essentialsAssignees: context.essentialsAssignees,
-      essentialShortlist: context.essentialShortlist,
       shoppingLists: context.shoppingLists,
       shoppingItems: context.shoppingItems,
       toggleShoppingItem: context.toggleShoppingItem,
@@ -401,7 +387,7 @@ export default function MyChoresScreen() {
   const [dayDetailsOpen, setDayDetailsOpen] = useState(false);
   const [expandedHomeSections, setExpandedHomeSections] = useState<
     Record<HomeSectionId, boolean>
-  >({ "my-chores": true, "to-buy": true, shopping: true });
+  >({ "my-chores": true, shopping: true });
   const [showModal, setShowModal] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
   const [actionChoreId, setActionChoreId] = useState<string | null>(null);
@@ -453,20 +439,6 @@ export default function MyChoresScreen() {
       active = false;
     };
   }, [currentUserId]);
-
-  const myToBuyItems = useMemo(
-    () =>
-      personalShortlistedEssentials(
-        essentialShortlist,
-        essentialsAssignees,
-        currentUserId,
-      ).map(({ section_key: sectionKey, item_id: item }) => ({
-        sectionKey,
-        item,
-        label: essentialItemById(item)?.label ?? item,
-      })),
-    [currentUserId, essentialShortlist, essentialsAssignees],
-  );
 
   const shoppingListsById = useMemo(
     () => new Map(shoppingLists.map((list) => [list.id, list])),
@@ -1084,44 +1056,7 @@ export default function MyChoresScreen() {
         )}
         ListFooterComponent={
           <>
-            {myToBuyItems.length > 0 ? (
-              <>
-                <CollapsibleSectionHeader
-                  title="Sweet Essentials To Buy"
-                  count={myToBuyItems.length}
-                  icon="user-check"
-                  expanded={expandedHomeSections["to-buy"]}
-                  onToggle={() => toggleHomeSection("to-buy")}
-                />
-                {expandedHomeSections["to-buy"] ? (
-                <View
-                  style={[
-                    styles.toBuyCard,
-                    { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 12 },
-                  ]}
-                >
-                  {myToBuyItems.map(({ sectionKey, item, label }, idx) => (
-                    <View
-                      key={`${sectionKey}:${item}`}
-                      style={[
-                        styles.toBuyRow,
-                        idx > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
-                      ]}
-                    >
-                      <Text style={[styles.toBuyItem, { color: colors.foreground }]} numberOfLines={1}>
-                        {label}
-                      </Text>
-                      <Text style={[styles.toBuySection, { color: colors.mutedForeground }]}>
-                        {SECTION_NAMES[sectionKey] ?? sectionKey}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-                ) : null}
-              </>
-            ) : null}
-
-              <>
+            <>
                 <CollapsibleSectionHeader
                   title="Shopping"
                   count={myShoppingItems.length}
@@ -1625,22 +1560,6 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 1,
   },
-  toBuyHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  toBuyIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  toBuyTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, flex: 1 },
-  toBuyCount: { fontFamily: "Inter_400Regular", fontSize: 12 },
   toBuyRow: {
     flexDirection: "row",
     alignItems: "center",

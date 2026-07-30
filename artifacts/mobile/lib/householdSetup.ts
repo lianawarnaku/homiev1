@@ -1,9 +1,9 @@
-export const HOUSEHOLD_SETUP_VERSION = 2;
+export const HOUSEHOLD_SETUP_VERSION = 3;
 
 export const HOUSEHOLD_SETUP_STEPS = [
   "details",
-  "essentials",
   "home",
+  "essentials",
   "items",
   "review",
 ] as const;
@@ -32,6 +32,13 @@ export function normalizeHouseholdSetupStep(
   value: unknown,
   version: unknown,
 ): HouseholdSetupStep | null {
+  if (
+    version === 2 &&
+    HOUSEHOLD_SETUP_STEPS.includes(value as HouseholdSetupStep)
+  ) {
+    // Version 2 already persisted stable identifiers, so reordering them is safe.
+    return value as HouseholdSetupStep;
+  }
   if (version !== HOUSEHOLD_SETUP_VERSION) {
     // Version 1 only stored a numeric position. Its former final optional
     // screen now maps to the explicit Essentials decision.

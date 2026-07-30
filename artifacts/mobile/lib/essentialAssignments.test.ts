@@ -80,9 +80,9 @@ assert(
   "the item row must expose an accessible current-user multi-assignment control",
 );
 assert(
-  home.includes('title="Sweet Essentials To Buy"') &&
+  !home.includes("Sweet Essentials To Buy") &&
     !home.includes("setEssentialAssignee(sectionKey, item, null)"),
-  "assignment display must remain independent from canonical Shopping completion",
+  "removing the redundant My Sweet display must not couple assignments to Shopping completion",
 );
 assert(
   migration.includes(

@@ -14,13 +14,18 @@ function assert(condition: boolean, message: string) {
 }
 
 assert(
-  HOUSEHOLD_SETUP_STEPS.join(",") === "details,essentials,home,items,review",
-  "Sweet Essentials must immediately follow the required household details",
+  HOUSEHOLD_SETUP_STEPS.join(",") === "details,home,essentials,items,review",
+  "Home type must precede Sweet Essentials and chore-producing space selection",
 );
-assert(householdSetupStepNumber("essentials") === 2, "Essentials must be step 2 of 5");
-assert(nextHouseholdSetupStep("essentials") === "home", "Browse and skip must continue to Home");
-assert(previousHouseholdSetupStep("home") === "essentials", "Back from Home must return to Essentials");
+assert(householdSetupStepNumber("essentials") === 3, "Essentials must be step 3 of 5");
+assert(nextHouseholdSetupStep("home") === "essentials", "Home must continue to Essentials");
+assert(previousHouseholdSetupStep("essentials") === "home", "Back from Essentials must return to Home");
+assert(nextHouseholdSetupStep("essentials") === "items", "Essentials must precede space selection");
 assert(nextHouseholdSetupStep("review") === "complete", "Review must remain the final setup step");
+assert(
+  normalizeHouseholdSetupStep("essentials", 2) === "essentials",
+  "version 2 stable step identifiers must migrate across the reorder",
+);
 assert(
   normalizeHouseholdSetupStep("items", HOUSEHOLD_SETUP_VERSION) === "items",
   "versioned explicit steps must restore",
@@ -46,12 +51,12 @@ const routeGuard = readFileSync(
 
 assert(
   setupScreen.includes('{ deferOnboarding: true }') &&
-    setupScreen.includes('await setHouseholdSetupStep("essentials")'),
-  "required details must establish one draft household before Essentials",
+    setupScreen.includes('await setHouseholdSetupStep("home")'),
+  "required details must establish one draft household before Home type",
 );
 assert(
-  setupScreen.includes('router.push("/planning?type=home-checklist&setup=household"') &&
-    setupScreen.includes('onPress={() => void goToStep("home")}'),
+  setupScreen.includes('router.push(`/planning?type=home-checklist&setup=household&housingType=${housingType}`') &&
+    setupScreen.includes('onPress={() => void goToStep("items")}'),
   "browse and skip must use explicit setup transitions",
 );
 assert(
@@ -61,9 +66,9 @@ assert(
 );
 assert(
   planningScreen.includes("const saved = await saveShortlist();") &&
-    planningScreen.includes('await setHouseholdSetupStep("home")') &&
+    planningScreen.includes('await setHouseholdSetupStep("items")') &&
     planningScreen.includes("Continue setup"),
-  "setup Essentials must save its shortlist and continue to Home without Shopping",
+  "setup Essentials must save its shortlist and continue to space selection without Shopping",
 );
 assert(
   !planningScreen.includes("sendShortlistToShopping") &&

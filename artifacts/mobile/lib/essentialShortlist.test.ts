@@ -54,6 +54,13 @@ assert(
   "Sweet Essentials must expose an explicit transfer without effect-driven Shopping mutation",
 );
 assert(
-  home.includes('title="Sweet Essentials To Buy"'),
-  "My Sweet must use the requested personal shortlist heading",
+  !home.includes("Sweet Essentials To Buy") &&
+    !home.includes("personalShortlistedEssentials"),
+  "My Sweet must not duplicate Sweet Essentials purchases already managed in Shopping",
+);
+assert(
+  planning.includes("Boolean(essentialShortlist[category.id]?.[entry.id])") &&
+    planning.includes("Suggestions stay unselected until you choose them.") &&
+    planning.includes("selectRecommendedItems"),
+  "opening or confirming the shortlist must preserve only explicitly saved item IDs",
 );

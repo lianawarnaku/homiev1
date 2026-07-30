@@ -219,12 +219,12 @@ export function HouseholdSetupScreen({
     setError(null);
     if (step === 1 && !displayName.trim()) return setError("Enter the name your roommates will see.");
     if (step === 1 && !householdName.trim()) return setError("Give your household a name.");
-    if (step === 3 && !housingType) return setError("Choose the type of home you live in.");
+    if (step === 2 && !housingType) return setError("Choose the type of home you live in.");
     if (step === 1) {
       if (loading) return;
       setLoading(true);
       try {
-        await setHouseholdSetupStep("essentials");
+        await setHouseholdSetupStep("home");
         if (!householdId) {
           await createHousehold(
             householdName,
@@ -244,7 +244,7 @@ export function HouseholdSetupScreen({
       }
       return;
     }
-    if (step === 3) await goToStep("items");
+    if (step === 2) await goToStep("essentials");
     else if (step === 4) await goToStep("review");
   };
 
@@ -342,10 +342,10 @@ export function HouseholdSetupScreen({
         <View style={styles.brand}><BrandMark size={58} color={colors.primary} /></View>
         <Text style={[styles.eyebrow, { color: colors.primary }]}>{mode === "create" ? `CREATE YOUR SWEET · STEP ${step} OF 5` : "JOIN YOUR SWEET"}</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>
-          {mode === "join" ? "Join your roommates" : step === 1 ? "Start your household" : step === 2 ? "Buying for your Sweet?" : step === 3 ? "What kind of home is it?" : step === 4 ? "What's in your space?" : "Your chore plan"}
+          {mode === "join" ? "Join your roommates" : step === 1 ? "Start your household" : step === 2 ? "What kind of home is it?" : step === 3 ? "Buying for your Sweet?" : step === 4 ? "What's in your space?" : "Your chore plan"}
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          {mode === "join" ? "Enter the invite code a roommate shared with you." : step === 1 ? "Set up your private household and invite your roommates." : step === 2 ? "Sweet Essentials is an optional checklist for setting up your home. Browse it now or skip it for later." : step === 3 ? "This determines which fixed chore rules apply." : step === 4 ? "Select everything your household shares. Your plan updates automatically." : "We created these chores from what is in your Sweet. Remove any you do not want or add your own."}
+          {mode === "join" ? "Enter the invite code a roommate shared with you." : step === 1 ? "Set up your private household and invite your roommates." : step === 2 ? "This determines which fixed chore rules and Sweet Essentials suggestions apply." : step === 3 ? "Review a short list suggested for your home, or skip it for later." : step === 4 ? "Select everything your household shares. Your plan updates automatically." : "We created these chores from what is in your Sweet. Remove any you do not want or add your own."}
         </Text>
 
         {step === 1 && !householdId && (
@@ -375,6 +375,8 @@ export function HouseholdSetupScreen({
               <ColorPicker value={color} onChange={setColor} colors={colors} />
             </>
           ) : step === 2 ? (
+            <View style={styles.optionList}>{HOUSING.map((option) => <SelectionCard key={option.key} title={option.label} subtitle={option.description} icon={option.icon} selected={housingType === option.key} onPress={() => setHousingType(option.key)} colors={colors} />)}</View>
+          ) : step === 3 ? (
             <View style={styles.essentialsDecision}>
               <View style={[styles.decisionIllustration, { backgroundColor: colors.primary + "12" }]}>
                 <Feather name="shopping-bag" size={30} color={colors.primary} />
@@ -392,7 +394,7 @@ export function HouseholdSetupScreen({
                 onPress={() => {
                   if (navigationPendingRef.current) return;
                   navigationPendingRef.current = true;
-                  router.push("/planning?type=home-checklist&setup=household" as never);
+                  router.push(`/planning?type=home-checklist&setup=household&housingType=${housingType}` as never);
                 }}
                 style={[styles.decisionButton, { backgroundColor: colors.primary, opacity: loading ? 0.65 : 1 }]}
               >
@@ -403,7 +405,7 @@ export function HouseholdSetupScreen({
                 disabled={loading}
                 accessibilityRole="button"
                 accessibilityLabel="Skip Sweet Essentials for now"
-                onPress={() => void goToStep("home")}
+                onPress={() => void goToStep("items")}
                 style={[styles.decisionButton, { borderColor: colors.border, borderWidth: 1, opacity: loading ? 0.65 : 1 }]}
               >
                 <Feather name="arrow-right" size={18} color={colors.foreground} />
@@ -412,8 +414,6 @@ export function HouseholdSetupScreen({
                 </Text>
               </Pressable>
             </View>
-          ) : step === 3 ? (
-            <View style={styles.optionList}>{HOUSING.map((option) => <SelectionCard key={option.key} title={option.label} subtitle={option.description} icon={option.icon} selected={housingType === option.key} onPress={() => setHousingType(option.key)} colors={colors} />)}</View>
           ) : step === 4 ? (
             <View style={styles.itemSections}>
               {ITEM_SECTIONS.map((section) => (
@@ -538,11 +538,11 @@ export function HouseholdSetupScreen({
           {error && <View style={[styles.error, { backgroundColor: colors.destructive + "12" }]}><Feather name="alert-circle" size={15} color={colors.destructive} /><Text style={[styles.errorText, { color: colors.destructive }]}>{error}</Text></View>}
           <View style={styles.actions}>
             {mode === "create" && step > 1 && <Pressable onPress={() => {
-              const previous = step === 2 ? "details" : step === 3 ? "essentials" : step === 4 ? "home" : "items";
+              const previous = step === 2 ? "details" : step === 3 ? "home" : step === 4 ? "essentials" : "items";
               void goToStep(previous);
               setError(null);
             }} style={[styles.back, { borderColor: colors.border }]}><Feather name="arrow-left" size={18} color={colors.foreground} /><Text style={[styles.backText, { color: colors.foreground }]}>Back</Text></Pressable>}
-            {(step !== 2 || mode === "join") ? (
+            {(step !== 3 || mode === "join") ? (
               <Pressable disabled={loading} onPress={mode === "join" ? submitJoin : step === 5 ? submitCreate : next} style={[styles.primary, { backgroundColor: colors.primary, opacity: loading ? .65 : 1 }]}>
                 {loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.primaryText}>{mode === "join" ? "Join household" : "Continue"}</Text><Feather name="arrow-right" size={17} color="#fff" /></>}
               </Pressable>
@@ -570,7 +570,7 @@ export function HouseholdSetupScreen({
 }
 
 function Progress({ step, colors }: any) {
-  return <View style={styles.progressWrap}><View style={styles.progressLabels}><Text style={[styles.progressText, { color: colors.foreground }]}>Household setup</Text><Text style={[styles.progressCount, { color: colors.mutedForeground }]}>{step}/5</Text></View><View style={[styles.progressTrack, { backgroundColor: colors.muted }]}><View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${step * 20}%` }]} /></View><View style={styles.progressDots}>{["Details", "Essentials", "Home", "Items", "Review"].map((label, index) => <Text key={label} style={[styles.progressDotLabel, { color: index + 1 <= step ? colors.primary : colors.mutedForeground }]}>{label}</Text>)}</View></View>;
+  return <View style={styles.progressWrap}><View style={styles.progressLabels}><Text style={[styles.progressText, { color: colors.foreground }]}>Household setup</Text><Text style={[styles.progressCount, { color: colors.mutedForeground }]}>{step}/5</Text></View><View style={[styles.progressTrack, { backgroundColor: colors.muted }]}><View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${step * 20}%` }]} /></View><View style={styles.progressDots}>{["Details", "Home", "Essentials", "Items", "Review"].map((label, index) => <Text key={label} style={[styles.progressDotLabel, { color: index + 1 <= step ? colors.primary : colors.mutedForeground }]}>{label}</Text>)}</View></View>;
 }
 function Field({ label, icon, colors, ...props }: any) { return <View><Text style={[styles.label, { color: colors.mutedForeground }]}>{label}</Text><View style={[styles.inputWrap, { backgroundColor: colors.muted, borderColor: colors.border }]}><Feather name={icon} size={16} color={colors.mutedForeground} /><TextInput {...props} placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} /></View></View>; }
 function ColorPicker({ value, onChange, colors }: any) { return <View style={styles.swatches}>{COLORS.map((item) => <Pressable key={item} onPress={() => onChange(item)} style={[styles.swatch, { backgroundColor: item }, value === item && { borderColor: colors.foreground, borderWidth: 3 }]}>{value === item && <Feather name="check" size={16} color="#fff" />}</Pressable>)}</View>; }
