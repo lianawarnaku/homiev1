@@ -631,7 +631,7 @@ export default function PlanningScreen() {
   const {
     roommates, addChore, addChores, essentialsAssignees, setEssentialSelfAssignment,
     essentialOwned, essentialShortlist, essentialShortlistUpdatedBy,
-    setEssentialOwned, saveEssentialShortlist,
+    setEssentialOwned, saveEssentialShortlist, addSelectedEssentialsToShopping,
     pointsEnabled, householdComplete, householdId, homeProfile, customTasks,
     addCustomTask, deleteCustomTask, memberPreferences, setMemberPreference,
     currentUserId, setHouseholdSetupStep,
@@ -676,7 +676,10 @@ export default function PlanningScreen() {
   const [shortlistSaveMessage, setShortlistSaveMessage] = useState<string | null>(
     null,
   );
+  const [shortlistTransferMessage, setShortlistTransferMessage] = useState<string | null>(null);
+  const [shortlistTransferLoading, setShortlistTransferLoading] = useState(false);
   const shortlistSavePendingRef = useRef(false);
+  const shortlistTransferPendingRef = useRef(false);
   const shortlistBaselineRef = useRef(essentialShortlist);
   const pendingAssignmentKeysRef = useRef(new Set<string>());
   const openedSetupShortlistRef = useRef(false);
@@ -684,6 +687,10 @@ export default function PlanningScreen() {
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
+  const shortlistSelectedCount = Object.values(shortlistDraft).reduce(
+    (total, section) => total + Object.values(section).filter(Boolean).length,
+    0,
+  );
 
   function toggleSet(set: Set<string>, key: string): Set<string> {
     const next = new Set(set);
@@ -771,6 +778,7 @@ export default function PlanningScreen() {
     setShortlistDraft(next);
     shortlistBaselineRef.current = essentialShortlist;
     setShortlistSaveMessage(null);
+    setShortlistTransferMessage(null);
     setShortlistOpen(true);
     track.shortlistOpened({ source: "sweet_essentials" });
   }
@@ -783,6 +791,7 @@ export default function PlanningScreen() {
 
   function setDraftItem(categoryId: string, itemId: string, selected: boolean) {
     setShortlistSaveMessage(null);
+    setShortlistTransferMessage(null);
     setShortlistDraft((current) => ({
       ...current,
       [categoryId]: { ...(current[categoryId] ?? {}), [itemId]: selected },
@@ -801,6 +810,7 @@ export default function PlanningScreen() {
   ) {
     const category = ESSENTIAL_CATALOG.find((entry) => entry.id === categoryId);
     if (!category) return;
+    setShortlistTransferMessage(null);
     setShortlistDraft((current) => ({
       ...current,
       [categoryId]: {
@@ -847,6 +857,33 @@ export default function PlanningScreen() {
     );
     shortlistBaselineRef.current = shortlistDraft;
     return true;
+  }
+
+  function addSelectedToShopping() {
+    if (shortlistTransferPendingRef.current) return;
+    shortlistTransferPendingRef.current = true;
+    setShortlistTransferLoading(true);
+    setShortlistTransferMessage(null);
+    try {
+      const transfer = addSelectedEssentialsToShopping(shortlistDraft);
+      const parts = [`${transfer.itemsAdded} added`];
+      if (transfer.itemsAlreadyActive) {
+        parts.push(`${transfer.itemsAlreadyActive} already in Shopping`);
+      }
+      setShortlistTransferMessage(
+        `${parts.join(" · ")} across ${transfer.affectedListIds.length} ${
+          transfer.affectedListIds.length === 1 ? "Shopping list" : "Shopping lists"
+        }.`,
+      );
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (transferError) {
+      reportRuntimeError("Add selected Sweet Essentials to Shopping", transferError);
+      hapticError();
+      setShortlistTransferMessage("Couldn’t add these items to Shopping. Please try again.");
+    } finally {
+      shortlistTransferPendingRef.current = false;
+      setShortlistTransferLoading(false);
+    }
   }
 
   async function continueHouseholdSetup() {
@@ -1952,7 +1989,7 @@ export default function PlanningScreen() {
             <Feather name="x" size={22} color={colors.foreground} />
           </TouchableOpacity>
         </View>
-        <ScrollView contentContainerStyle={styles.shortlistContent}>
+        <ScrollView style={styles.shortlistScroll} contentContainerStyle={styles.shortlistContent}>
           {ESSENTIAL_CATALOG.map((category) => (
             <View
               key={category.id}
@@ -2019,13 +2056,10 @@ export default function PlanningScreen() {
         </ScrollView>
         <View style={[styles.shortlistFooter, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
           <Text style={[styles.shortlistCount, { color: colors.foreground }]}>
-            {Object.values(shortlistDraft).reduce(
-              (total, section) => total + Object.values(section).filter(Boolean).length,
-              0,
-            )} selected
+            {shortlistSelectedCount} selected
           </Text>
           <Text style={[styles.shortlistHelper, { color: colors.mutedForeground }]}>
-            Save these essentials for your household. Assigned items appear in each roommate’s My Home list, not Shopping.
+            Save your shortlist for your household. Add selected items to category-based Shopping lists when you’re ready.
           </Text>
           {shortlistSaveMessage ? (
             <Text
@@ -2042,11 +2076,64 @@ export default function PlanningScreen() {
               {shortlistSaveMessage}
             </Text>
           ) : null}
+          {shortlistTransferMessage ? (
+            <View style={styles.shortlistTransferFeedback}>
+              <Text
+                accessibilityLiveRegion="polite"
+                style={[
+                  styles.shortlistHelper,
+                  styles.shortlistTransferMessage,
+                  {
+                    color: shortlistTransferMessage.startsWith("Couldn’t")
+                      ? colors.destructive
+                      : colors.success,
+                  },
+                ]}
+              >
+                {shortlistTransferMessage}
+              </Text>
+              {!shortlistTransferMessage.startsWith("Couldn’t") ? (
+                <TouchableOpacity
+                  onPress={() => router.push("/(tabs)/shopping")}
+                  accessibilityRole="button"
+                  accessibilityLabel="View added essentials in Shopping"
+                >
+                  <Text style={[styles.shortlistAction, { color: colors.primary }]}>
+                    View in Shopping
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+          <View style={styles.shortlistButtons}>
+            <TouchableOpacity
+              disabled={shortlistTransferLoading || shortlistSaving || shortlistSelectedCount === 0}
+              onPress={addSelectedToShopping}
+              style={[
+                styles.shortlistSave,
+                styles.shortlistSecondary,
+                {
+                  borderColor: colors.primary,
+                  opacity: shortlistTransferLoading || shortlistSaving || shortlistSelectedCount === 0 ? 0.6 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Add selected Sweet Essentials to Shopping"
+              accessibilityState={{ busy: shortlistTransferLoading }}
+            >
+              {shortlistTransferLoading ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <Text style={[styles.shortlistSecondaryText, { color: colors.primary }]}>
+                  Add Selected to Shopping
+                </Text>
+              )}
+            </TouchableOpacity>
           {setupMode ? (
           <TouchableOpacity
-            disabled={shortlistSaving}
+            disabled={shortlistSaving || shortlistTransferLoading}
             onPress={() => void continueHouseholdSetup()}
-            style={[styles.shortlistSave, { backgroundColor: colors.primary, opacity: shortlistSaving ? 0.6 : 1 }]}
+            style={[styles.shortlistSave, { backgroundColor: colors.primary, opacity: shortlistSaving || shortlistTransferLoading ? 0.6 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel="Save selected essentials and continue household setup"
           >
@@ -2054,15 +2141,16 @@ export default function PlanningScreen() {
           </TouchableOpacity>
           ) :
           <TouchableOpacity
-            disabled={shortlistSaving}
+            disabled={shortlistSaving || shortlistTransferLoading}
             onPress={() => void saveShortlist()}
-            style={[styles.shortlistSave, { backgroundColor: colors.primary, opacity: shortlistSaving ? 0.6 : 1 }]}
+            style={[styles.shortlistSave, { backgroundColor: colors.primary, opacity: shortlistSaving || shortlistTransferLoading ? 0.6 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel="Save shortlist"
           >
             {shortlistSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.generateText}>Save Shortlist</Text>}
           </TouchableOpacity>
           }
+          </View>
         </View>
       </View>
     </Modal>
@@ -2261,25 +2349,25 @@ const styles = StyleSheet.create({
   shortlistTitle: { fontFamily: "Inter_700Bold", fontSize: 22 },
   shortlistHelper: { fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 18, marginTop: 4 },
   shortlistUpdatedBy: { fontFamily: "Inter_500Medium", fontSize: 12, marginTop: 5 },
-  shortlistContent: { padding: 16, paddingBottom: 120, gap: 12 },
+  shortlistScroll: { flex: 1 },
+  shortlistContent: { padding: 16, gap: 12 },
   shortlistCategory: { borderWidth: 1, borderRadius: 16, padding: 14 },
   shortlistSubsectionHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
   shortlistAction: { fontFamily: "Inter_600SemiBold", fontSize: 12, paddingVertical: 8 },
   shortlistRow: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 10 },
   shortlistStatus: { fontFamily: "Inter_500Medium", fontSize: 11 },
   shortlistFooter: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
     borderTopWidth: StyleSheet.hairlineWidth,
     padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
+    gap: 8,
   },
-  shortlistCount: { flex: 1, fontFamily: "Inter_700Bold", fontSize: 14 },
-  shortlistSave: { minHeight: 48, borderRadius: 12, paddingHorizontal: 24, alignItems: "center", justifyContent: "center" },
+  shortlistCount: { fontFamily: "Inter_700Bold", fontSize: 14 },
+  shortlistTransferFeedback: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  shortlistTransferMessage: { flex: 1 },
+  shortlistButtons: { flexDirection: "row", flexWrap: "wrap", alignItems: "stretch", gap: 10 },
+  shortlistSave: { flex: 1, minWidth: 150, minHeight: 48, borderRadius: 12, paddingHorizontal: 14, alignItems: "center", justifyContent: "center" },
+  shortlistSecondary: { borderWidth: 1, backgroundColor: "transparent" },
+  shortlistSecondaryText: { fontFamily: "Inter_700Bold", fontSize: 13, textAlign: "center" },
   amenityHint: {
     fontFamily: "Inter_500Medium",
     fontSize: 12,

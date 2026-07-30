@@ -23,7 +23,14 @@ import type { Difficulty } from "@/lib/itemDifficulty";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import { findAssignedLoadDeviations } from "@/lib/chartLoadBalance";
 import { deleteLocalAnalyticsIdentity, track } from "@/lib/analytics";
-import { migrateEssentialRecord } from "@/constants/essentialCatalog";
+import {
+  ESSENTIAL_CATALOG,
+  migrateEssentialRecord,
+} from "@/constants/essentialCatalog";
+import {
+  transferEssentialsToShopping,
+  type EssentialShoppingTransferResult,
+} from "@/lib/essentialShopping";
 import {
   advanceChoreDueDate,
   resolveRoundRobinParticipants,
@@ -161,6 +168,9 @@ export interface ShoppingList {
   pinned?: boolean;
   /** Optional local calendar day (YYYY-MM-DD) for a planned shopping trip. */
   plannedDate?: string;
+  sourceType?: "sweet_essentials";
+  sourceCategoryId?: string;
+  sourceCategoryName?: string;
   // NOTE: no `order` field — the array position in `shoppingLists` IS the
   // display order. Mutators below preserve the invariant "pinned lists first,
   // then unpinned lists" so consumers can render `shoppingLists` directly.
@@ -184,6 +194,8 @@ export interface ShoppingItem {
   neededByDate?: string;
   /** Historical source marker retained for Shopping records created by older releases. */
   sourceEssentialItemId?: string;
+  sourceType?: "sweet_essentials";
+  sourceCategoryId?: string;
 }
 
 interface ShoppingSyncMeta {
@@ -450,6 +462,9 @@ interface AppContextType {
   pinShoppingList: (id: string, pinned: boolean) => void;
   deleteShoppingList: (id: string) => void;
   addShoppingItem: (item: Omit<ShoppingItem, "id">) => void;
+  addSelectedEssentialsToShopping: (
+    selection: EssentialShortlist,
+  ) => EssentialShoppingTransferResult;
   toggleShoppingItem: (id: string) => void;
   deleteShoppingItem: (id: string) => void;
   reorderShoppingItems: (listId: string, newIds: string[]) => void;
@@ -3288,6 +3303,36 @@ export function AppProvider({
     track.shoppingItemAdded();
   }, [recordShoppingVersions]);
 
+  const addSelectedEssentialsToShopping = useCallback(
+    (selection: EssentialShortlist): EssentialShoppingTransferResult => {
+      const transfer = transferEssentialsToShopping({
+        selection,
+        catalog: ESSENTIAL_CATALOG,
+        lists: shoppingListsRef.current,
+        items: shoppingItemsRef.current,
+        addedBy: currentUserId,
+        makeId,
+      });
+      if (transfer.createdListIds.length) {
+        recordShoppingVersions("list", transfer.createdListIds);
+      }
+      if (transfer.createdItemIds.length) {
+        recordShoppingVersions("item", transfer.createdItemIds);
+      }
+      if (
+        transfer.createdListIds.length ||
+        transfer.createdItemIds.length
+      ) {
+        shoppingListsRef.current = transfer.lists;
+        shoppingItemsRef.current = transfer.items;
+        setShoppingLists(transfer.lists);
+        setShoppingItems(transfer.items);
+      }
+      return transfer.result;
+    },
+    [currentUserId, recordShoppingVersions],
+  );
+
   const toggleShoppingItem = useCallback((id: string) => {
     recordShoppingVersions("item", [id]);
     setShoppingItems((prev) =>
@@ -4152,6 +4197,7 @@ export function AppProvider({
     pinShoppingList,
     deleteShoppingList,
     addShoppingItem,
+    addSelectedEssentialsToShopping,
     toggleShoppingItem,
     deleteShoppingItem,
     reorderShoppingItems,
@@ -4210,7 +4256,7 @@ export function AppProvider({
     visibleBorrowItems, nudges, nudgesReady, addChore, updateChore, addChores, completeChore, pickUpChore, deleteChore,
     addExpense, updateExpense, settleExpense, deleteExpense, canManageExpense, markPersonPaid,
     addShoppingList, reorderShoppingLists, pinShoppingList, deleteShoppingList,
-    addShoppingItem, toggleShoppingItem, deleteShoppingItem,
+    addShoppingItem, addSelectedEssentialsToShopping, toggleShoppingItem, deleteShoppingItem,
     reorderShoppingItems, assignShoppingList, assignShoppingItem,
     updateShoppingItemPrice, linkShoppingItemsToExpense, pendingIouDraft, setPendingIouDraft, addBorrowItem,
     updateBorrowItem, returnBorrowItem, deleteBorrowItem, sendNudge,

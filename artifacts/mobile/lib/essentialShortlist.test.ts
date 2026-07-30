@@ -48,12 +48,12 @@ assert(
 const planning = readFileSync(resolve(process.cwd(), "app/planning.tsx"), "utf8");
 const home = readFileSync(resolve(process.cwd(), "app/(tabs)/index.tsx"), "utf8");
 assert(
-  !planning.includes("sendShortlistToShopping") &&
-    !planning.includes(">To Shopping<") &&
-    !planning.includes("shortlistSentToShopping"),
-  "Sweet Essentials must not expose or retain an automatic Shopping transfer",
+  planning.includes("addSelectedToShopping") &&
+    planning.includes("Add Selected to Shopping") &&
+    !planning.includes("useEffect(() => addSelectedToShopping"),
+  "Sweet Essentials must expose an explicit transfer without effect-driven Shopping mutation",
 );
 assert(
-  home.includes('title="To Buy for Sweet"'),
+  home.includes('title="Sweet Essentials To Buy"'),
   "My Sweet must use the requested personal shortlist heading",
 );

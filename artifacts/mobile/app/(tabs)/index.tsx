@@ -1087,7 +1087,7 @@ export default function MyChoresScreen() {
             {myToBuyItems.length > 0 ? (
               <>
                 <CollapsibleSectionHeader
-                  title="To Buy for Sweet"
+                  title="Sweet Essentials To Buy"
                   count={myToBuyItems.length}
                   icon="user-check"
                   expanded={expandedHomeSections["to-buy"]}
@@ -1418,7 +1418,7 @@ const styles = StyleSheet.create({
   sectionTitleText: {
     fontFamily: "Inter_700Bold",
     fontSize: 15,
-    flexShrink: 0,
+    flexShrink: 1,
     paddingRight: 4,
   },
   sectionTitleCount: {
