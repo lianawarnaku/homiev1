@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -578,7 +578,8 @@ function SectionCard({
 export default function PlanningScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ type?: string }>();
+  const params = useLocalSearchParams<{ type?: string; setup?: string }>();
+  const setupMode = params.setup === "household";
   const {
     roommates, addChore, addChores, essentialsAssignees, setEssentialAssignee,
     essentialOwned, essentialShortlist, essentialShortlistUpdatedBy,
@@ -586,7 +587,7 @@ export default function PlanningScreen() {
     shoppingLists, shoppingItems, addShoppingList, addShoppingItem,
     pointsEnabled, householdComplete, householdId, homeProfile, customTasks,
     addCustomTask, deleteCustomTask, memberPreferences, setMemberPreference,
-    currentUserId,
+    currentUserId, setHouseholdSetupStep,
   } = useAppContext();
 
   const [selectedType, setSelectedType] = useState<PlanType>(() =>
@@ -618,6 +619,8 @@ export default function PlanningScreen() {
   const [customTaskDifficulty, setCustomTaskDifficulty] = useState<Difficulty>(3);
   const [customTaskFrequency, setCustomTaskFrequency] = useState<ChoreFrequency>("weekly");
   const [customTaskTime, setCustomTaskTime] = useState<ChoreTimeOfDay>("any");
+  const openedSetupShortlistRef = useRef(false);
+  const continuingSetupRef = useRef(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
@@ -683,6 +686,12 @@ export default function PlanningScreen() {
     setShortlistOpen(true);
     track.shortlistOpened({ source: "sweet_essentials" });
   }
+
+  useEffect(() => {
+    if (!setupMode || openedSetupShortlistRef.current) return;
+    openedSetupShortlistRef.current = true;
+    openShortlist();
+  }, [setupMode]);
 
   function setDraftItem(categoryId: string, itemId: string, selected: boolean) {
     setShortlistDraft((current) => ({
@@ -786,6 +795,20 @@ export default function PlanningScreen() {
       });
     }
     saveShortlist();
+  }
+
+  async function continueHouseholdSetup() {
+    if (continuingSetupRef.current) return;
+    continuingSetupRef.current = true;
+    sendShortlistToShopping();
+    try {
+      await setHouseholdSetupStep("home");
+      router.replace("/sweet-setup" as never);
+    } catch (setupError) {
+      continuingSetupRef.current = false;
+      reportRuntimeError("continue household setup", setupError);
+      setError("We couldn't continue setup. Your selected items are still saved.");
+    }
   }
 
   // ── Build + create chores ────────────────────────────────────────────────
@@ -1104,7 +1127,11 @@ export default function PlanningScreen() {
       <View style={[styles.header, { paddingTop: topPad + 16 }]}>
         <View style={styles.headerRow}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() =>
+              setupMode
+                ? router.replace("/sweet-setup" as never)
+                : router.back()
+            }
             style={[styles.backBtn, { backgroundColor: colors.muted }]}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -1112,17 +1139,17 @@ export default function PlanningScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={[styles.title, { color: colors.foreground }]}>
-              Planning Helper
+              {setupMode ? "Sweet Essentials" : "Planning Helper"}
             </Text>
             <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              Formulaic plans for your Sweet
+              {setupMode ? "Choose what your new Sweet needs" : "Formulaic plans for your Sweet"}
             </Text>
           </View>
         </View>
       </View>
 
       {/* ── Plan type selector ── */}
-      <Text style={[styles.sectionLabel, { color: colors.foreground }]}>
+      {!setupMode ? <><Text style={[styles.sectionLabel, { color: colors.foreground }]}>
         What do you need?
       </Text>
 
@@ -1235,7 +1262,7 @@ export default function PlanningScreen() {
             Add all roommates and mark household setup complete before building a chore chart.
           </Text>
         </View>
-      )}
+      )}</> : null}
 
       {/* ── Housing type (only for chore chart) ── */}
       {isChoreChart && (
@@ -1934,7 +1961,16 @@ export default function PlanningScreen() {
               0,
             )} selected
           </Text>
+          {setupMode ? (
           <TouchableOpacity
+            onPress={() => void continueHouseholdSetup()}
+            style={[styles.shortlistSave, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel="Add selected essentials and continue household setup"
+          >
+            <Text style={styles.generateText}>Continue setup</Text>
+          </TouchableOpacity>
+          ) : <><TouchableOpacity
             onPress={sendShortlistToShopping}
             style={[styles.shortlistOutline, { borderColor: colors.primary }]}
             accessibilityRole="button"
@@ -1950,6 +1986,7 @@ export default function PlanningScreen() {
           >
             <Text style={styles.generateText}>Save Shortlist</Text>
           </TouchableOpacity>
+          </>}
         </View>
       </View>
     </Modal>

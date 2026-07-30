@@ -27,6 +27,7 @@ export function AuthGate({
     householdLoading,
     preferencesLoaded,
     preferencesOnboardingPending,
+    householdSetupStep,
   } = useAppContext();
 
   if (sessionLoading) {
@@ -42,7 +43,9 @@ export function AuthGate({
   }
 
   if (!householdId) return <HouseholdSetupScreen />;
-  if (preferencesOnboardingPending) return <PreferencesOnboardingScreen />;
+  if (preferencesOnboardingPending && !householdSetupStep) {
+    return <PreferencesOnboardingScreen />;
+  }
 
   return <>{children}</>;
 }

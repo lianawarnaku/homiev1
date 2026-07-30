@@ -33,6 +33,11 @@ import {
   materializeRecurringOccurrences,
 } from "@/lib/choreOccurrences";
 import { choreCompletionTransition } from "@/lib/choreCompletion";
+import {
+  HOUSEHOLD_SETUP_VERSION,
+  normalizeHouseholdSetupStep,
+  type HouseholdSetupStep,
+} from "@/lib/householdSetup";
 
 export type RoommateStatus = "home" | "away" | "asleep" | "unknown";
 export type LeaderboardPeriod = "weekly" | "alltime";
@@ -367,6 +372,9 @@ interface AppContextType {
   preferencesLoaded: boolean;
   preferencesOnboardingPending: boolean;
   finishPreferencesOnboarding: () => Promise<void>;
+  householdSetupStep: HouseholdSetupStep | null;
+  setHouseholdSetupStep: (step: HouseholdSetupStep | null) => Promise<void>;
+  completeHouseholdSetup: () => Promise<void>;
   quickGuideOpen: boolean;
   openQuickGuide: () => void;
   dismissQuickGuide: () => void;
@@ -394,7 +402,7 @@ interface AppContextType {
   currentMemberRole: "owner" | "member";
   refreshMembers: () => Promise<void>;
   refreshHousehold: () => void;
-  createHousehold: (householdName: string, displayName: string, color: string, inviteCode: string) => Promise<string>;
+  createHousehold: (householdName: string, displayName: string, color: string, inviteCode: string, options?: { deferOnboarding?: boolean }) => Promise<string>;
   joinHousehold: (inviteCode: string, displayName: string, color: string) => Promise<void>;
   switchSweet: (sweetId: string) => void;
   leaveSweet: (sweetId: string) => Promise<void>;
@@ -672,6 +680,8 @@ export function AppProvider({
   const [localPreferencesLoaded, setLocalPreferencesLoaded] = useState(false);
   const [householdPreferencesReady, setHouseholdPreferencesReady] = useState(false);
   const [preferencesOnboardingPending, setPreferencesOnboardingPending] = useState(false);
+  const [householdSetupStep, setHouseholdSetupStepState] =
+    useState<HouseholdSetupStep | null>(null);
   const [quickGuideVersions, setQuickGuideVersions] = useState<Record<string, number>>({});
   const [quickGuideOpen, setQuickGuideOpen] = useState(false);
   const [appAlerts, setAppAlerts] = useState<AppAlert[]>([]);
@@ -737,6 +747,7 @@ export function AppProvider({
     setPlantEnabled(true);
     setLeaderboardPeriod("weekly");
     setPreferencesOnboardingPending(false);
+    setHouseholdSetupStepState(null);
     setQuickGuideVersions({});
     setQuickGuideOpen(false);
   }, [preferenceUserId]);
@@ -759,6 +770,8 @@ export function AppProvider({
         plantEnabled: boolean;
         leaderboardPeriod: LeaderboardPeriod;
         onboardingPending: boolean;
+        householdSetupStep: unknown;
+        householdSetupVersion: number;
         quickGuideVersion: number;
       }>;
       let preferences: StoredUserPreferences = {};
@@ -779,6 +792,8 @@ export function AppProvider({
             pointsEnabled: legacy.pointsEnabled,
             plantEnabled: legacy.plantEnabled,
             onboardingPending: legacy.onboardingPending,
+            householdSetupStep: legacy.householdSetupStep,
+            householdSetupVersion: legacy.householdSetupVersion,
             quickGuideVersion: legacy.quickGuideVersions?.[preferenceUserId],
           };
           markLegacyMigrated = true;
@@ -809,6 +824,12 @@ export function AppProvider({
       if (typeof preferences.onboardingPending === "boolean") {
         setPreferencesOnboardingPending(preferences.onboardingPending);
       }
+      setHouseholdSetupStepState(
+        normalizeHouseholdSetupStep(
+          preferences.householdSetupStep,
+          preferences.householdSetupVersion,
+        ),
+      );
       if (typeof preferences.quickGuideVersion === "number") {
         setQuickGuideVersions({
           [preferenceUserId]: preferences.quickGuideVersion,
@@ -840,6 +861,8 @@ export function AppProvider({
           plantEnabled,
           leaderboardPeriod,
           onboardingPending: preferencesOnboardingPending,
+          householdSetupStep,
+          householdSetupVersion: HOUSEHOLD_SETUP_VERSION,
           quickGuideVersion: quickGuideVersions[preferenceUserId] ?? 0,
         }),
       ).catch((error) => {
@@ -857,6 +880,7 @@ export function AppProvider({
     pointsEnabled,
     preferenceUserId,
     preferencesOnboardingPending,
+    householdSetupStep,
     quickGuideVersions,
   ]);
 
@@ -870,6 +894,37 @@ export function AppProvider({
     setPreferencesOnboardingPending(false);
   }, [preferenceUserId]);
 
+  const setHouseholdSetupStep = useCallback(
+    async (step: HouseholdSetupStep | null) => {
+      if (preferenceUserId) {
+        await AsyncStorage.mergeItem(
+          userPreferencesKey(preferenceUserId),
+          JSON.stringify({
+            householdSetupStep: step,
+            householdSetupVersion: HOUSEHOLD_SETUP_VERSION,
+          }),
+        );
+      }
+      setHouseholdSetupStepState(step);
+    },
+    [preferenceUserId],
+  );
+
+  const completeHouseholdSetup = useCallback(async () => {
+    if (preferenceUserId) {
+      await AsyncStorage.mergeItem(
+        userPreferencesKey(preferenceUserId),
+        JSON.stringify({
+          householdSetupStep: null,
+          householdSetupVersion: HOUSEHOLD_SETUP_VERSION,
+          onboardingPending: true,
+        }),
+      );
+    }
+    setHouseholdSetupStepState(null);
+    setPreferencesOnboardingPending(true);
+  }, [preferenceUserId]);
+
   const currentGuideUserId = session?.user.id;
   const currentGuideVersion = currentGuideUserId
     ? quickGuideVersions[currentGuideUserId] ?? 0
@@ -879,6 +934,7 @@ export function AppProvider({
     if (
       localPreferencesLoaded &&
       householdId &&
+      !householdSetupStep &&
       !preferencesOnboardingPending &&
       currentGuideVersion < QUICK_GUIDE_VERSION
     ) {
@@ -887,6 +943,7 @@ export function AppProvider({
   }, [
     currentGuideVersion,
     householdId,
+    householdSetupStep,
     localPreferencesLoaded,
     preferencesOnboardingPending,
   ]);
@@ -1370,7 +1427,13 @@ export function AppProvider({
     };
   }, [householdId, refreshMembers]);
 
-  const createHousehold = useCallback(async (name: string, displayName: string, color: string, code: string) => {
+  const createHousehold = useCallback(async (
+    name: string,
+    displayName: string,
+    color: string,
+    code: string,
+    options?: { deferOnboarding?: boolean },
+  ) => {
     const { data, error } = await supabase.rpc("create_household", {
       household_name: name.trim(), member_name: displayName.trim(), member_color: color,
       requested_invite_code: code,
@@ -1388,11 +1451,11 @@ export function AppProvider({
       if (isFirstSweet) {
         await AsyncStorage.mergeItem(
           userPreferencesKey(userId),
-          JSON.stringify({ onboardingPending: true }),
+          JSON.stringify({ onboardingPending: !options?.deferOnboarding }),
         );
       }
     }
-    if (isFirstSweet) setPreferencesOnboardingPending(true);
+    if (isFirstSweet) setPreferencesOnboardingPending(!options?.deferOnboarding);
     setHouseholdCompleteState(false);
     if (userId) {
       setRoommates([{ id: userId, name: displayName.trim(), color, points: 0, weeklyPoints: 0 }]);
@@ -1539,6 +1602,7 @@ export function AppProvider({
     setCloudReady(false);
     setHouseholdPreferencesReady(false);
     setPreferencesOnboardingPending(false);
+    setHouseholdSetupStepState(null);
     setHouseholdCompleteState(false);
     setRoommates([]);
     setChores([]);
@@ -3766,6 +3830,9 @@ export function AppProvider({
     preferencesLoaded,
     preferencesOnboardingPending,
     finishPreferencesOnboarding,
+    householdSetupStep,
+    setHouseholdSetupStep,
+    completeHouseholdSetup,
     quickGuideOpen,
     openQuickGuide,
     dismissQuickGuide,
@@ -3874,7 +3941,8 @@ export function AppProvider({
     addCustomTask, deleteCustomTask, chartApprovals, proposeChart,
     approveProposedChart, forceApproveProposedChart, restartChartProcess,
     isHost, preferencesLoaded, preferencesOnboardingPending,
-    finishPreferencesOnboarding, quickGuideOpen, openQuickGuide,
+    finishPreferencesOnboarding, householdSetupStep, setHouseholdSetupStep,
+    completeHouseholdSetup, quickGuideOpen, openQuickGuide,
     dismissQuickGuide, visibleAppAlerts, markAlertRead, markAllAlertsRead,
     householdComplete, setHouseholdComplete,
     colorScheme, pointsEnabled, plantEnabled, leaderboardPeriod, householdId, memberships, activeSweet, householdName,

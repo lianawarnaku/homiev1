@@ -1,0 +1,82 @@
+import {
+  HOUSEHOLD_SETUP_STEPS,
+  HOUSEHOLD_SETUP_VERSION,
+  householdSetupStepNumber,
+  nextHouseholdSetupStep,
+  normalizeHouseholdSetupStep,
+  previousHouseholdSetupStep,
+} from "./householdSetup.ts";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+function assert(condition: boolean, message: string) {
+  if (!condition) throw new Error(message);
+}
+
+assert(
+  HOUSEHOLD_SETUP_STEPS.join(",") === "details,essentials,home,items,review",
+  "Sweet Essentials must immediately follow the required household details",
+);
+assert(householdSetupStepNumber("essentials") === 2, "Essentials must be step 2 of 5");
+assert(nextHouseholdSetupStep("essentials") === "home", "Browse and skip must continue to Home");
+assert(previousHouseholdSetupStep("home") === "essentials", "Back from Home must return to Essentials");
+assert(nextHouseholdSetupStep("review") === "complete", "Review must remain the final setup step");
+assert(
+  normalizeHouseholdSetupStep("items", HOUSEHOLD_SETUP_VERSION) === "items",
+  "versioned explicit steps must restore",
+);
+assert(
+  normalizeHouseholdSetupStep(5, 1) === "essentials",
+  "legacy in-progress optional step must migrate to Essentials",
+);
+assert(
+  normalizeHouseholdSetupStep(3, 1) === null,
+  "unsafe legacy positions must not be interpreted using the reordered array",
+);
+
+const setupScreen = readFileSync(
+  resolve(process.cwd(), "components/HouseholdSetupScreen.tsx"),
+  "utf8",
+);
+const planningScreen = readFileSync(resolve(process.cwd(), "app/planning.tsx"), "utf8");
+const routeGuard = readFileSync(
+  resolve(process.cwd(), "components/HouseholdSetupRouteGuard.tsx"),
+  "utf8",
+);
+
+assert(
+  setupScreen.includes('{ deferOnboarding: true }') &&
+    setupScreen.includes('await setHouseholdSetupStep("essentials")'),
+  "required details must establish one draft household before Essentials",
+);
+assert(
+  setupScreen.includes('router.push("/planning?type=home-checklist&setup=household"') &&
+    setupScreen.includes('onPress={() => void goToStep("home")}'),
+  "browse and skip must use explicit setup transitions",
+);
+assert(
+  setupScreen.includes("sweetmate:household-setup-draft:v2:") &&
+    setupScreen.includes("restore household setup draft"),
+  "the remaining setup form must restore from a versioned user-scoped draft",
+);
+assert(
+  planningScreen.includes("sendShortlistToShopping();") &&
+    planningScreen.includes('await setHouseholdSetupStep("home")') &&
+    planningScreen.includes("Continue setup"),
+  "setup Essentials must save to canonical Shopping and continue to Home",
+);
+assert(
+  planningScreen.includes("existingSourceIds") &&
+    planningScreen.includes("existingNames"),
+  "Sweet Essentials must prevent duplicate To Buy entries by catalog ID and name",
+);
+assert(
+  planningScreen.includes('params.setup === "household"') &&
+    routeGuard.includes('setupStep === "essentials" && pathname === "/planning"'),
+  "normal Sweet Essentials access must remain distinct from setup access",
+);
+assert(
+  setupScreen.includes("navigationPendingRef.current") &&
+    planningScreen.includes("continuingSetupRef.current"),
+  "browse and continue actions must suppress duplicate navigation",
+);
