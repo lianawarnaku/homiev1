@@ -191,6 +191,7 @@ export interface Expense {
 
 export interface ShoppingExpenseSource {
   type: "shopping-item" | "shopping-list";
+  householdId: string;
   shoppingListId: string;
   shoppingListName: string;
   shoppingItemIds: string[];
@@ -261,6 +262,7 @@ export interface PendingIouDraft {
   splits: Record<string, string>;
   source?: ShoppingExpenseSource;
   notes?: string;
+  date: string;
 }
 
 export interface BorrowItem {
@@ -3280,6 +3282,7 @@ export function AppProvider({
     if (
       !activeMemberIds.has(expense.paidBy) ||
       expense.sharedWith.some((id) => !activeMemberIds.has(id)) ||
+      (expense.shoppingSource && expense.shoppingSource.householdId !== householdId) ||
       (expense.allocations &&
         !storedExpenseAllocationIsValid(
           expense.amountCents ?? Math.round(expense.amount * 100),
@@ -3302,7 +3305,7 @@ export function AppProvider({
     }]);
     track.expenseCreated({ recurring: Boolean(expense.recurring) });
     return id;
-  }, [currentUserId, roommates]);
+  }, [currentUserId, householdId, roommates]);
 
   const canManageExpense = useCallback(
     (expense: Expense) =>
@@ -3321,6 +3324,8 @@ export function AppProvider({
       const activeMemberIds = new Set(roommates.map((roommate) => roommate.id));
       if (
         !activeMemberIds.has(candidate.paidBy) ||
+        (candidate.shoppingSource &&
+          candidate.shoppingSource.householdId !== householdId) ||
         candidate.sharedWith.some((memberId) => !activeMemberIds.has(memberId)) ||
         (candidate.allocations &&
           !storedExpenseAllocationIsValid(
@@ -3337,7 +3342,7 @@ export function AppProvider({
       ));
       return true;
     },
-    [canManageExpense, currentUserId, expenses, roommates],
+    [canManageExpense, currentUserId, expenses, householdId, roommates],
   );
 
   const settleExpense = useCallback((id: string) => {
@@ -3592,7 +3597,7 @@ export function AppProvider({
     setShoppingItems((current) =>
       current.map((item) =>
         ids.has(item.id)
-          ? { ...item, convertedExpenseId: expenseId, completed: true }
+          ? { ...item, convertedExpenseId: expenseId }
           : item,
       ),
     );

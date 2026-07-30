@@ -78,6 +78,24 @@ function formatDate(iso: string) {
   });
 }
 
+function todayInputValue() {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function expenseDateIso(value: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(`${value}T12:00:00`);
+  return Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+    ? null
+    : parsed.toISOString();
+}
+
 function buildEvenSplits(
   totalCents: number,
   participants: string[]
@@ -152,6 +170,7 @@ export default function ExpensesScreen() {
   const [expRecurringCustom, setExpRecurringCustom] = useState("");
   const [expenseSource, setExpenseSource] = useState<PendingIouDraft["source"]>();
   const [expNotes, setExpNotes] = useState("");
+  const [expDate, setExpDate] = useState(todayInputValue);
 
   // Consume a pre-filled IOU draft handed off from the Shopping tab. When
   // present, populate the builder state and pop the modal, then clear the
@@ -168,6 +187,7 @@ export default function ExpensesScreen() {
     setAllocationMode("exact");
     setExpenseSource(pendingIouDraft.source);
     setExpNotes(pendingIouDraft.notes ?? "");
+    setExpDate(pendingIouDraft.date);
     setExpRecurring(null);
     setExpRecurringCustom("");
     setShowExpenseModal(true);
@@ -352,7 +372,9 @@ export default function ExpensesScreen() {
   const totalParsed = totalCents === null ? 0 : centsToDollars(totalCents);
   const remainingCents = allocationValidation.valid ? 0 : allocationValidation.remainingCents;
   const splitsValid = allocationValidation.valid;
-  const canSubmit = !submittingIou && allocationValidation.valid;
+  const validExpenseDate = expenseDateIso(expDate);
+  const canSubmit =
+    !submittingIou && allocationValidation.valid && validExpenseDate !== null;
 
   // ── Toggle participant ─────────────────────────────────────────────────────
   const toggleParticipant = (id: string) => {
@@ -403,6 +425,7 @@ export default function ExpensesScreen() {
     setEditingExpenseId(null);
     setExpenseSource(undefined);
     setExpNotes("");
+    setExpDate(todayInputValue());
     setIouSubmitError(null);
   };
 
@@ -468,13 +491,35 @@ export default function ExpensesScreen() {
     setExpRecurring(item.recurring ?? null);
     setExpRecurringCustom(item.recurringCustom ?? "");
     setExpNotes(item.notes ?? "");
+    setExpDate(item.date.slice(0, 10));
     setExpenseSource(item.shoppingSource);
     setShowExpenseModal(true);
   };
 
   // ── Submit IOU ─────────────────────────────────────────────────────────────
   const doSendIOU = () => {
-    if (submittingIouRef.current || !canSubmit || !allocationValidation.valid) return;
+    if (
+      submittingIouRef.current ||
+      !canSubmit ||
+      !allocationValidation.valid ||
+      !validExpenseDate
+    ) return;
+    if (
+      !editingExpenseId &&
+      expenseSource?.type === "shopping-item" &&
+      expenses.some(
+        (expense) =>
+          !expense.settled &&
+          expense.shoppingSource?.type === "shopping-item" &&
+          expense.shoppingSource.householdId === expenseSource.householdId &&
+          expense.shoppingSource.shoppingItemIds.some((itemId) =>
+            expenseSource.shoppingItemIds.includes(itemId),
+          ),
+      )
+    ) {
+      setIouSubmitError("An active IOU already exists for this Shopping item.");
+      return;
+    }
     submittingIouRef.current = true;
     setSubmittingIou(true);
     setIouSubmitError(null);
@@ -511,7 +556,7 @@ export default function ExpensesScreen() {
           throw new Error("This IOU could not be updated.");
         }
       } else {
-        const expenseId = addExpense({ ...payload, date: new Date().toISOString(), settled: false });
+        const expenseId = addExpense({ ...payload, date: validExpenseDate, settled: false });
         if (expenseSource?.type === "shopping-item") {
           linkShoppingItemsToExpense(expenseSource.shoppingItemIds, expenseId);
         }
@@ -1409,6 +1454,35 @@ export default function ExpensesScreen() {
                   value={expNotes}
                   onChangeText={setExpNotes}
                 />
+              </View>
+
+              <View>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>
+                  Date
+                </Text>
+                <TextInput
+                  accessibilityLabel="Expense date"
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.muted,
+                      color: colors.foreground,
+                      borderColor: validExpenseDate
+                        ? colors.border
+                        : colors.destructive,
+                    },
+                  ]}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={expDate}
+                  onChangeText={setExpDate}
+                  autoCapitalize="none"
+                />
+                {!validExpenseDate ? (
+                  <Text style={{ color: colors.destructive, fontFamily: "Inter_500Medium", fontSize: 12 }}>
+                    Enter a valid date as YYYY-MM-DD.
+                  </Text>
+                ) : null}
               </View>
 
               {/* Split between */}

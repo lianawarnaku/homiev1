@@ -43,6 +43,7 @@ function normalizeAssignees(item: ShoppingItem): string[] {
 }
 import { useTheme } from "@/constants/colors";
 import { tapLight } from "@/lib/haptics";
+import { localDateKey } from "@/lib/calendarItems";
 import { buildEvenSplitCents, centsToDollars } from "@/lib/money";
 import {
   linkedItemAllocations,
@@ -70,6 +71,7 @@ export default function ShoppingScreen() {
     expenses,
     setPendingIouDraft,
     currentUserId,
+    householdId,
   } = useAppContextSelector((context) => ({
     roommates: context.roommates,
     shoppingLists: context.shoppingLists,
@@ -86,6 +88,7 @@ export default function ShoppingScreen() {
     expenses: context.expenses,
     setPendingIouDraft: context.setPendingIouDraft,
     currentUserId: context.currentUserId,
+    householdId: context.householdId,
   }));
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -104,7 +107,6 @@ export default function ShoppingScreen() {
   const [actionListId, setActionListId] = useState<string | null>(null);
   const [actionItemId, setActionItemId] = useState<string | null>(null);
   const completedLongPressRef = useRef<string | null>(null);
-  const draftOpeningRef = useRef(false);
 
   const toggleListCollapse = (id: string) => {
     setCollapsedLists((prev) => {
@@ -211,23 +213,23 @@ export default function ShoppingScreen() {
   );
 
   const openExpenseDraft = (draft: Parameters<typeof setPendingIouDraft>[0]) => {
-    if (!draft || draftOpeningRef.current) return;
-    draftOpeningRef.current = true;
+    if (!draft) return;
     setPendingIouDraft(draft);
     setActionListId(null);
     setActionItemId(null);
     router.navigate("/(tabs)/expenses");
-    setTimeout(() => {
-      draftOpeningRef.current = false;
-    }, 600);
   };
 
   const createItemExpenseDraft = (itemId: string) => {
+    if (!householdId) throw new Error("Your Sweet is still loading.");
     const item = shoppingItems.find((entry) => entry.id === itemId);
     if (!item) throw new Error("This Shopping item is no longer available.");
     if (
       item.convertedExpenseId &&
-      expenses.some((expense) => expense.id === item.convertedExpenseId)
+      expenses.some(
+        (expense) =>
+          expense.id === item.convertedExpenseId && !expense.settled,
+      )
     ) {
       throw new Error("This item already has an expense.");
     }
@@ -246,10 +248,7 @@ export default function ShoppingScreen() {
     openExpenseDraft({
       title: `Shopping: ${item.name}`,
       category: "groceries",
-      paidBy:
-        list.assignedTo && activeMemberIds.includes(list.assignedTo)
-          ? list.assignedTo
-          : currentUserId,
+      paidBy: currentUserId,
       totalAmount: priceCents ? centsToDollars(priceCents).toFixed(2) : "",
       participants,
       splits: Object.fromEntries(
@@ -259,8 +258,10 @@ export default function ShoppingScreen() {
         ]),
       ),
       notes: `Created from “${list.name}” in Shopping.`,
+      date: localDateKey(new Date()),
       source: {
         type: "shopping-item",
+        householdId,
         shoppingListId: list.id,
         shoppingListName: list.name,
         shoppingItemIds: [item.id],
@@ -270,6 +271,7 @@ export default function ShoppingScreen() {
   };
 
   const createListExpenseDraft = (listId: string) => {
+    if (!householdId) throw new Error("Your Sweet is still loading.");
     const list = shoppingLists.find((entry) => entry.id === listId);
     if (!list) throw new Error("This Shopping list is no longer available.");
     const allocations = linkedItemAllocations(listId, shoppingItems, expenses);
@@ -307,8 +309,10 @@ export default function ShoppingScreen() {
       ),
       notes:
         "This expense covers the remaining Shopping-list total after individual item expenses were accounted for.",
+      date: localDateKey(new Date()),
       source: {
         type: "shopping-list",
+        householdId,
         shoppingListId: list.id,
         shoppingListName: list.name,
         shoppingItemIds: shoppingItems

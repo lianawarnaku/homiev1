@@ -11,6 +11,7 @@ const group = readFileSync(resolve(appRoot, "group.tsx"), "utf8");
 const borrowing = readFileSync(resolve(appRoot, "borrow.tsx"), "utf8");
 const expenses = readFileSync(resolve(appRoot, "expenses.tsx"), "utf8");
 const shopping = readFileSync(resolve(appRoot, "shopping.tsx"), "utf8");
+const context = readFileSync(resolve(process.cwd(), "context/AppContext.tsx"), "utf8");
 
 assert(
   home.includes('{currentUser?.name ?? "You"}') &&
@@ -93,6 +94,22 @@ assert(
     shopping.includes("setPendingIouDraft(draft)") &&
     expenses.includes('expenseSource?.type === "shopping-item"'),
   "individual Shopping expenses must open the standard editable IOU draft and link only after save",
+);
+assert(
+  shopping.includes("router.navigate(\"/(tabs)/expenses\")") &&
+    !shopping.includes("draftOpeningRef") &&
+    !shopping.includes("draftOpeningRef.current") &&
+    expenses.includes("setPendingIouDraft(null)") &&
+    expenses.includes("setShowExpenseModal(true)"),
+  "the Shopping IOU intent must navigate without a timer and be consumed exactly once",
+);
+assert(
+  shopping.includes("paidBy: currentUserId") &&
+    shopping.includes("householdId,") &&
+    expenses.includes("An active IOU already exists for this Shopping item.") &&
+    expenses.includes("value={expDate}") &&
+    !context.includes("convertedExpenseId: expenseId, completed: true"),
+  "Shopping-item drafts must preserve household/date metadata, prevent active duplicates, and leave the item unchecked",
 );
 assert(
   !shopping.includes("listDollarBtn") &&
