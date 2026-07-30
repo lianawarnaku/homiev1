@@ -292,6 +292,8 @@ export interface Nudge {
   choreId: string;
   sentAt: string;
   seen: boolean;
+  seenAt?: string;
+  dismissedAt?: string;
 }
 
 export type ChoreAssignment = Record<string, string>;
@@ -509,6 +511,7 @@ interface AppContextType {
   sendNudge: (toRoommateId: string, choreId: string) => Promise<void>;
   removeNudge: (toRoommateId: string, choreId: string) => Promise<void>;
   acknowledgeNudge: (nudgeId: string) => Promise<void>;
+  dismissNudge: (nudgeId: string) => Promise<void>;
   getRoommateById: (id: string) => Roommate | undefined;
   updateRoommate: (id: string, patch: Partial<Pick<Roommate, "name" | "color" | "avatarUri">>) => Promise<void>;
   getChoresByRoommate: (id: string) => Chore[];
@@ -2668,8 +2671,9 @@ export function AppProvider({
     const refreshNudges = async () => {
       const { data, error } = await supabase
         .from("nudges")
-        .select("id, to_member_id, chore_id, sent_at, seen")
+        .select("id, to_member_id, chore_id, sent_at, seen, seen_at, dismissed_at")
         .eq("household_id", householdId)
+        .is("dismissed_at", null)
         .order("sent_at", { ascending: false });
       if (!active) return;
       if (error) {
@@ -2706,6 +2710,8 @@ export function AppProvider({
         choreId: row.chore_id,
         sentAt: row.sent_at,
         seen: row.seen,
+        seenAt: row.seen_at ?? undefined,
+        dismissedAt: row.dismissed_at ?? undefined,
       })));
       setNudgesReady(true);
     };
@@ -4166,7 +4172,7 @@ export function AppProvider({
     }
     const { error } = await supabase
       .from("nudges")
-      .update({ seen: true })
+      .update({ seen: true, seen_at: new Date().toISOString() })
       .eq("id", nudgeId)
       .eq("household_id", householdId)
       .eq("to_member_id", session.user.id);
@@ -4178,7 +4184,39 @@ export function AppProvider({
       throw error;
     }
     setNudges((current) =>
-      current.map((nudge) => nudge.id === nudgeId ? { ...nudge, seen: true } : nudge)
+      current.map((nudge) =>
+        nudge.id === nudgeId
+          ? { ...nudge, seen: true, seenAt: new Date().toISOString() }
+          : nudge,
+      )
+    );
+  }, [householdId, session?.user.id]);
+
+  const dismissNudge = useCallback(async (nudgeId: string) => {
+    if (!householdId || !session?.user.id) {
+      throw new Error("Your household is still loading.");
+    }
+    const dismissedAt = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("nudges")
+      .update({ dismissed_at: dismissedAt })
+      .eq("id", nudgeId)
+      .eq("household_id", householdId)
+      .eq("to_member_id", session.user.id)
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      reportSupabaseError("dismiss received nudge", error, {
+        householdId,
+        nudgeId,
+      });
+      throw error;
+    }
+    if (!data) {
+      throw new Error("Only the recipient can dismiss this nudge.");
+    }
+    setNudges((current) =>
+      current.filter((nudge) => nudge.id !== nudgeId),
     );
   }, [householdId, session?.user.id]);
 
@@ -4358,6 +4396,7 @@ export function AppProvider({
     sendNudge,
     removeNudge,
     acknowledgeNudge,
+    dismissNudge,
     getRoommateById,
     updateRoommate,
     getChoresByRoommate,
@@ -4404,7 +4443,7 @@ export function AppProvider({
     reorderShoppingItems, assignShoppingList, assignShoppingItem,
     updateShoppingItemPrice, linkShoppingItemsToExpense, pendingIouDraft, setPendingIouDraft, addBorrowItem,
     updateBorrowItem, returnBorrowItem, deleteBorrowItem, sendNudge,
-    removeNudge, acknowledgeNudge, getRoommateById, updateRoommate,
+    removeNudge, acknowledgeNudge, dismissNudge, getRoommateById, updateRoommate,
     getChoresByRoommate, getBalances, essentialsAssignees, essentialOwned,
     essentialShortlist, essentialShortlistUpdatedBy, setEssentialOwned, saveEssentialShortlist,
     setEssentialSelfAssignment, suppressedAlerts, suppressAlert, roommateStatuses,
