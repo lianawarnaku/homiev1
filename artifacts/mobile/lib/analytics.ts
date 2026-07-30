@@ -57,10 +57,6 @@ type EventProperties = {
     category_count: number;
     source: "sweet_essentials";
   };
-  shortlist_sent_to_shopping: {
-    item_count_bucket: "1_5" | "6_10" | "11_plus";
-    source: "sweet_essentials";
-  };
 };
 
 type EventName = keyof EventProperties;
@@ -293,9 +289,6 @@ export const track = {
     capture("shortlist_opened", properties),
   shortlistSaved: (properties: EventProperties["shortlist_saved"]) =>
     capture("shortlist_saved", properties),
-  shortlistSentToShopping: (
-    properties: EventProperties["shortlist_sent_to_shopping"],
-  ) => capture("shortlist_sent_to_shopping", properties),
 };
 
 export function captureDiagnosticException(

@@ -60,15 +60,15 @@ assert(
   "the remaining setup form must restore from a versioned user-scoped draft",
 );
 assert(
-  planningScreen.includes("sendShortlistToShopping();") &&
+  planningScreen.includes("const saved = await saveShortlist();") &&
     planningScreen.includes('await setHouseholdSetupStep("home")') &&
     planningScreen.includes("Continue setup"),
-  "setup Essentials must save to canonical Shopping and continue to Home",
+  "setup Essentials must save its shortlist and continue to Home without Shopping",
 );
 assert(
-  planningScreen.includes("existingSourceIds") &&
-    planningScreen.includes("existingNames"),
-  "Sweet Essentials must prevent duplicate To Buy entries by catalog ID and name",
+  !planningScreen.includes("sendShortlistToShopping") &&
+    !planningScreen.includes('addShoppingList("Sweet Essentials")'),
+  "setup Essentials must never create automatic Shopping records",
 );
 assert(
   planningScreen.includes('params.setup === "household"') &&

@@ -80,7 +80,7 @@ assert(
   "the item row must expose an accessible current-user multi-assignment control",
 );
 assert(
-  home.includes('title="My Sweet Essentials"') &&
+  home.includes('title="To Buy for Sweet"') &&
     !home.includes("setEssentialAssignee(sectionKey, item, null)"),
   "assignment display must remain independent from canonical Shopping completion",
 );

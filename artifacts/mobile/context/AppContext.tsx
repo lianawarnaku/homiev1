@@ -40,6 +40,12 @@ import {
   type EssentialAssignments,
 } from "@/lib/essentialAssignments";
 import {
+  shortlistFromRows,
+  removedShortlistRows,
+  shortlistSelectionRows,
+  type EssentialShortlist,
+} from "@/lib/essentialShortlist";
+import {
   HOUSEHOLD_SETUP_VERSION,
   normalizeHouseholdSetupStep,
   type HouseholdSetupStep,
@@ -175,7 +181,7 @@ export interface ShoppingItem {
   convertedExpenseId?: string;
   /** Optional local calendar day (YYYY-MM-DD) by which the item is needed. */
   neededByDate?: string;
-  /** Stable Sweet Essentials catalog ID when transferred from a shortlist. */
+  /** Historical source marker retained for Shopping records created by older releases. */
   sourceEssentialItemId?: string;
 }
 
@@ -470,10 +476,13 @@ interface AppContextType {
     assigned: boolean,
   ) => Promise<boolean>;
   essentialOwned: Record<string, Record<string, boolean>>;
-  essentialShortlist: Record<string, Record<string, boolean>>;
+  essentialShortlist: EssentialShortlist;
   essentialShortlistUpdatedBy: string | null;
   setEssentialOwned: (sectionKey: string, itemId: string, owned: boolean) => void;
-  saveEssentialShortlist: (next: Record<string, Record<string, boolean>>) => void;
+  saveEssentialShortlist: (
+    next: EssentialShortlist,
+    baseline?: EssentialShortlist,
+  ) => Promise<boolean>;
   suppressedAlerts: Record<string, boolean>;
   suppressAlert: (id: string) => void;
   roommateStatuses: Record<string, RoommateStatus>;
@@ -611,7 +620,8 @@ interface SharedHouseholdState {
   /** Legacy cache only. Cloud synchronization uses the normalized join table. */
   essentialsAssignees?: EssentialAssignments;
   essentialOwned: Record<string, Record<string, boolean>>;
-  essentialShortlist: Record<string, Record<string, boolean>>;
+  /** Legacy cache only. Cloud synchronization uses the normalized shortlist table. */
+  essentialShortlist?: EssentialShortlist;
   essentialShortlistUpdatedBy: string | null;
   roommateStatuses: Record<string, RoommateStatus>;
   sleepStartedAt: Record<string, number>;
@@ -665,7 +675,8 @@ export function AppProvider({
   const [essentialsAssignees, setEssentialsAssignees] =
     useState<EssentialAssignments>({});
   const [essentialOwned, setEssentialOwnedState] = useState<Record<string, Record<string, boolean>>>({});
-  const [essentialShortlist, setEssentialShortlist] = useState<Record<string, Record<string, boolean>>>({});
+  const [essentialShortlist, setEssentialShortlist] =
+    useState<EssentialShortlist>({});
   const [essentialShortlistUpdatedBy, setEssentialShortlistUpdatedBy] = useState<string | null>(null);
   const [suppressedAlerts, setSuppressedAlerts] = useState<Record<string, boolean>>({});
   const [roommateStatuses, setRoommateStatusesState] = useState<Record<string, RoommateStatus>>({});
@@ -2009,7 +2020,6 @@ export function AppProvider({
     shoppingSyncMeta,
     borrowItems,
     essentialOwned,
-    essentialShortlist,
     essentialShortlistUpdatedBy,
     roommateStatuses,
     sleepStartedAt,
@@ -2019,7 +2029,7 @@ export function AppProvider({
     homeProfile,
     liveChart,
     customTasks,
-  }), [roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, essentialOwned, essentialShortlist, essentialShortlistUpdatedBy, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
+  }), [roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, essentialOwned, essentialShortlistUpdatedBy, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
 
   const latestSharedStateRef = useRef(sharedState);
   latestSharedStateRef.current = sharedState;
@@ -2145,9 +2155,8 @@ export function AppProvider({
     if (next.essentialOwned) {
       setEssentialOwnedState(migrateEssentialRecord(next.essentialOwned));
     }
-    if (next.essentialShortlist) {
-      setEssentialShortlist(migrateEssentialRecord(next.essentialShortlist));
-    }
+    // The saved shortlist uses sweet_essential_shortlist_items. Ignore the
+    // legacy snapshot field to avoid stale whole-document replacement.
     if ("essentialShortlistUpdatedBy" in next) {
       setEssentialShortlistUpdatedBy(next.essentialShortlistUpdatedBy ?? null);
     }
@@ -2359,6 +2368,87 @@ export function AppProvider({
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           reportSupabaseError(
             "subscribe to Sweet Essential assignments",
+            error ?? new Error(status),
+            { householdId, status },
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [householdId, session?.user.id]);
+
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId || !householdId) {
+      setEssentialShortlist({});
+      setEssentialShortlistUpdatedBy(null);
+      return;
+    }
+    let active = true;
+    type ShortlistRow = {
+      household_id: string;
+      section_key: string;
+      item_id: string;
+      added_by: string | null;
+    };
+    const channel = supabase.channel(`essential-shortlist:${householdId}`);
+
+    void supabase
+      .from("sweet_essential_shortlist_items")
+      .select("household_id, section_key, item_id, added_by")
+      .eq("household_id", householdId)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          reportSupabaseError("load Sweet Essential shortlist", error, {
+            householdId,
+          });
+          return;
+        }
+        const rows = (data ?? []) as ShortlistRow[];
+        setEssentialShortlist(
+          migrateEssentialRecord(shortlistFromRows(rows)),
+        );
+        setEssentialShortlistUpdatedBy(rows.at(-1)?.added_by ?? null);
+      });
+
+    channel
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sweet_essential_shortlist_items",
+          filter: `household_id=eq.${householdId}`,
+        },
+        (payload) => {
+          if (!active) return;
+          const row = (payload.eventType === "DELETE"
+            ? payload.old
+            : payload.new) as Partial<ShortlistRow>;
+          if (
+            row.household_id !== householdId ||
+            !row.section_key ||
+            !row.item_id
+          ) return;
+          setEssentialShortlist((current) => {
+            const section = { ...(current[row.section_key!] ?? {}) };
+            if (payload.eventType === "DELETE") delete section[row.item_id!];
+            else section[row.item_id!] = true;
+            return { ...current, [row.section_key!]: section };
+          });
+          if (payload.eventType !== "DELETE") {
+            setEssentialShortlistUpdatedBy(row.added_by ?? null);
+          }
+        },
+      )
+      .subscribe((status, error) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          reportSupabaseError(
+            "subscribe to Sweet Essential shortlist",
             error ?? new Error(status),
             { householdId, status },
           );
@@ -3546,13 +3636,34 @@ export function AppProvider({
     }));
   }, []);
 
-  const saveEssentialShortlist = useCallback(
-    (next: Record<string, Record<string, boolean>>) => {
-      setEssentialShortlist(next);
-      setEssentialShortlistUpdatedBy(currentUserId);
-    },
-    [currentUserId],
-  );
+  const saveEssentialShortlist = useCallback(async (
+    next: EssentialShortlist,
+    baseline: EssentialShortlist = essentialShortlist,
+  ) => {
+    const userId = session?.user.id;
+    if (!userId || !householdId) return false;
+    const previous = essentialShortlist;
+    setEssentialShortlist(next);
+    setEssentialShortlistUpdatedBy(userId);
+    const { data, error } = await supabase.rpc("save_sweet_essential_shortlist", {
+      target_household_id: householdId,
+      selected_items: shortlistSelectionRows(next),
+      removed_items: removedShortlistRows(baseline, next),
+    });
+    if (error) {
+      reportSupabaseError("save Sweet Essential shortlist", error, { householdId });
+      setEssentialShortlist(previous);
+      return false;
+    }
+    if (Array.isArray(data)) {
+      setEssentialShortlist(
+        migrateEssentialRecord(
+          shortlistFromRows(data as Array<{ section_key: string; item_id: string }>),
+        ),
+      );
+    }
+    return true;
+  }, [essentialShortlist, householdId, session?.user.id]);
 
   const sendNudge = useCallback(async (toRoommateId: string, choreId: string) => {
     if (!householdId || !session?.user.id) {

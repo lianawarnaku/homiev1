@@ -44,6 +44,7 @@ import {
 } from "@/lib/externalTasks";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import { essentialItemById } from "@/constants/essentialCatalog";
+import { personalShortlistedEssentials } from "@/lib/essentialShortlist";
 import {
   deriveCalendarItems,
   groupCalendarItemsByDate,
@@ -445,7 +446,7 @@ export default function MyChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const { scrollBottomPadding } = useFloatingActionMetrics();
-  const { currentUserId, householdId, chores, roommates, expenses, setChoreCompleted, deleteChore, essentialsAssignees, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
+  const { currentUserId, householdId, chores, roommates, expenses, setChoreCompleted, deleteChore, essentialsAssignees, essentialShortlist, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
     useAppContextSelector((context) => ({
       currentUserId: context.currentUserId,
       householdId: context.householdId,
@@ -455,6 +456,7 @@ export default function MyChoresScreen() {
       setChoreCompleted: context.setChoreCompleted,
       deleteChore: context.deleteChore,
       essentialsAssignees: context.essentialsAssignees,
+      essentialShortlist: context.essentialShortlist,
       shoppingLists: context.shoppingLists,
       shoppingItems: context.shoppingItems,
       toggleShoppingItem: context.toggleShoppingItem,
@@ -525,16 +527,16 @@ export default function MyChoresScreen() {
 
   const myToBuyItems = useMemo(
     () =>
-      Object.entries(essentialsAssignees).flatMap(([sectionKey, items]) =>
-        Object.entries(items)
-          .filter(([, roommateIds]) => roommateIds.includes(currentUserId))
-          .map(([item]) => ({
-            sectionKey,
-            item,
-            label: essentialItemById(item)?.label ?? item,
-          })),
-      ),
-    [currentUserId, essentialsAssignees],
+      personalShortlistedEssentials(
+        essentialShortlist,
+        essentialsAssignees,
+        currentUserId,
+      ).map(({ section_key: sectionKey, item_id: item }) => ({
+        sectionKey,
+        item,
+        label: essentialItemById(item)?.label ?? item,
+      })),
+    [currentUserId, essentialShortlist, essentialsAssignees],
   );
 
   const shoppingListsById = useMemo(
@@ -1155,7 +1157,7 @@ export default function MyChoresScreen() {
             {myToBuyItems.length > 0 ? (
               <>
                 <CollapsibleSectionHeader
-                  title="My Sweet Essentials"
+                  title="To Buy for Sweet"
                   count={myToBuyItems.length}
                   icon="user-check"
                   expanded={expandedHomeSections["to-buy"]}
