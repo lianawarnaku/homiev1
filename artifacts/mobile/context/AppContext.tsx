@@ -34,6 +34,12 @@ import {
 } from "@/lib/choreOccurrences";
 import { choreCompletionTransition } from "@/lib/choreCompletion";
 import {
+  assignmentsFromRows,
+  migrateEssentialAssignments,
+  setSelfAssignment,
+  type EssentialAssignments,
+} from "@/lib/essentialAssignments";
+import {
   HOUSEHOLD_SETUP_VERSION,
   normalizeHouseholdSetupStep,
   type HouseholdSetupStep,
@@ -457,8 +463,12 @@ interface AppContextType {
   updateRoommate: (id: string, patch: Partial<Pick<Roommate, "name" | "color" | "avatarUri">>) => Promise<void>;
   getChoresByRoommate: (id: string) => Chore[];
   getBalances: () => Record<string, number>;
-  essentialsAssignees: Record<string, Record<string, string>>;
-  setEssentialAssignee: (sectionKey: string, item: string, roommateId: string | null) => void;
+  essentialsAssignees: EssentialAssignments;
+  setEssentialSelfAssignment: (
+    sectionKey: string,
+    itemId: string,
+    assigned: boolean,
+  ) => Promise<boolean>;
   essentialOwned: Record<string, Record<string, boolean>>;
   essentialShortlist: Record<string, Record<string, boolean>>;
   essentialShortlistUpdatedBy: string | null;
@@ -598,7 +608,8 @@ interface SharedHouseholdState {
   shoppingItems: ShoppingItem[];
   shoppingSyncMeta: ShoppingSyncMeta;
   borrowItems: BorrowItem[];
-  essentialsAssignees: Record<string, Record<string, string>>;
+  /** Legacy cache only. Cloud synchronization uses the normalized join table. */
+  essentialsAssignees?: EssentialAssignments;
   essentialOwned: Record<string, Record<string, boolean>>;
   essentialShortlist: Record<string, Record<string, boolean>>;
   essentialShortlistUpdatedBy: string | null;
@@ -651,7 +662,8 @@ export function AppProvider({
   );
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [nudgesReady, setNudgesReady] = useState(false);
-  const [essentialsAssignees, setEssentialsAssignees] = useState<Record<string, Record<string, string>>>({});
+  const [essentialsAssignees, setEssentialsAssignees] =
+    useState<EssentialAssignments>({});
   const [essentialOwned, setEssentialOwnedState] = useState<Record<string, Record<string, boolean>>>({});
   const [essentialShortlist, setEssentialShortlist] = useState<Record<string, Record<string, boolean>>>({});
   const [essentialShortlistUpdatedBy, setEssentialShortlistUpdatedBy] = useState<string | null>(null);
@@ -1234,7 +1246,13 @@ export function AppProvider({
           if (Array.isArray(cached.borrowItems)) {
             setBorrowItems(normalizeSharedBorrowItems(cached.borrowItems));
           }
-          if (cached.essentialsAssignees) setEssentialsAssignees(migrateEssentialRecord(cached.essentialsAssignees));
+          if (cached.essentialsAssignees) {
+            setEssentialsAssignees(
+              migrateEssentialAssignments(
+                migrateEssentialRecord(cached.essentialsAssignees),
+              ),
+            );
+          }
           if (cached.essentialOwned) setEssentialOwnedState(migrateEssentialRecord(cached.essentialOwned));
           if (cached.essentialShortlist) setEssentialShortlist(migrateEssentialRecord(cached.essentialShortlist));
           setEssentialShortlistUpdatedBy(cached.essentialShortlistUpdatedBy ?? null);
@@ -1335,7 +1353,11 @@ export function AppProvider({
       setShoppingItems(cached.shoppingItems);
       setShoppingSyncMeta(cached.shoppingSyncMeta);
       setBorrowItems(normalizeSharedBorrowItems(cached.borrowItems));
-      setEssentialsAssignees(migrateEssentialRecord(cached.essentialsAssignees));
+      setEssentialsAssignees(
+        migrateEssentialAssignments(
+          migrateEssentialRecord(cached.essentialsAssignees),
+        ),
+      );
       setEssentialOwnedState(migrateEssentialRecord(cached.essentialOwned));
       setEssentialShortlist(migrateEssentialRecord(cached.essentialShortlist));
       setEssentialShortlistUpdatedBy(cached.essentialShortlistUpdatedBy ?? null);
@@ -1986,7 +2008,6 @@ export function AppProvider({
     shoppingItems,
     shoppingSyncMeta,
     borrowItems,
-    essentialsAssignees,
     essentialOwned,
     essentialShortlist,
     essentialShortlistUpdatedBy,
@@ -1998,7 +2019,7 @@ export function AppProvider({
     homeProfile,
     liveChart,
     customTasks,
-  }), [roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, essentialOwned, essentialShortlist, essentialShortlistUpdatedBy, essentialsAssignees, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
+  }), [roommates, chores, expenses, shoppingLists, shoppingItems, shoppingSyncMeta, borrowItems, essentialOwned, essentialShortlist, essentialShortlistUpdatedBy, roommateStatuses, sleepStartedAt, homeLocation, choreChart, choreChartStartedAt, homeProfile, liveChart, customTasks]);
 
   const latestSharedStateRef = useRef(sharedState);
   latestSharedStateRef.current = sharedState;
@@ -2118,9 +2139,9 @@ export function AppProvider({
     if (Array.isArray(next.borrowItems)) {
       setBorrowItems(normalizeSharedBorrowItems(next.borrowItems));
     }
-    if (next.essentialsAssignees) {
-      setEssentialsAssignees(migrateEssentialRecord(next.essentialsAssignees));
-    }
+    // Essential assignments use atomic rows in
+    // sweet_essential_item_assignments. Never apply the legacy snapshot field:
+    // doing so could replace assignments created concurrently by another user.
     if (next.essentialOwned) {
       setEssentialOwnedState(migrateEssentialRecord(next.essentialOwned));
     }
@@ -2265,6 +2286,90 @@ export function AppProvider({
       reportRuntimeError("cache private borrowing entries", error, { householdId }),
     );
   }, [householdId, privateBorrowItems, session?.user.id]);
+
+  // Sweet Essential assignments are atomic member/item relationships. Load
+  // them in one query and apply realtime row changes so concurrent users never
+  // replace one another through the shared JSON snapshot.
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId || !householdId) {
+      setEssentialsAssignees({});
+      return;
+    }
+    let active = true;
+    type AssignmentRow = {
+      household_id: string;
+      section_key: string;
+      item_id: string;
+      user_id: string;
+    };
+    const channel = supabase.channel(`essential-assignments:${householdId}`);
+
+    void supabase
+      .from("sweet_essential_item_assignments")
+      .select("household_id, section_key, item_id, user_id")
+      .eq("household_id", householdId)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          reportSupabaseError("load Sweet Essential assignments", error, {
+            householdId,
+          });
+          return;
+        }
+        setEssentialsAssignees(
+          migrateEssentialRecord(
+            assignmentsFromRows((data ?? []) as AssignmentRow[]),
+          ),
+        );
+      });
+
+    channel
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sweet_essential_item_assignments",
+          filter: `household_id=eq.${householdId}`,
+        },
+        (payload) => {
+          if (!active) return;
+          const row = (payload.eventType === "DELETE"
+            ? payload.old
+            : payload.new) as Partial<AssignmentRow>;
+          if (
+            row.household_id !== householdId ||
+            !row.section_key ||
+            !row.item_id ||
+            !row.user_id
+          ) return;
+          setEssentialsAssignees((current) =>
+            setSelfAssignment(
+              current,
+              row.section_key!,
+              row.item_id!,
+              row.user_id!,
+              payload.eventType !== "DELETE",
+            ),
+          );
+        },
+      )
+      .subscribe((status, error) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          reportSupabaseError(
+            "subscribe to Sweet Essential assignments",
+            error ?? new Error(status),
+            { householdId, status },
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [householdId, session?.user.id]);
 
   // Load the shared household document and subscribe to other devices.
   useEffect(() => {
@@ -3390,17 +3495,49 @@ export function AppProvider({
     return true;
   }, [currentUserId, householdId, isHost, visibleBorrowItems]);
 
-  const setEssentialAssignee = useCallback((sectionKey: string, item: string, roommateId: string | null) => {
-    setEssentialsAssignees((prev) => {
-      const section = { ...(prev[sectionKey] ?? {}) };
-      if (roommateId === null) {
-        delete section[item];
-      } else {
-        section[item] = roommateId;
-      }
-      return { ...prev, [sectionKey]: section };
-    });
-  }, []);
+  const setEssentialSelfAssignment = useCallback(async (
+    sectionKey: string,
+    itemId: string,
+    assigned: boolean,
+  ) => {
+    const userId = session?.user.id;
+    if (!userId || !householdId) return false;
+    const isActiveMember = roommates.some((member) => member.id === userId);
+    if (!isActiveMember) return false;
+    setEssentialsAssignees((current) =>
+      setSelfAssignment(current, sectionKey, itemId, userId, assigned),
+    );
+    const query = assigned
+      ? supabase.from("sweet_essential_item_assignments").upsert(
+          {
+            household_id: householdId,
+            section_key: sectionKey,
+            item_id: itemId,
+            user_id: userId,
+          },
+          { onConflict: "household_id,section_key,item_id,user_id" },
+        )
+      : supabase
+          .from("sweet_essential_item_assignments")
+          .delete()
+          .eq("household_id", householdId)
+          .eq("section_key", sectionKey)
+          .eq("item_id", itemId)
+          .eq("user_id", userId);
+    const { error } = await query;
+    if (error) {
+      reportSupabaseError(
+        assigned ? "assign Sweet Essential" : "unassign Sweet Essential",
+        error,
+        { householdId, sectionKey, itemId },
+      );
+      setEssentialsAssignees((current) =>
+        setSelfAssignment(current, sectionKey, itemId, userId, !assigned),
+      );
+      return false;
+    }
+    return true;
+  }, [householdId, roommates, session?.user.id]);
 
   const setEssentialOwned = useCallback((sectionKey: string, itemId: string, owned: boolean) => {
     setEssentialOwnedState((current) => ({
@@ -3916,7 +4053,7 @@ export function AppProvider({
     getChoresByRoommate,
     getBalances,
     essentialsAssignees,
-    setEssentialAssignee,
+    setEssentialSelfAssignment,
     essentialOwned,
     essentialShortlist,
     essentialShortlistUpdatedBy,
@@ -3960,7 +4097,7 @@ export function AppProvider({
     removeNudge, acknowledgeNudge, getRoommateById, updateRoommate,
     getChoresByRoommate, getBalances, essentialsAssignees, essentialOwned,
     essentialShortlist, essentialShortlistUpdatedBy, setEssentialOwned, saveEssentialShortlist,
-    setEssentialAssignee, suppressedAlerts, suppressAlert, roommateStatuses,
+    setEssentialSelfAssignment, suppressedAlerts, suppressAlert, roommateStatuses,
     setRoommateStatus, sleepStartedAt, homeLocation, setHomeLocation,
     choreChart, choreChartStartedAt, setChoreChart, homeProfile,
   ]);

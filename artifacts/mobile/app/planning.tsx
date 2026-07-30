@@ -419,10 +419,12 @@ function EssentialItemRow({
   item,
   optional,
   checked,
-  shortlisted,
   onToggle,
-  assigneeId,
-  onAssign,
+  assignedUserIds,
+  currentUserId,
+  assignmentPending,
+  assignmentError,
+  onToggleSelfAssignment,
   accentColor,
   textColor,
   mutedColor,
@@ -431,15 +433,31 @@ function EssentialItemRow({
   item: string;
   optional: boolean;
   checked: boolean;
-  shortlisted: boolean;
   onToggle: () => void;
-  assigneeId: string | null;
-  onAssign: (id: string | null) => void;
+  assignedUserIds: string[];
+  currentUserId: string;
+  assignmentPending: boolean;
+  assignmentError: boolean;
+  onToggleSelfAssignment: (assigned: boolean) => void;
   accentColor: string;
   textColor: string;
   mutedColor: string;
   roommates: Roommate[];
 }) {
+  const [showAllAssignees, setShowAllAssignees] = useState(false);
+  const assignedMembers = assignedUserIds.flatMap((id) => {
+    const member = roommates.find((roommate) => roommate.id === id);
+    return member ? [member] : [];
+  });
+  const currentUserAssigned = assignedUserIds.includes(currentUserId);
+  const previewNames = assignedMembers
+    .slice(0, showAllAssignees ? assignedMembers.length : 3)
+    .map((member) => (member.id === currentUserId ? "You" : member.name));
+  const overflowCount = Math.max(0, assignedMembers.length - previewNames.length);
+  const assignmentSummary = [
+    ...previewNames,
+    ...(overflowCount ? [`+${overflowCount}`] : []),
+  ].join(", ");
   return (
     <View>
       <TouchableOpacity
@@ -464,43 +482,79 @@ function EssentialItemRow({
         <Text style={[styles.checkLabel, { color: textColor, flex: 1 }]}>
           {item}{optional ? <Text style={{ color: mutedColor }}> · Optional</Text> : null}
         </Text>
-        {shortlisted ? <Feather name="bookmark" size={13} color={accentColor} /> : null}
-        {shortlisted && assigneeId && (() => {
-          const r = roommates.find((x) => x.id === assigneeId);
-          return r ? (
-            <View style={[essentialRowStyles.assignedPill, { backgroundColor: r.color + "22", borderColor: r.color + "55" }]}>
-              <View style={[essentialRowStyles.pillDot, { backgroundColor: r.color }]} />
-              <Text style={[essentialRowStyles.pillText, { color: r.color }]}>{r.name}</Text>
-            </View>
-          ) : null;
-        })()}
       </TouchableOpacity>
-      {shortlisted && !checked && (
+      {(assignedMembers.length > 0 || !checked) && (
         <View style={essentialRowStyles.assignRow}>
-          <Text style={[essentialRowStyles.assignLabel, { color: mutedColor }]}>Who's getting it?</Text>
-          <View style={essentialRowStyles.avatarRow}>
-            {roommates.map((r) => {
-              const selected = assigneeId === r.id;
-              return (
-                <TouchableOpacity
-                  key={r.id}
-                  onPress={() => onAssign(selected ? null : r.id)}
-                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-                  style={[
-                    essentialRowStyles.avatar,
-                    {
-                      backgroundColor: selected ? r.color : r.color + "22",
-                      borderColor: selected ? r.color : r.color + "44",
-                    },
-                  ]}
-                >
-                  <Text style={[essentialRowStyles.avatarText, { color: selected ? "#fff" : r.color }]}>
-                    {r.name[0]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <Pressable
+            disabled={assignedMembers.length <= 3}
+            onPress={() => setShowAllAssignees((current) => !current)}
+            accessibilityRole={assignedMembers.length > 3 ? "button" : undefined}
+            accessibilityHint={
+              assignedMembers.length > 3
+                ? showAllAssignees
+                  ? "Collapses the full assignee list"
+                  : "Shows every assigned Sweetmate"
+                : undefined
+            }
+            style={essentialRowStyles.assignmentCopy}
+          >
+            <Text
+              style={[essentialRowStyles.assignLabel, { color: mutedColor }]}
+              numberOfLines={2}
+              accessibilityLabel={
+                assignedMembers.length
+                  ? `Assigned to ${assignedMembers.map((member) =>
+                      member.id === currentUserId ? "you" : member.name,
+                    ).join(", ")}`
+                  : "No Sweetmates assigned"
+              }
+            >
+              {assignmentSummary || "No one assigned yet"}
+            </Text>
+            {assignmentError ? (
+              <Text style={[essentialRowStyles.assignmentError, { color: "#B42318" }]}>
+                Couldn’t save. Try again.
+              </Text>
+            ) : null}
+          </Pressable>
+          <TouchableOpacity
+            disabled={assignmentPending}
+            onPress={() => onToggleSelfAssignment(!currentUserAssigned)}
+            accessibilityRole="checkbox"
+            accessibilityState={{
+              checked: currentUserAssigned,
+              disabled: assignmentPending,
+            }}
+            accessibilityLabel={
+              currentUserAssigned
+                ? `Remove your assignment from ${item}`
+                : `Assign yourself to ${item}`
+            }
+            style={[
+              essentialRowStyles.selfAssignButton,
+              {
+                borderColor: currentUserAssigned ? accentColor : mutedColor + "66",
+                backgroundColor: currentUserAssigned
+                  ? accentColor + "18"
+                  : "transparent",
+                opacity: assignmentPending ? 0.55 : 1,
+              },
+            ]}
+          >
+            <Feather
+              name={currentUserAssigned ? "check" : "user-plus"}
+              size={13}
+              color={currentUserAssigned ? accentColor : mutedColor}
+            />
+            <Text
+              style={[
+                essentialRowStyles.selfAssignText,
+                { color: currentUserAssigned ? accentColor : textColor },
+              ]}
+            >
+              {currentUserAssigned ? "I’m getting this" : "I’ll get this"}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -512,32 +566,24 @@ const essentialRowStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingLeft: 30,
+    paddingRight: 4,
     paddingBottom: 8,
     gap: 10,
     flexWrap: "wrap",
   },
-  assignLabel: { fontFamily: "Inter_400Regular", fontSize: 11 },
-  avatarRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  assignedPill: {
+  assignmentCopy: { flex: 1, minWidth: 110 },
+  assignLabel: { fontFamily: "Inter_500Medium", fontSize: 12, lineHeight: 16 },
+  assignmentError: { fontFamily: "Inter_500Medium", fontSize: 11, marginTop: 2 },
+  selfAssignButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
+    gap: 5,
+    minHeight: 34,
+    paddingHorizontal: 10,
+    borderRadius: 17,
     borderWidth: 1,
   },
-  pillDot: { width: 6, height: 6, borderRadius: 3 },
-  pillText: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
+  selfAssignText: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
 });
 
 // ── Section card wrapper ───────────────────────────────────────────────────
@@ -581,7 +627,7 @@ export default function PlanningScreen() {
   const params = useLocalSearchParams<{ type?: string; setup?: string }>();
   const setupMode = params.setup === "household";
   const {
-    roommates, addChore, addChores, essentialsAssignees, setEssentialAssignee,
+    roommates, addChore, addChores, essentialsAssignees, setEssentialSelfAssignment,
     essentialOwned, essentialShortlist, essentialShortlistUpdatedBy,
     setEssentialOwned, saveEssentialShortlist,
     shoppingLists, shoppingItems, addShoppingList, addShoppingItem,
@@ -619,6 +665,13 @@ export default function PlanningScreen() {
   const [customTaskDifficulty, setCustomTaskDifficulty] = useState<Difficulty>(3);
   const [customTaskFrequency, setCustomTaskFrequency] = useState<ChoreFrequency>("weekly");
   const [customTaskTime, setCustomTaskTime] = useState<ChoreTimeOfDay>("any");
+  const [pendingAssignments, setPendingAssignments] = useState<Set<string>>(
+    new Set(),
+  );
+  const [assignmentErrors, setAssignmentErrors] = useState<Set<string>>(
+    new Set(),
+  );
+  const pendingAssignmentKeysRef = useRef(new Set<string>());
   const openedSetupShortlistRef = useRef(false);
   const continuingSetupRef = useRef(false);
 
@@ -639,6 +692,32 @@ export default function PlanningScreen() {
       else cur.add(item);
       return { ...prev, [sectionKey]: cur };
     });
+  }
+
+  async function toggleSelfAssignment(
+    sectionId: string,
+    itemId: string,
+    assigned: boolean,
+  ) {
+    const key = `${sectionId}:${itemId}`;
+    if (pendingAssignmentKeysRef.current.has(key)) return;
+    pendingAssignmentKeysRef.current.add(key);
+    setPendingAssignments((current) => new Set(current).add(key));
+    setAssignmentErrors((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    const saved = await setEssentialSelfAssignment(sectionId, itemId, assigned);
+    if (!saved) {
+      setAssignmentErrors((current) => new Set(current).add(key));
+    }
+    setPendingAssignments((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    pendingAssignmentKeysRef.current.delete(key);
   }
 
   function addCustomEssential(sectionKey: string, item: string) {
@@ -1012,9 +1091,11 @@ export default function PlanningScreen() {
         if (items.length > 0) {
           const assignments = essentialsAssignees[section.id] ?? {};
           const itemsWithAssignment = items.map((item) => {
-            const rid = assignments[item];
-            const rname = rid ? roommates.find((r) => r.id === rid)?.name : null;
-            return rname ? `${item} (${rname})` : item;
+            const names = (assignments[item] ?? []).flatMap((userId) => {
+              const member = roommates.find((roommate) => roommate.id === userId);
+              return member ? [member.name] : [];
+            });
+            return names.length ? `${item} (${names.join(", ")})` : item;
           });
           parts.push(`${section.title} (selected): ${itemsWithAssignment.join(", ")}`);
         }
@@ -1589,10 +1670,14 @@ export default function PlanningScreen() {
                               item={entry.label}
                               optional={entry.subsection === "optional"}
                               checked={Boolean(essentialOwned[section.id]?.[entry.id])}
-                              shortlisted={Boolean(essentialShortlist[section.id]?.[entry.id])}
                               onToggle={() => toggleOwnedItem(section.id, entry.id)}
-                              assigneeId={essentialsAssignees[section.id]?.[entry.id] ?? null}
-                              onAssign={(id) => setEssentialAssignee(section.id, entry.id, id)}
+                              assignedUserIds={essentialsAssignees[section.id]?.[entry.id] ?? []}
+                              currentUserId={currentUserId}
+                              assignmentPending={pendingAssignments.has(`${section.id}:${entry.id}`)}
+                              assignmentError={assignmentErrors.has(`${section.id}:${entry.id}`)}
+                              onToggleSelfAssignment={(assigned) =>
+                                void toggleSelfAssignment(section.id, entry.id, assigned)
+                              }
                               accentColor={section.color}
                               textColor={colors.foreground}
                               mutedColor={colors.mutedForeground}
@@ -2017,7 +2102,7 @@ export default function PlanningScreen() {
             <ActivityIndicator color="#fff" />
           ) : (
             <>
-              <Feather name={selectedType === "home-checklist" ? "bookmark" : "zap"} size={18} color="#fff" />
+              {isChoreChart ? <Feather name="zap" size={18} color="#fff" /> : null}
               <Text style={styles.generateText}>
                 {isChoreChart
                   ? "Build Chore Chart"

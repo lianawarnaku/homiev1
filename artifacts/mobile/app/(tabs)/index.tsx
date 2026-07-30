@@ -445,7 +445,7 @@ export default function MyChoresScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
   const { scrollBottomPadding } = useFloatingActionMetrics();
-  const { currentUserId, householdId, chores, roommates, expenses, setChoreCompleted, deleteChore, essentialsAssignees, setEssentialAssignee, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
+  const { currentUserId, householdId, chores, roommates, expenses, setChoreCompleted, deleteChore, essentialsAssignees, shoppingLists, shoppingItems, toggleShoppingItem, pointsEnabled, isHost } =
     useAppContextSelector((context) => ({
       currentUserId: context.currentUserId,
       householdId: context.householdId,
@@ -455,7 +455,6 @@ export default function MyChoresScreen() {
       setChoreCompleted: context.setChoreCompleted,
       deleteChore: context.deleteChore,
       essentialsAssignees: context.essentialsAssignees,
-      setEssentialAssignee: context.setEssentialAssignee,
       shoppingLists: context.shoppingLists,
       shoppingItems: context.shoppingItems,
       toggleShoppingItem: context.toggleShoppingItem,
@@ -528,7 +527,7 @@ export default function MyChoresScreen() {
     () =>
       Object.entries(essentialsAssignees).flatMap(([sectionKey, items]) =>
         Object.entries(items)
-          .filter(([, roommateId]) => roommateId === currentUserId)
+          .filter(([, roommateIds]) => roommateIds.includes(currentUserId))
           .map(([item]) => ({
             sectionKey,
             item,
@@ -1156,9 +1155,9 @@ export default function MyChoresScreen() {
             {myToBuyItems.length > 0 ? (
               <>
                 <CollapsibleSectionHeader
-                  title="To Buy"
+                  title="My Sweet Essentials"
                   count={myToBuyItems.length}
-                  icon="shopping-bag"
+                  icon="user-check"
                   expanded={expandedHomeSections["to-buy"]}
                   onToggle={() => toggleHomeSection("to-buy")}
                 />
@@ -1170,26 +1169,20 @@ export default function MyChoresScreen() {
                   ]}
                 >
                   {myToBuyItems.map(({ sectionKey, item, label }, idx) => (
-                    <TouchableOpacity
+                    <View
                       key={`${sectionKey}:${item}`}
                       style={[
                         styles.toBuyRow,
                         idx > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
                       ]}
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        setEssentialAssignee(sectionKey, item, null);
-                      }}
-                      activeOpacity={0.7}
                     >
-                      <View style={[styles.toBuyCheck, { borderColor: colors.border }]} />
                       <Text style={[styles.toBuyItem, { color: colors.foreground }]} numberOfLines={1}>
                         {label}
                       </Text>
                       <Text style={[styles.toBuySection, { color: colors.mutedForeground }]}>
                         {SECTION_NAMES[sectionKey] ?? sectionKey}
                       </Text>
-                    </TouchableOpacity>
+                    </View>
                   ))}
                 </View>
                 ) : null}
