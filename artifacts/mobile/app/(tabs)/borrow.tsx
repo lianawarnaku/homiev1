@@ -133,6 +133,13 @@ export default function BorrowScreen() {
       overdue: active.filter((borrow) => !borrow.returned && new Date(borrow.dueDate) < new Date()),
     };
   }, [borrowItems]);
+  const visibleReturnedBorrows = useMemo(
+    () =>
+      showAllReturned
+        ? historyPage(returnedBorrows, (borrow) => borrow.returnedAt, historyPages)
+        : [],
+    [historyPages, returnedBorrows, showAllReturned],
+  );
 
   const resetForm = () => {
     setItem("");
@@ -267,9 +274,7 @@ export default function BorrowScreen() {
         // renders a single "Returned (N)" tile instead.
         data={[
           ...activeBorrows,
-          ...(showAllReturned
-            ? historyPage(returnedBorrows, (borrow) => borrow.returnedAt, historyPages)
-            : []),
+          ...visibleReturnedBorrows,
         ]}
         keyExtractor={(b) => b.id}
         contentContainerStyle={[
@@ -328,22 +333,35 @@ export default function BorrowScreen() {
               <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
             </TouchableOpacity>
           ) : returnedBorrows.length > 0 && showAllReturned ? (
-            <TouchableOpacity
-              style={[
-                styles.hideReturnedBtn,
-                { borderColor: colors.border },
-              ]}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: true }}
-              accessibilityLabel={`History, ${returnedBorrows.length} records`}
-              onPress={() => setShowAllReturned(false)}
-              activeOpacity={0.7}
-            >
-              <Feather name="chevron-up" size={14} color={colors.mutedForeground} />
-              <Text style={[styles.hideReturnedText, { color: colors.mutedForeground }]}>
-                Hide history
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.historyFooter}>
+              {visibleReturnedBorrows.length < returnedBorrows.length ? (
+                <TouchableOpacity
+                  style={[styles.hideReturnedBtn, { borderColor: colors.border }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Load more borrowing history"
+                  onPress={() => setHistoryPages((page) => page + 1)}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="plus" size={14} color={colors.primary} />
+                  <Text style={[styles.hideReturnedText, { color: colors.primary }]}>
+                    Load more
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.hideReturnedBtn, { borderColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: true }}
+                accessibilityLabel={`History, ${returnedBorrows.length} records`}
+                onPress={() => setShowAllReturned(false)}
+                activeOpacity={0.7}
+              >
+                <Feather name="chevron-up" size={14} color={colors.mutedForeground} />
+                <Text style={[styles.hideReturnedText, { color: colors.mutedForeground }]}>
+                  Hide history
+                </Text>
+              </TouchableOpacity>
+            </View>
           ) : null
         }
         renderItem={({ item: borrow, index }) => {
@@ -941,6 +959,7 @@ const styles = StyleSheet.create({
   },
   returnedTileTitle: { fontFamily: "Inter_700Bold", fontSize: 15 },
   returnedTileSub: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  historyFooter: { gap: 8 },
   hideReturnedBtn: {
     flexDirection: "row",
     alignItems: "center",

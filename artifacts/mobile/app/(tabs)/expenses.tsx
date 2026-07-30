@@ -766,30 +766,38 @@ export default function ExpensesScreen() {
                 }}
               >
                 <View style={{ gap: 10 }}>
-                  {visibleHistory.map((expense) => (
-                    <TouchableOpacity
-                      key={expense.id}
-                      onPress={() => setDetailExpenseId(expense.id)}
-                      style={[
-                        styles.expenseCard,
-                        { backgroundColor: colors.card, borderColor: colors.border },
-                      ]}
-                    >
-                      <View style={styles.expenseCardTop}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.expTitle, { color: colors.foreground }]}>
-                            {expense.title}
-                          </Text>
-                          <Text style={[styles.expMeta, { color: colors.mutedForeground }]}>
-                            Resolved {formatDate(expense.resolvedAt ?? expense.date)}
+                  {visibleHistory.length === 0 ? (
+                    <EmptyState
+                      icon="archive"
+                      title="No expense history"
+                      subtitle="Resolved expenses will appear here after seven days"
+                    />
+                  ) : (
+                    visibleHistory.map((expense) => (
+                      <TouchableOpacity
+                        key={expense.id}
+                        onPress={() => setDetailExpenseId(expense.id)}
+                        style={[
+                          styles.expenseCard,
+                          { backgroundColor: colors.card, borderColor: colors.border },
+                        ]}
+                      >
+                        <View style={styles.expenseCardTop}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.expTitle, { color: colors.foreground }]}>
+                              {expense.title}
+                            </Text>
+                            <Text style={[styles.expMeta, { color: colors.mutedForeground }]}>
+                              Resolved {formatDate(expense.resolvedAt ?? expense.date)}
+                            </Text>
+                          </View>
+                          <Text style={[styles.expAmount, { color: colors.foreground }]}>
+                            ${expense.amount.toFixed(2)}
                           </Text>
                         </View>
-                        <Text style={[styles.expAmount, { color: colors.foreground }]}>
-                          ${expense.amount.toFixed(2)}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
+                      </TouchableOpacity>
+                    ))
+                  )}
                   {visibleHistory.length < historicalExpenses.length ? (
                     <TouchableOpacity
                       style={[styles.detailCloseBtn, { backgroundColor: colors.muted }]}
