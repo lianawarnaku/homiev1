@@ -95,3 +95,11 @@ assert(
     shopping.includes("<ActionMenuModal"),
   "Shopping, Group, and My Sweet must share the app action-menu presentation",
 );
+assert(
+  home.includes('key: "calendar"') &&
+    !home.includes("onAddToCalendar") &&
+    group.includes('key: "nudge"') &&
+    group.includes('key: "calendar"') &&
+    !group.includes("styles.nudgeBtn"),
+  "chore row secondary actions must live in the shared action menu",
+);

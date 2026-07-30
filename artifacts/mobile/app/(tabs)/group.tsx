@@ -38,7 +38,13 @@ import { error as hapticError, success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import { useChoreLifecycleNow } from "@/hooks/useChoreLifecycleNow";
-import { removeMappedReminderIfPresent } from "@/lib/externalTasks";
+import {
+  exportChoreToDestinations,
+  getExternalTaskDestination,
+  removeMappedReminderIfPresent,
+  setExternalTaskDestination,
+  type ExternalTaskDestination,
+} from "@/lib/externalTasks";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import { choreLocalDateKey } from "@/lib/choreOccurrences";
 import { activeChores } from "@/lib/choreLifecycle";
@@ -248,6 +254,9 @@ export default function GroupChoresScreen() {
   const [showAddChoreModal, setShowAddChoreModal] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
   const [actionChoreId, setActionChoreId] = useState<string | null>(null);
+  const [calendarDestination, setCalendarDestinationState] =
+    useState<ExternalTaskDestination | null | undefined>(undefined);
+  const calendarExportsInFlight = useRef(new Set<string>());
   const longPressedChoreRef = useRef<string | null>(null);
 
   // Full-screen slide-up animation for the Add Chore modal (matches New IOU).
@@ -350,9 +359,94 @@ export default function GroupChoresScreen() {
     );
   };
   const openChoreActions = (chore: Chore) => {
-    if (!canManageChore(chore)) return;
     setActionChoreId(chore.id);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  useEffect(() => {
+    let active = true;
+    getExternalTaskDestination(currentUserId)
+      .then((destination) => {
+        if (active) setCalendarDestinationState(destination);
+      })
+      .catch((error) => {
+        reportRuntimeError("Load calendar destination preference", error);
+        if (active) setCalendarDestinationState(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentUserId]);
+
+  const chooseCalendarDestination = (): Promise<ExternalTaskDestination | null> =>
+    new Promise((resolve) => {
+      const save = (destination: ExternalTaskDestination) => {
+        setExternalTaskDestination(currentUserId, destination)
+          .then(() => {
+            setCalendarDestinationState(destination);
+            resolve(destination);
+          })
+          .catch((error) => {
+            reportRuntimeError("Save calendar destination preference", error);
+            Alert.alert("Couldn't save your choice", "Please check your connection and try again.");
+            resolve(null);
+          });
+      };
+      const options =
+        Platform.OS === "ios"
+          ? [
+              { text: "Google Calendar", onPress: () => save("googleCalendar") },
+              { text: "Reminders", onPress: () => save("reminders") },
+              { text: "Both", onPress: () => save("both") },
+            ]
+          : [
+              { text: "Cancel", style: "cancel" as const, onPress: () => resolve(null) },
+              { text: "Google Calendar", onPress: () => save("googleCalendar") },
+            ];
+      Alert.alert(
+        "Where should this chore go?",
+        Platform.OS === "ios"
+          ? "Choose Google Calendar, Apple Reminders, or both. Your choice is saved."
+          : "SweetMate can open this chore in Google Calendar.",
+        options,
+        { cancelable: true, onDismiss: () => resolve(null) },
+      );
+    });
+
+  const addChoreToCalendar = async (chore: Chore) => {
+    if (calendarExportsInFlight.current.has(chore.id)) return;
+    calendarExportsInFlight.current.add(chore.id);
+    try {
+      const destination =
+        calendarDestination ?? (await chooseCalendarDestination());
+      if (!destination) return;
+      const assignedRoommate = roommates.find((roommate) => roommate.id === chore.assignedTo);
+      await exportChoreToDestinations(
+        currentUserId,
+        {
+          id: chore.id,
+          title: chore.title,
+          dueDate: chore.dueDate,
+          category: chore.category,
+          description: chore.description,
+          recurrence: chore.recurring,
+          assignedToName: assignedRoommate?.name ?? "Roommate",
+          points: chore.points,
+          includePoints: pointsEnabled,
+        },
+        destination,
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      reportRuntimeError("Add group chore to calendar", error, { choreId: chore.id });
+      hapticError();
+      Alert.alert(
+        "Couldn't add this chore",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    } finally {
+      calendarExportsInFlight.current.delete(chore.id);
+    }
   };
 
   // Cycle a roommate's mood: home (😊) → asleep (😴) → away (🤫) → home
@@ -1005,8 +1099,6 @@ export default function GroupChoresScreen() {
                       {visibleChores.map((chore) => {
                         const overdue =
                           !chore.completed && isOverdue(chore.dueDate);
-                        const key = `${roommate.id}-${chore.id}`;
-                        const nudged = nudgedChores.has(key);
                         const isPickedUp = pickedUpChores.has(chore.id);
                         const isSomeoneElse = chore.assignedTo !== currentUserId;
                         return (
@@ -1017,10 +1109,10 @@ export default function GroupChoresScreen() {
                         <TouchableOpacity
                           activeOpacity={0.7}
                           delayLongPress={450}
-                          onLongPress={canManageChore(chore) ? () => {
+                          onLongPress={() => {
                             longPressedChoreRef.current = chore.id;
                             openChoreActions(chore);
-                          } : undefined}
+                          }}
                           onPress={() => {
                             if (longPressedChoreRef.current === chore.id) {
                               longPressedChoreRef.current = null;
@@ -1106,54 +1198,18 @@ export default function GroupChoresScreen() {
                             </Text>
                           </View>
 
-                          {!chore.completed && (
-                            <TouchableOpacity
-                              style={[
-                                styles.nudgeBtn,
-                                {
-                                  backgroundColor: nudged
-                                    ? colors.success + "18"
-                                    : colors.warning + "18",
-                                  borderColor: nudged
-                                    ? colors.success + "55"
-                                    : colors.warning + "55",
-                                },
-                              ]}
-                              onPress={() =>
-                                handleNudge(roommate.id, chore.id, chore.title)
-                              }
-                            >
-                              <Feather
-                                name={nudged ? "bell-off" : "bell"}
-                                size={11}
-                                color={nudged ? colors.success : colors.warning}
-                              />
-                              <Text
-                                style={[
-                                  styles.nudgeTxt,
-                                  {
-                                    color: nudged ? colors.success : colors.warning,
-                                  },
-                                ]}
-                              >
-                                {nudged ? "Nudged" : "Nudge"}
-                              </Text>
-                            </TouchableOpacity>
-                          )}
-                          {canManageChore(chore) && (
-                            <TouchableOpacity
-                              onPress={(event) => {
-                                event.stopPropagation();
-                                openChoreActions(chore);
-                              }}
-                              accessibilityRole="button"
-                              accessibilityLabel={`More actions for ${chore.title}`}
-                              activeOpacity={0.55}
-                              style={styles.moreActionsButton}
-                            >
-                              <Feather name="more-vertical" size={15} color={colors.mutedForeground} />
-                            </TouchableOpacity>
-                          )}
+                          <TouchableOpacity
+                            onPress={(event) => {
+                              event.stopPropagation();
+                              openChoreActions(chore);
+                            }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`More actions for ${chore.title}`}
+                            activeOpacity={0.55}
+                            style={styles.moreActionsButton}
+                          >
+                            <Feather name="more-vertical" size={15} color={colors.mutedForeground} />
+                          </TouchableOpacity>
                         </TouchableOpacity>
                           </View>
                         );
@@ -1192,10 +1248,30 @@ export default function GroupChoresScreen() {
         subtitle="Manage this chore"
         onClose={() => setActionChoreId(null)}
         actions={actionChore ? [
+          ...(!actionChore.completed ? [{
+            key: "nudge",
+            label: nudgedChores.has(`${actionChore.assignedTo}-${actionChore.id}`)
+              ? "Remove nudge"
+              : "Nudge",
+            icon: nudgedChores.has(`${actionChore.assignedTo}-${actionChore.id}`)
+              ? "bell-off" as const
+              : "bell" as const,
+            onPress: () =>
+              handleNudge(actionChore.assignedTo, actionChore.id, actionChore.title),
+          }] : []),
+          {
+            key: "calendar",
+            label: "Add to calendar",
+            icon: "calendar" as const,
+            onPress: () => {
+              void addChoreToCalendar(actionChore);
+            },
+          },
+          ...(canManageChore(actionChore) ? [
           {
             key: "edit",
             label: "Edit or reassign",
-            icon: "edit-2",
+            icon: "edit-2" as const,
             onPress: () => {
               setEditingChoreId(actionChore.id);
               setAddChoreTargetId(actionChore.assignedTo);
@@ -1205,7 +1281,7 @@ export default function GroupChoresScreen() {
           {
             key: "delete",
             label: "Delete chore",
-            icon: "trash-2",
+            icon: "trash-2" as const,
             destructive: true,
             confirmation: actionChore.recurring || actionChore.recurrenceSeriesId
               ? undefined
@@ -1216,6 +1292,7 @@ export default function GroupChoresScreen() {
                 },
             onPress: () => confirmDeleteChore(actionChore),
           },
+          ] : []),
         ] : []}
       />
 
@@ -1401,16 +1478,6 @@ const styles = StyleSheet.create({
   },
   choreTitle: { fontFamily: "Inter_500Medium", fontSize: 14 },
   choreDate: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 1 },
-  nudgeBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  nudgeTxt: { fontFamily: "Inter_600SemiBold", fontSize: 11 },
   moreActionsButton: {
     width: 44,
     height: 44,

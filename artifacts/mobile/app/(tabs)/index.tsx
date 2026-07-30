@@ -171,18 +171,12 @@ interface ChoreRowProps {
     assignmentMode?: "specific-person" | "round-robin" | "unassigned";
   };
   onSetCompleted: (id: string, completed: boolean) => void;
-  onAddToCalendar: () => Promise<boolean>;
-  onChangeCalendarDestination: () => void;
-  calendarDestinationLabel: string;
-  onManage?: () => void;
+  onManage: () => void;
 }
 
 function ChoreRow({
   chore,
   onSetCompleted,
-  onAddToCalendar,
-  onChangeCalendarDestination,
-  calendarDestinationLabel,
   onManage,
 }: ChoreRowProps) {
   const colors = useTheme();
@@ -191,10 +185,6 @@ function ChoreRow({
   );
   const cat = CATEGORIES.find((c) => c.key === chore.category) ?? CATEGORIES[5];
   const overdue = isOverdue(chore.dueDate, chore.completed);
-  const [calState, setCalState] = useState<
-    "idle" | "loading" | "done" | "error"
-  >("idle");
-
   const handleCheckPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSetCompleted(chore.id, !chore.completed);
@@ -208,36 +198,6 @@ function ChoreRow({
     : isToday(chore.dueDate)
     ? colors.primary
     : colors.mutedForeground;
-
-  const handleCalendar = async () => {
-    if (calState === "loading") return;
-    setCalState("loading");
-    try {
-      const exported = await onAddToCalendar();
-      if (!exported) {
-        setCalState("idle");
-        return;
-      }
-      setCalState("done");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (error) {
-      setCalState("error");
-      Alert.alert(
-        "Couldn't add this chore",
-        error instanceof Error ? error.message : "Please try again.",
-      );
-      setTimeout(() => setCalState("idle"), 2000);
-    }
-  };
-
-  const calColor =
-    calState === "done"
-      ? colors.success
-      : calState === "error"
-        ? colors.destructive
-        : calState === "loading"
-          ? colors.mutedForeground
-          : colors.primary;
 
   return (
     <View style={{ borderRadius: 12, overflow: "hidden", position: "relative" }}>
@@ -283,11 +243,11 @@ function ChoreRow({
 
       <TouchableOpacity
         style={styles.choreInfo}
-        activeOpacity={onManage ? 0.65 : 1}
+        activeOpacity={0.65}
         delayLongPress={450}
         onLongPress={onManage}
-        accessibilityRole={onManage ? "button" : undefined}
-        accessibilityLabel={onManage ? `Manage ${chore.title}` : undefined}
+        accessibilityRole="button"
+        accessibilityLabel={`Manage ${chore.title}`}
       >
         <Text
           style={[
@@ -312,47 +272,15 @@ function ChoreRow({
 
       <View style={styles.trailingActions}>
         <TouchableOpacity
-          onPress={handleCalendar}
-          onLongPress={onChangeCalendarDestination}
-          disabled={calState === "loading"}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={[
-            styles.calBtn,
-            {
-              backgroundColor:
-                calState === "done"
-                  ? colors.success + "18"
-                  : calState === "loading"
-                    ? colors.muted
-                    : colors.primary + "14",
-              borderColor:
-                calState === "done"
-                  ? colors.success + "55"
-                  : colors.primary + "30",
-            },
-          ]}
-          accessibilityLabel={`Add to ${calendarDestinationLabel}`}
-          accessibilityHint="Long press to change the saved destination"
+          onPress={onManage}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          accessibilityRole="button"
+          accessibilityLabel="Task actions"
+          accessibilityHint={`Opens actions for ${chore.title}`}
+          style={styles.taskActionsButton}
         >
-          <Feather
-            name={calState === "done" ? "check" : "calendar"}
-            size={13}
-            color={calColor}
-          />
+          <Feather name="more-vertical" size={19} color={colors.mutedForeground} />
         </TouchableOpacity>
-
-        {onManage && (
-          <TouchableOpacity
-            onPress={onManage}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            accessibilityRole="button"
-            accessibilityLabel="Task actions"
-            accessibilityHint={`Opens actions for ${chore.title}`}
-            style={styles.taskActionsButton}
-          >
-            <Feather name="more-vertical" size={19} color={colors.mutedForeground} />
-          </TouchableOpacity>
-        )}
       </View>
       </View>
     </View>
@@ -477,6 +405,7 @@ export default function MyChoresScreen() {
   const [showModal, setShowModal] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
   const [actionChoreId, setActionChoreId] = useState<string | null>(null);
+  const calendarExportsInFlight = useRef(new Set<string>());
 
   // Full-screen slide-up animation for the Add Chore modal (matches New IOU).
   const addChoreTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -652,6 +581,48 @@ export default function MyChoresScreen() {
       : calendarDestination === "reminders"
         ? "Apple Reminders"
         : "Google Calendar";
+  const addChoreToCalendar = async (chore: Chore) => {
+    if (calendarExportsInFlight.current.has(chore.id)) return;
+    calendarExportsInFlight.current.add(chore.id);
+    try {
+      const savedDestination =
+        calendarDestination === undefined
+          ? await getExternalTaskDestination(currentUserId)
+          : calendarDestination;
+      if (calendarDestination === undefined) {
+        setCalendarDestinationState(savedDestination);
+      }
+      const destination =
+        savedDestination ?? (await chooseCalendarDestination());
+      if (!destination) return;
+      await exportChoreToDestinations(
+        currentUserId,
+        {
+          id: chore.id,
+          title: chore.title,
+          dueDate: chore.dueDate,
+          category: chore.category,
+          description: chore.description,
+          recurrence: chore.recurring,
+          assignedToName: currentUser?.name ?? "You",
+          points: chore.points,
+          includePoints: pointsEnabled,
+        },
+        destination,
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      reportRuntimeError(`Add chore to ${calendarDestinationLabel}`, error, {
+        choreId: chore.id,
+      });
+      Alert.alert(
+        "Couldn't add this chore",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    } finally {
+      calendarExportsInFlight.current.delete(chore.id);
+    }
+  };
   const weekDays = useMemo(() => {
     const start = new Date();
     start.setHours(12, 0, 0, 0);
@@ -1108,48 +1079,7 @@ export default function MyChoresScreen() {
           <ChoreRow
             chore={item}
             onSetCompleted={setChoreCompleted}
-            calendarDestinationLabel={calendarDestinationLabel}
-            onManage={canManageChore(item) ? () => openChoreActions(item) : undefined}
-            onChangeCalendarDestination={() => {
-              void chooseCalendarDestination(true);
-            }}
-            onAddToCalendar={async () => {
-              const savedDestination =
-                calendarDestination === undefined
-                  ? await getExternalTaskDestination(currentUserId)
-                  : calendarDestination;
-              if (calendarDestination === undefined) {
-                setCalendarDestinationState(savedDestination);
-              }
-              const destination =
-                savedDestination ?? (await chooseCalendarDestination());
-              if (!destination) return false;
-              try {
-                await exportChoreToDestinations(
-                  currentUserId,
-                  {
-                    id: item.id,
-                    title: item.title,
-                    dueDate: item.dueDate,
-                    category: item.category,
-                    description: item.description,
-                    recurrence: item.recurring,
-                    assignedToName: currentUser?.name ?? "You",
-                    points: item.points,
-                    includePoints: pointsEnabled,
-                  },
-                  destination,
-                );
-                return true;
-              } catch (error) {
-                reportRuntimeError(
-                  `Add chore to ${destination}`,
-                  error,
-                  { choreId: item.id },
-                );
-                throw error;
-              }
-            }}
+            onManage={() => openChoreActions(item)}
           />
         )}
         ListFooterComponent={
@@ -1255,9 +1185,26 @@ export default function MyChoresScreen() {
         onClose={() => setActionChoreId(null)}
         actions={actionChore ? [
           {
+            key: "calendar",
+            label: `Add to ${calendarDestinationLabel}`,
+            icon: "calendar" as const,
+            onPress: () => {
+              void addChoreToCalendar(actionChore);
+            },
+          },
+          {
+            key: "calendar-destination",
+            label: "Change calendar destination",
+            icon: "settings" as const,
+            onPress: () => {
+              void chooseCalendarDestination(true);
+            },
+          },
+          ...(canManageChore(actionChore) ? [
+          {
             key: "edit",
             label: "Edit or reassign",
-            icon: "edit-2",
+            icon: "edit-2" as const,
             onPress: () => {
               setEditingChoreId(actionChore.id);
               setShowModal(true);
@@ -1266,7 +1213,7 @@ export default function MyChoresScreen() {
           {
             key: "delete",
             label: "Delete chore",
-            icon: "trash-2",
+            icon: "trash-2" as const,
             destructive: true,
             confirmation: actionChore.recurring || actionChore.recurrenceSeriesId
               ? undefined
@@ -1277,6 +1224,7 @@ export default function MyChoresScreen() {
                 },
             onPress: () => confirmDeleteChore(actionChore),
           },
+          ] : []),
         ] : []}
       />
 
@@ -1666,15 +1614,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontFamily: "Inter_700Bold",
     fontSize: 16,
-  },
-  calBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
   },
   toBuyCard: {
     borderRadius: 22,
