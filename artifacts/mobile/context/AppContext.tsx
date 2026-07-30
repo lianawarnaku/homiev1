@@ -1600,39 +1600,33 @@ export function AppProvider({
     if (!isHost) {
       throw new Error("Only the household host can delete this household.");
     }
-    const { data, error, count, status, statusText } = await supabase
-      .from("households")
-      .delete({ count: "exact" })
-      .eq("id", householdId)
-      .select("id")
-      .maybeSingle();
-    if (error || !data || count !== 1) {
-      const failure = {
-        status,
-        statusText,
-        code: error?.code ?? "RLS_DELETE_REJECTED",
-        message:
-          error?.message ??
-          "The household was not deleted. Only the household host has permission.",
-        details:
-          error?.details ??
-          `Expected one deleted household row, received ${count ?? 0}.`,
-        hint:
-          error?.hint ??
-          "Confirm you are signed in as the household creator and try again.",
-        count,
-      };
-      console.error("Supabase household delete failed", failure);
-      throw new Error(failure.message);
+    const deletedHouseholdId = householdId;
+    const userId = session?.user.id;
+    const { error } = await supabase.rpc("delete_household", {
+      target_household_id: deletedHouseholdId,
+    });
+    if (error) {
+      reportSupabaseError("delete household", error, {
+        householdId: deletedHouseholdId,
+      });
+      throw new Error("The household could not be deleted. Please try again.");
     }
 
     const remainingMemberships = memberships.filter(
-      (membership) => membership.sweetId !== householdId,
+      (membership) => membership.sweetId !== deletedHouseholdId,
     );
-    if (remainingMemberships[0] && session?.user.id) {
+    membershipLoadGenerationRef.current += 1;
+    delete sweetDataCacheRef.current[deletedHouseholdId];
+    if (userId) {
+      await AsyncStorage.multiRemove([
+        sweetStateKey(userId, deletedHouseholdId),
+        privateBorrowStateKey(userId, deletedHouseholdId),
+      ]);
+    }
+    if (remainingMemberships[0] && userId) {
       setMemberships(remainingMemberships);
       await AsyncStorage.setItem(
-        activeSweetKey(session.user.id),
+        activeSweetKey(userId),
         remainingMemberships[0].sweetId,
       );
       switchSweet(remainingMemberships[0].sweetId);
@@ -1641,12 +1635,14 @@ export function AppProvider({
     }
 
     await AsyncStorage.removeItem(STORAGE_KEY);
-    if (session?.user.id) {
+    if (userId) {
+      await AsyncStorage.removeItem(activeSweetKey(userId));
       await AsyncStorage.mergeItem(
-        userPreferencesKey(session.user.id),
+        userPreferencesKey(userId),
         JSON.stringify({ onboardingPending: false }),
       );
     }
+    setMemberships([]);
     setHouseholdId(null);
     setHouseholdName(null);
     setInviteCode(null);

@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { RoommateAvatar } from "@/components/RoommateAvatar";
+import { ActionMenuModal } from "@/components/ActionMenuModal";
 import { useAppContext } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
 import { UserPreferencesPanel } from "@/components/UserPreferencesPanel";
@@ -180,6 +181,7 @@ export default function SettingsScreen() {
   const { session } = useSupabaseSession();
   const [signingOut, setSigningOut] = useState(false);
   const [deletingHousehold, setDeletingHousehold] = useState(false);
+  const [deleteHouseholdMenuOpen, setDeleteHouseholdMenuOpen] = useState(false);
   const [restartingChart, setRestartingChart] = useState(false);
   const [removingRoommateId, setRemovingRoommateId] = useState<string | null>(
     null,
@@ -208,39 +210,24 @@ export default function SettingsScreen() {
   };
 
   const confirmDeleteHousehold = () => {
-    Alert.alert(
-      "Delete household?",
-      `This permanently erases ${householdName ?? "this household"}, including all chores, expenses, shopping lists, borrowing records, and memberships. This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete permanently",
-          style: "destructive",
-          onPress: async () => {
-            setDeletingHousehold(true);
-            try {
-              await deleteHousehold();
-              await Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Success,
-              );
-              router.replace("/");
-            } catch (error) {
-              hapticError();
-              const message =
-                error &&
-                typeof error === "object" &&
-                "message" in error &&
-                typeof error.message === "string"
-                  ? error.message
-                  : "The household could not be deleted.";
-              Alert.alert("Unable to delete household", message);
-            } finally {
-              setDeletingHousehold(false);
-            }
-          },
-        },
-      ],
-    );
+    if (!deletingHousehold) setDeleteHouseholdMenuOpen(true);
+  };
+
+  const performDeleteHousehold = async () => {
+    if (deletingHousehold) return;
+    setDeletingHousehold(true);
+    try {
+      await deleteHousehold();
+      await Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success,
+      );
+      router.replace("/");
+    } catch (error) {
+      hapticError();
+      throw error;
+    } finally {
+      setDeletingHousehold(false);
+    }
   };
 
   const confirmRestartChart = () => {
@@ -1496,6 +1483,30 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      <ActionMenuModal
+        visible={deleteHouseholdMenuOpen}
+        title={householdName ?? "This household"}
+        subtitle="Deleting this household permanently removes its chores, expenses, shopping lists, borrowing records, and memberships."
+        onClose={() => setDeleteHouseholdMenuOpen(false)}
+        actions={[
+          {
+            key: "delete-household",
+            label: deletingHousehold
+              ? "Deleting household…"
+              : "Delete household",
+            icon: "trash-2",
+            destructive: true,
+            confirmation: {
+              title: `Delete ${householdName ?? "this household"}?`,
+              message:
+                "This cannot be undone. Your other households are not affected.",
+              confirmLabel: "Delete permanently",
+            },
+            onPress: performDeleteHousehold,
+          },
+        ]}
+      />
 
       {/* ── Auth modal: pick roommate, then enter credentials ── */}
       <Modal

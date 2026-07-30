@@ -20,7 +20,7 @@ export type ActionMenuItem = {
   key: string;
   label: string;
   icon: FeatherIcon;
-  onPress: () => void;
+  onPress: () => void | Promise<void>;
   destructive?: boolean;
   confirmation?: {
     title: string;
@@ -48,10 +48,14 @@ export function ActionMenuModal({
   const insets = useSafeAreaInsets();
   const progress = useRef(new Animated.Value(0)).current;
   const [confirming, setConfirming] = useState<ActionMenuItem | null>(null);
+  const [running, setRunning] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
       setConfirming(null);
+      setRunning(false);
+      setActionError(null);
       progress.setValue(0);
       Animated.spring(progress, {
         toValue: 1,
@@ -63,7 +67,8 @@ export function ActionMenuModal({
     }
   }, [progress, visible]);
 
-  const dismiss = () => {
+  const dismiss = (force = false) => {
+    if (running && !force) return;
     Animated.timing(progress, {
       toValue: 0,
       duration: 150,
@@ -73,19 +78,33 @@ export function ActionMenuModal({
     });
   };
 
-  const runAction = (action: ActionMenuItem) => {
+  const runAction = async (action: ActionMenuItem) => {
     if (action.confirmation) {
       setConfirming(action);
       return;
     }
-    action.onPress();
-    dismiss();
+    setRunning(true);
+    setActionError(null);
+    try {
+      await action.onPress();
+      dismiss(true);
+    } catch {
+      setActionError("That action could not be completed. Please try again.");
+      setRunning(false);
+    }
   };
 
-  const confirmAction = () => {
+  const confirmAction = async () => {
     if (!confirming) return;
-    confirming.onPress();
-    dismiss();
+    setRunning(true);
+    setActionError(null);
+    try {
+      await confirming.onPress();
+      dismiss(true);
+    } catch {
+      setActionError("That action could not be completed. Please try again.");
+      setRunning(false);
+    }
   };
 
   return (
@@ -93,7 +112,7 @@ export function ActionMenuModal({
       visible={visible}
       transparent
       animationType="none"
-      onRequestClose={dismiss}
+      onRequestClose={() => dismiss()}
       statusBarTranslucent
       accessibilityViewIsModal
     >
@@ -117,7 +136,7 @@ export function ActionMenuModal({
           accessibilityRole="button"
           accessibilityLabel="Close action menu"
           style={StyleSheet.absoluteFill}
-          onPress={dismiss}
+          onPress={() => dismiss()}
         />
         <Animated.View
           style={[
@@ -155,6 +174,14 @@ export function ActionMenuModal({
               <Text style={[styles.message, { color: colors.mutedForeground }]}>
                 {confirming.confirmation.message}
               </Text>
+              {actionError ? (
+                <Text
+                  accessibilityLiveRegion="assertive"
+                  style={[styles.error, { color: colors.destructive }]}
+                >
+                  {actionError}
+                </Text>
+              ) : null}
               <View style={styles.confirmButtons}>
                 <Pressable
                   accessibilityRole="button"
@@ -163,6 +190,7 @@ export function ActionMenuModal({
                     { backgroundColor: colors.secondary },
                   ]}
                   onPress={() => setConfirming(null)}
+                  disabled={running}
                 >
                   <Text
                     style={[
@@ -180,7 +208,10 @@ export function ActionMenuModal({
                     styles.confirmButton,
                     { backgroundColor: colors.destructive },
                   ]}
-                  onPress={confirmAction}
+                  onPress={() => {
+                    void confirmAction();
+                  }}
+                  disabled={running}
                 >
                   <Feather name="trash-2" size={16} color={colors.destructiveForeground} />
                   <Text
@@ -210,10 +241,19 @@ export function ActionMenuModal({
                   {subtitle}
                 </Text>
               ) : null}
+              {actionError ? (
+                <Text
+                  accessibilityLiveRegion="assertive"
+                  style={[styles.error, { color: colors.destructive }]}
+                >
+                  {actionError}
+                </Text>
+              ) : null}
               <View style={styles.actions}>
                 {actions.map((action) => (
                   <Pressable
                     key={action.key}
+                    disabled={running}
                     accessibilityRole="button"
                     accessibilityLabel={action.label}
                     style={({ pressed }) => [
@@ -229,7 +269,9 @@ export function ActionMenuModal({
                           : colors.border,
                       },
                     ]}
-                    onPress={() => runAction(action)}
+                    onPress={() => {
+                      void runAction(action);
+                    }}
                   >
                     <View
                       style={[
@@ -277,7 +319,8 @@ export function ActionMenuModal({
               <Pressable
                 accessibilityRole="button"
                 style={[styles.cancelButton, { borderColor: colors.border }]}
-                onPress={dismiss}
+                onPress={() => dismiss()}
+                disabled={running}
               >
                 <Text style={[styles.cancelText, { color: colors.foreground }]}>
                   Cancel
@@ -337,6 +380,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 6,
     marginBottom: 16,
+  },
+  error: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: "center",
+    marginTop: 4,
   },
   actions: { gap: 8, marginTop: 16 },
   action: {
