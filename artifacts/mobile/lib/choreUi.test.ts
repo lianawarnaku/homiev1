@@ -143,3 +143,14 @@ assert(
     !group.includes('"complete_chore",\\n        "Complete chore?"'),
   "chore completion must use the shared app-styled confirmation shell",
 );
+assert(
+  group.includes("setPendingEditChoreId(actionChore.id)") &&
+    group.includes("onClose={closeChoreActions}") &&
+    group.includes("setShowAddChoreModal(true)"),
+  "chore reassignment must wait for the action menu to close before presenting the editor",
+);
+assert(
+  context.includes("const localChoresById = new Map(") &&
+    context.includes("const local = localChoresById.get(remote.id);"),
+  "chore realtime reconciliation must use indexed lookup instead of scanning the list per record",
+);

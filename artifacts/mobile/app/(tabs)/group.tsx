@@ -254,6 +254,7 @@ export default function GroupChoresScreen() {
   // ── Add-chore-to-any-roommate modal state ──
   const [showAddChoreModal, setShowAddChoreModal] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
+  const [pendingEditChoreId, setPendingEditChoreId] = useState<string | null>(null);
   const [actionChoreId, setActionChoreId] = useState<string | null>(null);
   const [completionChoreId, setCompletionChoreId] = useState<string | null>(null);
   const [calendarDestination, setCalendarDestinationState] =
@@ -363,6 +364,18 @@ export default function GroupChoresScreen() {
   const openChoreActions = (chore: Chore) => {
     setActionChoreId(chore.id);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+  const closeChoreActions = () => {
+    const editChore = pendingEditChoreId
+      ? chores.find((chore) => chore.id === pendingEditChoreId)
+      : undefined;
+    setActionChoreId(null);
+    setPendingEditChoreId(null);
+    if (editChore) {
+      setEditingChoreId(editChore.id);
+      setAddChoreTargetId(editChore.assignedTo);
+      setShowAddChoreModal(true);
+    }
   };
 
   useEffect(() => {
@@ -1265,7 +1278,7 @@ export default function GroupChoresScreen() {
         visible={!!actionChore}
         title={actionChore?.title ?? "Chore"}
         subtitle="Manage this chore"
-        onClose={() => setActionChoreId(null)}
+        onClose={closeChoreActions}
         actions={actionChore ? [
           ...(!actionChore.completed ? [{
             key: "nudge",
@@ -1292,9 +1305,7 @@ export default function GroupChoresScreen() {
             label: "Edit or reassign",
             icon: "edit-2" as const,
             onPress: () => {
-              setEditingChoreId(actionChore.id);
-              setAddChoreTargetId(actionChore.assignedTo);
-              setShowAddChoreModal(true);
+              setPendingEditChoreId(actionChore.id);
             },
           },
           {

@@ -2141,6 +2141,9 @@ export function AppProvider({
     const remoteChoresById = new Map(
       (remoteChores ?? []).map((chore) => [chore.id, chore]),
     );
+    const localChoresById = new Map(
+      choresRef.current.map((chore) => [chore.id, chore]),
+    );
     const hasNewerLocalChoreChange = remoteChores
       ? choresRef.current.some((local) => {
           const remote = remoteChoresById.get(local.id);
@@ -2169,7 +2172,7 @@ export function AppProvider({
     }
     if (remoteChores) {
       const mergedChores = remoteChores.map((remote) => {
-        const local = choresRef.current.find((candidate) => candidate.id === remote.id);
+        const local = localChoresById.get(remote.id);
         return local && (local.updatedAt ?? "") > (remote.updatedAt ?? "")
           ? local
           : remote;
