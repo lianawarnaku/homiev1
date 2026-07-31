@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Animated,
@@ -35,18 +35,23 @@ export function NudgeToast() {
   const current = queue[0];
   const translateX = useRef(new Animated.Value(0)).current;
   const dismissingRef = useRef(false);
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     translateX.setValue(0);
     dismissingRef.current = false;
+    setDismissingId(null);
     setError(null);
+  }, [current?.id, translateX]);
+
+  useEffect(() => {
     if (current && !current.seen) {
       void acknowledgeNudge(current.id).catch((cause) => {
         reportRuntimeError("mark nudge seen", cause, { nudgeId: current.id });
       });
     }
-  }, [acknowledgeNudge, current?.id, current?.seen, translateX]);
+  }, [acknowledgeNudge, current?.id, current?.seen]);
 
   useEffect(() => {
     if (current) {
@@ -56,30 +61,37 @@ export function NudgeToast() {
     }
   }, [current?.id]);
 
-  const persistDismissal = async () => {
-    if (!current || dismissingRef.current) return;
-    dismissingRef.current = true;
+  const persistDismissal = useCallback(async (nudgeId: string) => {
     setError(null);
     try {
-      await dismissNudge(current.id);
+      await dismissNudge(nudgeId);
     } catch (cause) {
       dismissingRef.current = false;
+      setDismissingId(null);
       Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
       setError("Couldn’t dismiss. Try again.");
-      reportRuntimeError("dismiss nudge", cause, { nudgeId: current.id });
+      reportRuntimeError("dismiss nudge", cause, { nudgeId });
     }
-  };
+  }, [dismissNudge, translateX]);
 
-  const animateDismissal = (direction: number) => {
-    if (!current || dismissingRef.current) return;
+  const animateDismissal = useCallback((nudgeId: string, direction: number) => {
+    if (dismissingRef.current) return;
+    dismissingRef.current = true;
+    setDismissingId(nudgeId);
+    setError(null);
     Animated.timing(translateX, {
       toValue: direction * 500,
       duration: 180,
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished) void persistDismissal();
+      if (finished) {
+        void persistDismissal(nudgeId);
+      } else {
+        dismissingRef.current = false;
+        setDismissingId(null);
+      }
     });
-  };
+  }, [persistDismissal, translateX]);
 
   const panResponder = useMemo(
     () =>
@@ -90,7 +102,9 @@ export function NudgeToast() {
         onPanResponderMove: (_, gesture) => translateX.setValue(gesture.dx),
         onPanResponderRelease: (_, gesture) => {
           if (shouldDismissNudge(gesture.dx, gesture.vx * 1000)) {
-            animateDismissal(gesture.dx < 0 ? -1 : 1);
+            if (current) {
+              animateDismissal(current.id, gesture.dx < 0 ? -1 : 1);
+            }
           } else {
             Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
           }
@@ -99,7 +113,7 @@ export function NudgeToast() {
           Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
         },
       }),
-    [current?.id, translateX],
+    [animateDismissal, current?.id, translateX],
   );
 
   if (!nudgesReady || !current) return null;
@@ -107,7 +121,6 @@ export function NudgeToast() {
     <Animated.View
       accessibilityLiveRegion="polite"
       accessibilityRole="alert"
-      {...panResponder.panHandlers}
       style={[
         styles.toast,
         {
@@ -118,7 +131,7 @@ export function NudgeToast() {
         },
       ]}
     >
-      <View style={styles.content}>
+      <View style={styles.content} {...panResponder.panHandlers}>
         <Text style={[styles.title, { color: colors.background }]}>
           You received a nudge
         </Text>
@@ -131,9 +144,17 @@ export function NudgeToast() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Dismiss nudge"
+        accessibilityHint="Removes this nudge"
+        disabled={dismissingId === current.id}
         hitSlop={8}
-        style={styles.dismissButton}
-        onPress={() => animateDismissal(1)}
+        style={({ pressed }) => [
+          styles.dismissButton,
+          pressed && styles.dismissButtonPressed,
+        ]}
+        onPress={(event) => {
+          event.stopPropagation();
+          animateDismissal(current.id, 1);
+        }}
       >
         <Feather name="x" size={21} color={colors.background} />
       </Pressable>
@@ -169,5 +190,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 22,
+    zIndex: 1,
   },
+  dismissButtonPressed: { opacity: 0.55 },
 });
