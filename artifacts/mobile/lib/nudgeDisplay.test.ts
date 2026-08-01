@@ -19,6 +19,13 @@ const toast = readFileSync(
   resolve(process.cwd(), "components/NudgeToast.tsx"),
   "utf8",
 );
+const dismissalMigration = readFileSync(
+  resolve(
+    process.cwd(),
+    "../../supabase/migrations/202607300007_persistent_nudge_dismissal.sql",
+  ),
+  "utf8",
+);
 
 assert.match(
   toast,
@@ -48,4 +55,14 @@ assert.match(
   toast,
   /disabled=\{dismissingId === current\.id\}/,
   "the X must disable duplicate dismissal presses",
+);
+assert.match(
+  dismissalMigration,
+  /add column if not exists dismissed_at timestamptz/,
+  "the deployed nudge lifecycle must include durable dismissal state",
+);
+assert.match(
+  dismissalMigration,
+  /create policy "recipients can update nudges"[\s\S]*to_member_id = auth\.uid\(\)/,
+  "only the recipient may persist nudge dismissal",
 );

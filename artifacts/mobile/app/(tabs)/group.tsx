@@ -588,9 +588,10 @@ export default function GroupChoresScreen() {
     });
     return roommates.map((roommate) => ({
       roommate,
-      // Completed chores automatically move to the bottom of each section.
+      // Keep occurrence identity and position stable when completion changes;
+      // the selected row can then visibly transition to its completed style.
       chores: (choresByRoommate.get(roommate.id) ?? []).sort((a, b) =>
-        a.completed === b.completed ? 0 : a.completed ? 1 : -1,
+        a.dueDate.localeCompare(b.dueDate) || a.id.localeCompare(b.id),
       ),
     }));
   }, [activeHouseholdChores, roommates]);
@@ -1144,7 +1145,8 @@ export default function GroupChoresScreen() {
                             }
                             handleChorePress(chore.id, chore.assignedTo, chore.title, chore.points);
                           }}
-                          accessibilityLabel={`${chore.title}. ${canManageChore(chore) ? "Double tap to complete, or use the more actions button to manage." : "Double tap to complete."}`}
+                          accessibilityState={{ checked: chore.completed }}
+                          accessibilityLabel={`${chore.title}. ${chore.completed ? "Completed." : "Not completed."} ${canManageChore(chore) ? "Double tap to update completion, or use the more actions button to manage." : "Double tap to update completion."}`}
                           style={[
                             styles.choreRow,
                             {

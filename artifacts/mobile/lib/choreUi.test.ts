@@ -154,3 +154,17 @@ assert(
     context.includes("const local = localChoresById.get(remote.id);"),
   "chore realtime reconciliation must use indexed lookup instead of scanning the list per record",
 );
+assert(
+  context.includes('reportSupabaseError("save completed chore state"') &&
+    context.includes("chorePersistenceQueueRef.current.then(") &&
+    context.includes("chores: nextChores") &&
+    context.includes("roommates: nextRoommates"),
+  "completion must immediately persist the combined canonical chore and score state",
+);
+assert(
+  group.includes("key={chore.id}") &&
+    group.includes("a.dueDate.localeCompare(b.dueDate) || a.id.localeCompare(b.id)") &&
+    group.includes("accessibilityState={{ checked: chore.completed }}") &&
+    group.includes('textDecorationLine: chore.completed'),
+  "Group rows must retain stable identity and visibly expose canonical completion state",
+);

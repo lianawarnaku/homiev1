@@ -715,6 +715,8 @@ export function AppProvider({
   const [householdLoading, setHouseholdLoading] = useState(true);
   const [membershipVersion, setMembershipVersion] = useState(0);
   const [roommates, setRoommates] = useState<Roommate[]>([]);
+  const roommatesRef = useRef<Roommate[]>(roommates);
+  roommatesRef.current = roommates;
   const [membersLoading, setMembersLoading] = useState(false);
   const [chores, setChores] = useState<Chore[]>([]);
   const choresRef = useRef<Chore[]>(chores);
@@ -2126,6 +2128,7 @@ export function AppProvider({
 
   const latestSharedStateRef = useRef(sharedState);
   latestSharedStateRef.current = sharedState;
+  const chorePersistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     if (!householdId || !cloudReady) return;
@@ -3214,8 +3217,7 @@ export function AppProvider({
     }
     choresRef.current = nextChores;
     setChores(nextChores);
-    setRoommates((prev) =>
-      prev.map((r) =>
+    const nextRoommates = roommatesRef.current.map((r) =>
         r.id === chore.assignedTo
           ? {
               ...r,
@@ -3223,9 +3225,39 @@ export function AppProvider({
               weeklyPoints: r.weeklyPoints + delta,
             }
           : r
-      )
     );
-  }, [roommates]);
+    roommatesRef.current = nextRoommates;
+    setRoommates(nextRoommates);
+
+    // Completion is a high-value interaction: update the canonical cloud
+    // snapshot immediately instead of waiting for the generic deferred cache
+    // writer. The queue keeps rapid completions ordered and always writes the
+    // newest combined chore/score state.
+    latestSharedStateRef.current = {
+      ...latestSharedStateRef.current,
+      chores: nextChores,
+      roommates: nextRoommates,
+    };
+    if (cloudReady && householdId && session?.user.id) {
+      chorePersistenceQueueRef.current = chorePersistenceQueueRef.current.then(
+        async () => {
+          const { error } = await supabase.from("household_states").upsert({
+            household_key: householdId,
+            household_id: householdId,
+            state: latestSharedStateRef.current,
+            updated_by: session.user.id,
+            updated_at: new Date().toISOString(),
+          });
+          if (error) {
+            reportSupabaseError("save completed chore state", error, {
+              householdId,
+              choreId: id,
+            });
+          }
+        },
+      );
+    }
+  }, [cloudReady, householdId, roommates, session?.user.id]);
 
   const completeChore = useCallback((id: string) => {
     const chore = choresRef.current.find((candidate) => candidate.id === id);
