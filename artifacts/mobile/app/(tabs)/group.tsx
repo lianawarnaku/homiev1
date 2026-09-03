@@ -25,7 +25,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState } from "@/components/EmptyState";
 import { ActionMenuModal, type ActionMenuItem } from "@/components/ActionMenuModal";
 import { HeaderActions } from "@/components/HeaderActions";
-import { RoomHealthMonitor } from "@/components/RoomHealthMonitor";
+import { HomePlant } from "@/components/HomePlant";
 import { ManualChoreForm } from "@/components/ManualChoreForm";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import {
@@ -852,12 +852,7 @@ export default function GroupChoresScreen() {
           <View style={styles.plantCardInner}>
             {/* Left: Animated plant */}
             <View style={styles.plantContainer}>
-              <RoomHealthMonitor
-                health={healthPct}
-                size={130}
-                activeColor={healthColor}
-                inactiveColor={colors.muted}
-              />
+              <HomePlant health={healthPct} size={130} />
             </View>
 
             {/* Right: Health info */}
