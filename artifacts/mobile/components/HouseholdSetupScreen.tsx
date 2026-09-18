@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BrandMark } from "@/components/BrandMark";
 import { type HousingType, useAppContext } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { androidRipple } from "@/lib/ripple";
 import { supabase } from "@/lib/supabase";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
 import { error as hapticError } from "@/lib/haptics";
@@ -351,7 +352,7 @@ export function HouseholdSetupScreen({
         {step === 1 && !householdId && (
           <View style={[styles.segment, { backgroundColor: colors.muted }]}>
             {(["create", "join"] as const).map((item) => (
-              <Pressable key={item} onPress={() => changeMode(item)} style={[styles.segmentButton, mode === item && { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Pressable key={item} onPress={() => changeMode(item)} android_ripple={androidRipple(colors.foreground)} style={[styles.segmentButton, mode === item && { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Feather name={item === "create" ? "home" : "user-plus"} size={16} color={mode === item ? colors.primary : colors.mutedForeground} />
                 <Text style={[styles.segmentText, { color: mode === item ? colors.foreground : colors.mutedForeground }]}>{item === "create" ? "Create a Sweet" : "Join a Sweet"}</Text>
               </Pressable>
@@ -580,7 +581,7 @@ function Chip({ label, selected, onPress, colors }: any) { return <Pressable onP
 const styles = StyleSheet.create({
   root: { flex: 1 }, scroll: { paddingHorizontal: 22 }, brand: { alignItems: "center", marginBottom: 12 }, eyebrow: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 12, letterSpacing: 1.5, textAlign: "center" }, title: { fontFamily: "Inter_700Bold", fontSize: 32, lineHeight: 36, textAlign: "center", marginTop: 5 }, subtitle: { fontFamily: "Inter_400Regular", fontSize: 16, lineHeight: 21, textAlign: "center", marginTop: 8, marginBottom: 20 },
   progressWrap: { marginBottom: 16 }, progressLabels: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }, progressText: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 14 }, progressCount: { fontFamily: "Inter_600SemiBold", fontSize: 13 }, progressTrack: { height: 7, borderRadius: 4, overflow: "hidden" }, progressFill: { height: "100%", borderRadius: 4 }, progressDots: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 }, progressDotLabel: { width: "20%", textAlign: "center", fontFamily: "Inter_600SemiBold", fontSize: 10 },
-  segment: { borderRadius: 16, padding: 4, flexDirection: "row", marginBottom: 14 }, segmentButton: { flex: 1, height: 48, borderRadius: 13, borderWidth: 1, borderColor: "transparent", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }, segmentText: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 15 },
+  segment: { borderRadius: 16, padding: 4, flexDirection: "row", marginBottom: 14 }, segmentButton: { flex: 1, height: 48, borderRadius: 13, overflow: "hidden", borderWidth: 1, borderColor: "transparent", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }, segmentText: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 15 },
   card: { borderWidth: 1, borderRadius: 22, padding: 18, gap: 16 }, label: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 12, letterSpacing: 1, marginBottom: 7 }, inputWrap: { height: 52, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 10 }, input: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 16 },
   swatches: { flexDirection: "row", justifyContent: "space-between" }, swatch: { width: 39, height: 39, borderRadius: 20, alignItems: "center", justifyContent: "center", borderColor: "transparent" }, optionList: { gap: 10 }, selectionCard: { borderWidth: 1.5, borderRadius: 16, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }, selectionIcon: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" }, selectionTitle: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 18 }, selectionSub: { fontFamily: "Inter_400Regular", fontSize: 14, lineHeight: 18, marginTop: 2 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 9 }, chip: { minHeight: 40, borderWidth: 1, borderRadius: 20, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 6 }, chipText: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 14 }, customRow: { height: 52, borderWidth: 1, borderRadius: 14, paddingLeft: 14, paddingRight: 6, flexDirection: "row", alignItems: "center" }, addButton: { width: 40, height: 40, borderRadius: 11, alignItems: "center", justifyContent: "center" }, customChore: { flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 5 }, customChoreText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 15 },

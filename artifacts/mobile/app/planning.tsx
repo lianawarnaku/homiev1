@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAppContext, type ChoreAssignment, type ChoreCategory, type ChoreChartData, type GeneratedTask, type Roommate } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { androidRipple } from "@/lib/ripple";
 import { error as hapticError } from "@/lib/haptics";
 import type { ChoreFrequency, ChoreTimeOfDay } from "@/constants/choreRules";
 import type { Difficulty } from "@/lib/itemDifficulty";
@@ -2219,6 +2220,7 @@ export default function PlanningScreen() {
       {/* Add Tasks button — shown after chart is generated */}
       {choreChartData && choresAdded === 0 ? (
         <Pressable
+          android_ripple={androidRipple(colors.primaryForeground)}
           style={[styles.addTasksBtn, { backgroundColor: colors.success }]}
           onPress={addTasks}
         >
@@ -2230,6 +2232,7 @@ export default function PlanningScreen() {
       {/* Build / Generate button */}
       {!choreChartData && (
         <Pressable
+          android_ripple={androidRipple(colors.primaryForeground)}
           style={[styles.generateBtn, { backgroundColor: canGenerate && !loading ? colors.primary : colors.muted }]}
           disabled={!canGenerate || loading}
           onPress={generate}
@@ -2256,6 +2259,7 @@ export default function PlanningScreen() {
       {/* Rebuild button — shown after chart exists */}
       {choreChartData ? (
         <Pressable
+          android_ripple={androidRipple(colors.foreground)}
           style={[styles.rebuildBtn, { borderColor: colors.border }]}
           onPress={generate}
           disabled={loading}
@@ -2512,6 +2516,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderRadius: 14,
     paddingVertical: 14,
+    overflow: "hidden",
   },
   generateText: { color: "#fff", fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 15 },
   lockBanner: {
@@ -2677,6 +2682,7 @@ const styles = StyleSheet.create({
     gap: 8,
     borderRadius: 14,
     paddingVertical: 14,
+    overflow: "hidden",
   },
   rebuildBtn: {
     flexDirection: "row",
@@ -2686,6 +2692,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 10,
     borderWidth: 1,
+    overflow: "hidden",
   },
   rebuildText: {
     fontFamily: "Inter_500Medium",

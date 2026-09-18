@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "@/constants/colors";
+import { androidRipple } from "@/lib/ripple";
 import { useAppContextSelector } from "@/context/AppContext";
 import { shouldDismissNudge, visibleNudges } from "@/lib/nudgeDisplay";
 import { reportRuntimeError } from "@/lib/runtimeDiagnostics";
@@ -147,6 +148,7 @@ export function NudgeToast() {
         accessibilityHint="Removes this nudge"
         disabled={dismissingId === current.id}
         hitSlop={8}
+        android_ripple={androidRipple(colors.background, { borderless: true, radius: 20 })}
         style={({ pressed }) => [
           styles.dismissButton,
           pressed && styles.dismissButtonPressed,

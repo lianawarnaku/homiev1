@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Pressable,
+  StyleSheet,
   type PressableProps,
   type StyleProp,
   type ViewStyle,
@@ -11,24 +12,32 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { useTheme } from "@/constants/colors";
 import { tapLight } from "@/lib/haptics";
+import { androidRipple } from "@/lib/ripple";
 
 type SmoothPressableProps = Omit<PressableProps, "style"> & {
   style?: StyleProp<ViewStyle>;
   containerStyle?: StyleProp<ViewStyle>;
   haptic?: boolean;
+  /** Icon-only controls ripple past their bounds instead of being clipped. */
+  rippleBorderless?: boolean;
+  rippleRadius?: number;
 };
 
 export function SmoothPressable({
   style,
   containerStyle,
   haptic = true,
+  rippleBorderless = false,
+  rippleRadius,
   disabled,
   onPress,
   onPressIn,
   onPressOut,
   ...props
 }: SmoothPressableProps) {
+  const colors = useTheme();
   const pressed = useSharedValue(0);
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: 1 - pressed.value * 0.08,
@@ -40,7 +49,13 @@ export function SmoothPressable({
       <Pressable
         {...props}
         disabled={disabled}
-        style={style}
+        android_ripple={androidRipple(colors.foreground, {
+          borderless: rippleBorderless,
+          radius: rippleRadius,
+        })}
+        // A bounded ripple is clipped to the rounded shape only when the
+        // pressable itself hides its overflow.
+        style={[style, rippleBorderless ? null : styles.clipRipple]}
         onPress={(event) => {
           if (haptic) tapLight();
           onPress?.(event);
@@ -57,3 +72,7 @@ export function SmoothPressable({
     </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({
+  clipRipple: { overflow: "hidden" },
+});

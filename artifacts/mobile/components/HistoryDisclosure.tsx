@@ -3,6 +3,7 @@ import React, { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useTheme } from "@/constants/colors";
+import { androidRipple } from "@/lib/ripple";
 
 export function HistoryDisclosure({
   count,
@@ -23,6 +24,7 @@ export function HistoryDisclosure({
         accessibilityState={{ expanded }}
         accessibilityLabel={`History, ${count} records`}
         onPress={onToggle}
+        android_ripple={androidRipple(colors.foreground)}
         style={[
           styles.header,
           { backgroundColor: colors.card, borderColor: colors.border },
@@ -53,6 +55,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    overflow: "hidden",
   },
   title: { flex: 1, fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 15 },
 });

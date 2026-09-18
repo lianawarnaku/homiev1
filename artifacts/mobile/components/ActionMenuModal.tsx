@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "@/constants/colors";
 import { elevationStyle } from "@/lib/elevation";
+import { androidRipple } from "@/lib/ripple";
 
 type FeatherIcon = keyof typeof Feather.glyphMap;
 
@@ -209,6 +210,7 @@ export function ActionMenuModal({
               <View style={styles.confirmButtons}>
                 <Pressable
                   accessibilityRole="button"
+                  android_ripple={androidRipple(colors.foreground)}
                   style={[
                     styles.confirmButton,
                     { backgroundColor: colors.secondary },
@@ -228,6 +230,7 @@ export function ActionMenuModal({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={confirming.confirmation.confirmLabel}
+                  android_ripple={androidRipple(colors.primaryForeground)}
                   style={[
                     styles.confirmButton,
                     {
@@ -369,6 +372,7 @@ export function ActionMenuModal({
               </View>
               <Pressable
                 accessibilityRole="button"
+                android_ripple={androidRipple(colors.foreground)}
                 style={[styles.cancelButton, { borderColor: colors.border }]}
                 onPress={() => dismiss()}
                 disabled={running}
@@ -475,6 +479,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 10,
+    overflow: "hidden",
   },
   cancelText: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 15 },
   warningIcon: {
@@ -496,6 +501,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 7,
     paddingHorizontal: 12,
+    overflow: "hidden",
   },
   confirmButtonText: {
     fontFamily: "Inter_700Bold",

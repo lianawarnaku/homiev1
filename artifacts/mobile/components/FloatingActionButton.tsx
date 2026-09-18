@@ -39,6 +39,8 @@ export function FloatingActionButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       containerStyle={[styles.container, { bottom }]}
+      rippleBorderless
+      rippleRadius={FAB_SIZE / 2}
       style={[
         styles.button,
         // The shadow lives on the button, not the container: Android needs a

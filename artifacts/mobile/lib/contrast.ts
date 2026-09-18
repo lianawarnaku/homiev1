@@ -47,6 +47,14 @@ export function isDarkColor(color: string): boolean {
   return luminance === null ? false : luminance < 0.5;
 }
 
+/** Same hex color at a given opacity, as an `rgba()` string. */
+export function withAlpha(color: string, alpha: number): string {
+  const rgb = parseHexColor(color);
+  const clamped = Math.min(1, Math.max(0, alpha));
+  if (!rgb) return `rgba(0, 0, 0, ${clamped})`;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${clamped})`;
+}
+
 /** `style` for expo-status-bar: the tone the ICONS should take. */
 export function barStyleForBackground(background: string): "light" | "dark" {
   return isDarkColor(background) ? "light" : "dark";

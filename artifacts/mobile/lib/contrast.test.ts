@@ -3,6 +3,7 @@ import {
   isDarkColor,
   parseHexColor,
   relativeLuminance,
+  withAlpha,
 } from "./contrast.ts";
 import { colorSchemes } from "../constants/themeTokens.ts";
 
@@ -32,5 +33,9 @@ const white = relativeLuminance("#FFFFFF");
 const black = relativeLuminance("#000000");
 assert(white !== null && white > 0.99, "white luminance must be ~1");
 assert(black !== null && black < 0.01, "black luminance must be ~0");
+
+assert(withAlpha("#33261D", 0.12) === "rgba(51, 38, 29, 0.12)", "withAlpha must emit rgba");
+assert(withAlpha("#FFFFFF", 5) === "rgba(255, 255, 255, 1)", "withAlpha must clamp above 1");
+assert(withAlpha("nope", 0.2) === "rgba(0, 0, 0, 0.2)", "withAlpha must fall back to black");
 
 console.log("contrast.test.ts passed");
