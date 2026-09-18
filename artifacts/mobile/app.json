@@ -43,10 +43,9 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/sweetmate-splash.png",
+          "image": "./assets/images/sweetmate-splash-on-dark.png",
           "imageWidth": 224,
-          "resizeMode": "contain",
-          "backgroundColor": "#FFFFFF"
+          "resizeMode": "contain"
         }
       ],
       "expo-font",
