@@ -252,7 +252,6 @@ export default function ExpensesScreen() {
   }));
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : 0;
 
   // One net figure per member across the whole household, so reciprocal debts
   // and chains cancel instead of being listed in both directions.
@@ -688,7 +687,7 @@ export default function ExpensesScreen() {
             }}
             contentContainerStyle={[
               styles.listContent,
-              { paddingBottom: Math.max(scrollBottomPadding, 90 + botPad) },
+              { paddingBottom: scrollBottomPadding },
             ]}
             showsVerticalScrollIndicator={false}
             onScroll={expenseScrollHandler}
@@ -988,7 +987,16 @@ export default function ExpensesScreen() {
                   style={styles.detailOverlay}
                   onPress={() => setDetailExpenseId(null)}
                 />
-                <View style={[styles.detailSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                <View
+                  style={[
+                    styles.detailSheet,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                      paddingBottom: insets.bottom + 20,
+                    },
+                  ]}
+                >
                   {/* Handle */}
                   <View style={[styles.detailHandle, { backgroundColor: colors.border }]} />
 
@@ -2128,7 +2136,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderRightWidth: 1,
     padding: 20,
-    paddingBottom: 36,
     gap: 12,
   },
   detailHandle: {

@@ -289,6 +289,7 @@ function CalendarDayDetails({
   onItemPress: (item: CalendarItem) => void;
 }) {
   const colors = useTheme();
+  const insets = useSafeAreaInsets();
   const groups: { type: CalendarItemType; title: string; items: CalendarItem[] }[] = [
     { type: "chore", title: "Chores", items: items.filter((item) => item.type === "chore") },
     { type: "shopping-item", title: "Shopping", items: items.filter((item) => item.type === "shopping-item" || item.type === "shopping-list") },
@@ -302,7 +303,16 @@ function CalendarDayDetails({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.dayModalBackdrop} activeOpacity={1} onPress={onClose} accessibilityLabel="Close scheduled items" />
-      <View style={[styles.dayModalSheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View
+        style={[
+          styles.dayModalSheet,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            paddingBottom: insets.bottom + 16,
+          },
+        ]}
+      >
         <View style={styles.dayModalHandle} />
         <View style={styles.dayModalHeader}>
           <View style={{ flex: 1 }}>
@@ -680,7 +690,6 @@ export default function MyChoresScreen() {
   const healthPct = totalCount > 0 ? completedCount / totalCount : 0;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : 0;
   const editingChore = editingChoreId
     ? chores.find((chore) => chore.id === editingChoreId)
     : undefined;
@@ -736,7 +745,7 @@ export default function MyChoresScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.listContent,
-          { paddingBottom: Math.max(scrollBottomPadding, 100 + botPad) },
+          { paddingBottom: scrollBottomPadding },
         ]}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
@@ -1309,7 +1318,7 @@ const styles = StyleSheet.create({
   previewOwner: { maxWidth: 72, fontFamily: "Inter_400Regular", fontSize: 11 },
   previewMore: { fontFamily: "Inter_600SemiBold", fontSize: 11, marginLeft: 16 },
   dayModalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)" },
-  dayModalSheet: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingBottom: Platform.OS === "ios" ? 28 : 16 },
+  dayModalSheet: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1 },
   dayModalHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: "#9CA3AF", opacity: 0.55, alignSelf: "center", marginTop: 9 },
   dayModalHeader: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10 },
   dayModalTitle: { fontFamily: "Inter_700Bold", fontSize: 18 },

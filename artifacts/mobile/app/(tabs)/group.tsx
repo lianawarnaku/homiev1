@@ -34,6 +34,7 @@ import {
   type Chore,
 } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { useTabBarLayout } from "@/hooks/useTabBarLayout";
 import { error as hapticError, success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
@@ -542,7 +543,7 @@ export default function GroupChoresScreen() {
     : null;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : 0;
+  const { contentBottomPadding } = useTabBarLayout();
 
   const activeHouseholdChores = useMemo(
     () => activeChores(chores, lifecycleNow),
@@ -677,7 +678,7 @@ export default function GroupChoresScreen() {
           return (
             <ScrollView
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 90 + botPad, paddingHorizontal: 16 }}
+              contentContainerStyle={{ paddingBottom: contentBottomPadding, paddingHorizontal: 16 }}
             >
               {/* Month header */}
               <View style={[styles.monthHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -832,7 +833,7 @@ export default function GroupChoresScreen() {
       ) : (
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 90 + botPad }}
+        contentContainerStyle={{ paddingBottom: contentBottomPadding }}
         onScroll={handleGroupScroll}
         scrollEventThrottle={32}
       >

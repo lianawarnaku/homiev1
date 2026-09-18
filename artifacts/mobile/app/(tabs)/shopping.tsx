@@ -92,7 +92,6 @@ export default function ShoppingScreen() {
   }));
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : 0;
 
   const [shopName, setShopName] = useState("");
   const [shopQty, setShopQty] = useState("1");
@@ -369,7 +368,7 @@ export default function ShoppingScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.listContent,
-            { paddingBottom: Math.max(scrollBottomPadding, 90 + botPad) },
+            { paddingBottom: scrollBottomPadding },
           ]}
         >
         <DraggableListCompat

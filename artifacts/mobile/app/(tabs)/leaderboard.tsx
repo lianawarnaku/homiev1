@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { HeaderActions } from "@/components/HeaderActions";
 import { useAppContextSelector } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { useTabBarLayout } from "@/hooks/useTabBarLayout";
 
 const CANDY = {
   strawberry: "#D85D7A",
@@ -56,7 +57,7 @@ export default function LeaderboardScreen() {
   const period = leaderboardPeriod;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : 0;
+  const { contentBottomPadding } = useTabBarLayout();
 
   const { sorted, completedByUser, extraCompletedByUser, totalCompleted } =
     useMemo(() => {
@@ -100,7 +101,7 @@ export default function LeaderboardScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingBottom: 90 + botPad }}
+      contentContainerStyle={{ paddingBottom: contentBottomPadding }}
       showsVerticalScrollIndicator={false}
     >
       <View style={[styles.header, { paddingTop: topPad + 16 }]}>

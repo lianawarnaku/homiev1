@@ -1,24 +1,18 @@
 import { Feather } from "@expo/vector-icons";
 import React, { useRef } from "react";
-import { Platform, StyleSheet } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet } from "react-native";
 
 import { SmoothPressable } from "@/components/SmoothPressable";
 import { useTheme } from "@/constants/colors";
+import { useTabBarLayout } from "@/hooks/useTabBarLayout";
 
-const TAB_BAR_HEIGHT = 68;
-const TAB_BAR_WEB_BOTTOM = 12;
-const TAB_BAR_NATIVE_MIN_BOTTOM = 8;
 const FAB_SIZE = 56;
 const FAB_TAB_GAP = 12;
 const FAB_CONTENT_GAP = 16;
 
 export function useFloatingActionMetrics() {
-  const insets = useSafeAreaInsets();
-  const tabBarBottom = Platform.OS === "web"
-    ? TAB_BAR_WEB_BOTTOM
-    : Math.max(insets.bottom, TAB_BAR_NATIVE_MIN_BOTTOM);
-  const bottom = tabBarBottom + TAB_BAR_HEIGHT + FAB_TAB_GAP;
+  const { tabBarInset } = useTabBarLayout();
+  const bottom = tabBarInset + FAB_TAB_GAP;
 
   return {
     bottom,

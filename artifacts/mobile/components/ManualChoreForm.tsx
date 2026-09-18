@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   type AssignmentMode,
@@ -61,6 +62,7 @@ export function ManualChoreForm({
   onCreated: () => void;
 }) {
   const colors = useTheme();
+  const insets = useSafeAreaInsets();
   const {
     addChore,
     updateChore,
@@ -214,7 +216,7 @@ export function ManualChoreForm({
 
   return (
     <ScrollView
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 36 }]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
@@ -413,7 +415,7 @@ export function ManualChoreForm({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 36, gap: 10 },
+  content: { paddingHorizontal: 20, paddingTop: 18, gap: 10 },
   label: { fontFamily: "Inter_600SemiBold", fontSize: 13, marginTop: 5 },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontFamily: "Inter_400Regular", fontSize: 15 },
   notes: { minHeight: 82, paddingTop: 12, textAlignVertical: "top" },

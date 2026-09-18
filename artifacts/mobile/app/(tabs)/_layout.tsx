@@ -5,15 +5,14 @@ import { Tabs } from "expo-router";
 import { useEffect, useMemo, useRef } from "react";
 import {
   InteractionManager,
-  Platform,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "@/constants/colors";
 import { useAppContextSelector } from "@/context/AppContext";
+import { TAB_BAR_HEIGHT, useTabBarLayout } from "@/hooks/useTabBarLayout";
 import { SmoothPressable } from "@/components/SmoothPressable";
 
 function ScrollableTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -21,8 +20,7 @@ function ScrollableTabBar({ state, descriptors, navigation }: BottomTabBarProps)
   const pointsEnabled = useAppContextSelector(
     (context) => context.pointsEnabled,
   );
-  const insets = useSafeAreaInsets();
-  const isWeb = Platform.OS === "web";
+  const { tabBarBottom } = useTabBarLayout();
   // Expo Router auto-registers every route file, even when its Tabs.Screen
   // configuration is conditionally omitted. Remove the route from the array
   // we actually render so it creates neither a button nor a flex slot.
@@ -65,7 +63,8 @@ function ScrollableTabBar({ state, descriptors, navigation }: BottomTabBarProps)
       style={[
         styles.tabBarShell,
         {
-          bottom: isWeb ? 12 : Math.max(insets.bottom, 8),
+          bottom: tabBarBottom,
+          height: TAB_BAR_HEIGHT,
           borderColor: colors.border,
         },
       ]}
@@ -211,7 +210,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 14,
     right: 14,
-    height: 68,
     borderWidth: 1,
     borderRadius: 28,
     overflow: "hidden",

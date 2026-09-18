@@ -122,7 +122,6 @@ export default function BorrowScreen() {
   const deletePendingRef = useRef(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : 0;
 
   const { activeBorrows, returnedBorrows, overdue } = useMemo(() => {
     const history = borrowItems.filter(
@@ -343,7 +342,7 @@ export default function BorrowScreen() {
         keyExtractor={(b) => b.id}
         contentContainerStyle={[
           styles.list,
-          { paddingBottom: Math.max(scrollBottomPadding, 90 + botPad) },
+          { paddingBottom: scrollBottomPadding },
         ]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={

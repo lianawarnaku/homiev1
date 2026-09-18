@@ -697,7 +697,6 @@ export default function PlanningScreen() {
   const continuingSetupRef = useRef(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : 0;
   const shortlistSelectedCount = Object.values(shortlistDraft).reduce(
     (total, section) => total + Object.values(section).filter(Boolean).length,
     0,
@@ -2103,7 +2102,16 @@ export default function PlanningScreen() {
             </View>
           ))}
         </ScrollView>
-        <View style={[styles.shortlistFooter, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.shortlistFooter,
+            {
+              borderTopColor: colors.border,
+              backgroundColor: colors.background,
+              paddingBottom: insets.bottom + 16,
+            },
+          ]}
+        >
           <Text style={[styles.shortlistCount, { color: colors.foreground }]}>
             {shortlistSelectedCount} selected
           </Text>
@@ -2205,7 +2213,7 @@ export default function PlanningScreen() {
     </Modal>
 
     {/* ── Sticky bottom button area ── */}
-    <View style={[styles.stickyBottom, { backgroundColor: colors.background, borderTopColor: colors.border, paddingBottom: botPad + 16 }]}>
+    <View style={[styles.stickyBottom, { backgroundColor: colors.background, borderTopColor: colors.border, paddingBottom: insets.bottom + 16 }]}>
       {/* Add Tasks button — shown after chart is generated */}
       {choreChartData && choresAdded === 0 ? (
         <Pressable
