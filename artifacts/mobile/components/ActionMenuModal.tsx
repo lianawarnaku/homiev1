@@ -138,6 +138,7 @@ export function ActionMenuModal({
           style={[
             styles.backdrop,
             {
+              backgroundColor: colors.foreground,
               opacity: progress.interpolate({
                 inputRange: [0, 1],
                 outputRange: [0, 0.46],
@@ -157,7 +158,7 @@ export function ActionMenuModal({
             {
               backgroundColor: colors.card,
               borderColor: colors.border,
-              paddingBottom: Math.max(insets.bottom, 14) + 10,
+              paddingBottom: insets.bottom + 18,
               opacity: progress,
               transform: [
                 {
@@ -385,13 +386,14 @@ const styles = StyleSheet.create({
   fill: { flex: 1, justifyContent: "flex-end" },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#080B12",
   },
   sheet: {
-    marginHorizontal: 12,
-    marginBottom: 10,
-    borderRadius: 26,
-    borderWidth: 1,
+    // Reaches the screen edge: a floating card left a band of the backdrop
+    // showing through the bottom safe-area inset, which read as a black strip
+    // under the popup. The inset is paid as content padding instead.
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderTopWidth: 1,
     paddingHorizontal: 18,
     paddingTop: 10,
     shadowColor: "#000000",
