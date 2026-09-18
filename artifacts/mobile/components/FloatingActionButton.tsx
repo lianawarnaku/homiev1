@@ -4,6 +4,7 @@ import { StyleSheet } from "react-native";
 
 import { SmoothPressable } from "@/components/SmoothPressable";
 import { useTheme } from "@/constants/colors";
+import { elevationStyle } from "@/lib/elevation";
 import { useTabBarLayout } from "@/hooks/useTabBarLayout";
 
 const FAB_SIZE = 56;
@@ -38,7 +39,13 @@ export function FloatingActionButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       containerStyle={[styles.container, { bottom }]}
-      style={[styles.button, { backgroundColor: colors.primary }]}
+      style={[
+        styles.button,
+        // The shadow lives on the button, not the container: Android needs a
+        // solid background under an elevated view or it draws nothing.
+        elevationStyle("raised", colors.foreground),
+        { backgroundColor: colors.primary },
+      ]}
       onPress={() => {
         if (pressLocked.current) return;
         pressLocked.current = true;
@@ -60,7 +67,6 @@ const styles = StyleSheet.create({
     width: FAB_SIZE,
     height: FAB_SIZE,
     zIndex: 20,
-    elevation: 12,
   },
   button: {
     width: FAB_SIZE,
@@ -68,9 +74,5 @@ const styles = StyleSheet.create({
     borderRadius: FAB_SIZE / 2,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
   },
 });

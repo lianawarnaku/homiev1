@@ -22,6 +22,7 @@ import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { ActionMenuModal } from "@/components/ActionMenuModal";
 import { useAppContext } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { elevationStyle } from "@/lib/elevation";
 import { UserPreferencesPanel } from "@/components/UserPreferencesPanel";
 import { AnalyticsPreferencesPanel } from "@/components/AnalyticsConsentManager";
 import { HouseholdCompletionControl } from "@/components/HouseholdCompletionControl";
@@ -153,6 +154,7 @@ function CollapsibleSettingsSection({
 export default function SettingsScreen() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const cardShadow = elevationStyle("card", colors.foreground);
   const {
     roommates,
     currentUserId,
@@ -682,6 +684,7 @@ export default function SettingsScreen() {
           <View
             style={[
               styles.card,
+              cardShadow,
               styles.householdCard,
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
@@ -1073,6 +1076,7 @@ export default function SettingsScreen() {
           <View
             style={[
               styles.card,
+              cardShadow,
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
@@ -1380,6 +1384,7 @@ export default function SettingsScreen() {
             <View
               style={[
                 styles.card,
+                cardShadow,
                 { backgroundColor: colors.card, borderColor: colors.border },
               ]}
             >
@@ -1971,11 +1976,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 18,
     gap: 14,
-    shadowColor: "#4A3426",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 2,
   },
   householdCard: {
     gap: 18,

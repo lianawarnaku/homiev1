@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "@/constants/colors";
+import { elevationStyle } from "@/lib/elevation";
 
 type FeatherIcon = keyof typeof Feather.glyphMap;
 
@@ -155,6 +156,7 @@ export function ActionMenuModal({
         <Animated.View
           style={[
             styles.sheet,
+            elevationStyle("sheet", colors.foreground),
             {
               backgroundColor: colors.card,
               borderColor: colors.border,
@@ -396,11 +398,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingHorizontal: 18,
     paddingTop: 10,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-    elevation: 16,
   },
   handle: {
     width: 42,

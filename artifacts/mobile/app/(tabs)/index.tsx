@@ -32,6 +32,7 @@ import {
   useAppContextSelector,
 } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { elevationStyle } from "@/lib/elevation";
 import { success as hapticSuccess } from "@/lib/haptics";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import { useChoreLifecycleNow } from "@/hooks/useChoreLifecycleNow";
@@ -1079,6 +1080,7 @@ export default function MyChoresScreen() {
                 <View
                   style={[
                     styles.toBuyCard,
+                    elevationStyle("subtle", colors.foreground),
                     { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 12 },
                   ]}
                 >
@@ -1454,20 +1456,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexShrink: 0,
   },
-  fab: {
-    position: "absolute",
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
   // ── Full-screen Add Chore modal (matches New IOU) ──
   addChoreContainer: { flex: 1, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden" },
   addChoreHeader: {
@@ -1563,11 +1551,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     overflow: "hidden",
-    shadowColor: "#4A3426",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
-    elevation: 1,
   },
   toBuyRow: {
     flexDirection: "row",

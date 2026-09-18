@@ -42,6 +42,7 @@ function normalizeAssignees(item: ShoppingItem): string[] {
   return [];
 }
 import { useTheme } from "@/constants/colors";
+import { elevationStyle } from "@/lib/elevation";
 import { tapLight } from "@/lib/haptics";
 import { localDateKey } from "@/lib/calendarItems";
 import { buildEvenSplitCents, centsToDollars } from "@/lib/money";
@@ -388,6 +389,7 @@ export default function ShoppingScreen() {
                 <View
                   style={[
                     styles.listSection,
+                    elevationStyle("card", colors.foreground),
                     {
                       backgroundColor: colors.card,
                       borderColor: list.pinned ? colors.warning + "55" : colors.border,
@@ -880,11 +882,6 @@ const styles = StyleSheet.create({
     // Buffer between each list so tiles never visually touch — matters most
     // during drag-reorder when neighbours could otherwise "stick" together.
     marginBottom: 16,
-    shadowColor: "#4A3426",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 2,
   },
   listHeader: {
     flexDirection: "row",

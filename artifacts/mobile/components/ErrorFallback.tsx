@@ -12,7 +12,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { BRAND_BASE_DARK } from "@/constants/brand";
 import { colorSchemes } from "@/constants/colors";
+import { elevationStyle } from "@/lib/elevation";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -246,14 +248,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 24,
     minWidth: 200,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    // This screen renders above AppProvider and cannot read the theme, so the
+    // shadow names the brand constant instead of a themed token.
+    ...elevationStyle("raised", BRAND_BASE_DARK),
   },
   buttonText: {
     fontWeight: "600",
