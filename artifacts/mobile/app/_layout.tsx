@@ -8,12 +8,14 @@ import { useFonts } from "expo-font";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import * as SystemUI from "expo-system-ui";
 import React, { useCallback, useEffect, useRef } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthGate } from "@/components/AuthGate";
 import { NavigationThemeProvider } from "@/components/NavigationThemeProvider";
+import { SystemChrome } from "@/components/SystemChrome";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { QuickGuideModal } from "@/components/QuickGuideModal";
 import { NudgeToast } from "@/components/NudgeToast";
@@ -34,6 +36,12 @@ SplashScreen.preventAutoHideAsync().catch(() => {
   // ignore if splash screen is not available (web)
 });
 SplashScreen.setOptions({ duration: 250, fade: true });
+
+// Matches the native launch screen before any theme is known, so the window
+// behind the first frame is never the platform default white.
+SystemUI.setBackgroundColorAsync(BRAND_BASE_DARK).catch(() => {
+  // ignore where the window background is not settable (web)
+});
 
 const queryClient = new QueryClient();
 
@@ -82,6 +90,7 @@ export default function RootLayout() {
           >
             <AppProvider session={session}>
               <NavigationThemeProvider>
+                <SystemChrome />
                 <AnalyticsConsentManager session={session} />
                 <AuthGate session={session} sessionLoading={sessionLoading}>
                   <>

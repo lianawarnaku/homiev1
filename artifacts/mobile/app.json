@@ -30,6 +30,10 @@
         "backgroundColor": "#FFFFFF"
       }
     },
+    "androidNavigationBar": {
+      "barStyle": "dark-content",
+      "enforceContrast": true
+    },
     "web": {
       "favicon": "./assets/images/roomie-icon.png"
     },
