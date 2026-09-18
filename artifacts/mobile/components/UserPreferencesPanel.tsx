@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 14,
   },
-  title: { fontFamily: "Inter_700Bold", fontSize: 18 },
+  title: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 18 },
   schemeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   schemeOptionSlot: { width: "48%" },
   schemeOption: {
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   schemeSwatchPrimary: { width: 17, height: 17, borderRadius: 9 },
-  schemeLabel: { flex: 1, fontFamily: "Inter_600SemiBold", fontSize: 12 },
+  schemeLabel: { flex: 1, fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 12 },
   preferenceRow: {
     minHeight: 58,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -140,6 +140,7 @@ const styles = StyleSheet.create({
   preferenceLabel: {
     flex: 1,
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 14,
     paddingRight: 12,
   },

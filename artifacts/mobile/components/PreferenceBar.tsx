@@ -139,16 +139,19 @@ const styles = StyleSheet.create({
   },
   dimension: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 10,
     letterSpacing: 1.8,
   },
   question: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 17,
     marginTop: 4,
   },
   helper: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 13,
     marginTop: 2,
   },
@@ -188,6 +191,7 @@ const styles = StyleSheet.create({
   checkpointLabel: {
     width: "33.333%",
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 8,
     letterSpacing: 0.8,
     textAlign: "center",

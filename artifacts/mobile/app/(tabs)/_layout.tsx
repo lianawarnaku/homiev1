@@ -246,5 +246,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
   },
-  tabLabel: { fontSize: 10, lineHeight: 12, fontFamily: "Inter_500Medium" },
+  tabLabel: { fontSize: 10, lineHeight: 12, fontFamily: "Inter_500Medium", includeFontPadding: false },
 });

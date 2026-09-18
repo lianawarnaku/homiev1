@@ -97,7 +97,7 @@ export function ErrorFallback({
               selectable
               style={[
                 styles.errorText,
-                { color: colors.foreground, fontFamily: monoFont },
+                { color: colors.foreground, fontFamily: monoFont, includeFontPadding: false },
               ]}
             >
               {componentStack}
@@ -183,6 +183,7 @@ export function ErrorFallback({
                       {
                         color: colors.foreground,
                         fontFamily: monoFont,
+                        includeFontPadding: false,
                       },
                     ]}
                     selectable
@@ -218,12 +219,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     textAlign: "center",
     lineHeight: 40,
   },
   message: {
     fontSize: 16,
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     textAlign: "center",
     lineHeight: 24,
   },
@@ -255,6 +258,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     textAlign: "center",
     fontSize: 16,
   },
@@ -281,6 +285,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
   },
   closeButton: {
     width: 44,

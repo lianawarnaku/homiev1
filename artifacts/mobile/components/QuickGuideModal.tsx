@@ -198,11 +198,13 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 24,
     letterSpacing: 0.8,
   },
   intro: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 16,
     lineHeight: 21,
     marginTop: 4,
@@ -220,11 +222,13 @@ const styles = StyleSheet.create({
   itemCopy: { flex: 1 },
   itemTitle: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 17,
     lineHeight: 21,
   },
   itemDescription: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 15,
     lineHeight: 20,
     marginTop: 2,
@@ -238,6 +242,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 16,
     letterSpacing: 0.6,
   },

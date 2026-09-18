@@ -327,6 +327,7 @@ export function ActionMenuModal({
                         <Text style={{
                           color: action.accentColor ?? colors.primary,
                           fontFamily: "Inter_700Bold",
+                          includeFontPadding: false,
                           fontSize: 13,
                         }}>
                           {action.badge}
@@ -408,6 +409,7 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 11,
     letterSpacing: 0.7,
     textTransform: "uppercase",
@@ -415,12 +417,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 22,
     lineHeight: 28,
     textAlign: "center",
   },
   message: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
@@ -429,6 +433,7 @@ const styles = StyleSheet.create({
   },
   error: {
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 13,
     lineHeight: 18,
     textAlign: "center",
@@ -454,10 +459,12 @@ const styles = StyleSheet.create({
   actionLabel: {
     flex: 1,
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 15,
   },
   destructiveHint: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 11,
     textTransform: "uppercase",
   },
@@ -469,7 +476,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 10,
   },
-  cancelText: { fontFamily: "Inter_600SemiBold", fontSize: 15 },
+  cancelText: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 15 },
   warningIcon: {
     width: 48,
     height: 48,
@@ -492,6 +499,7 @@ const styles = StyleSheet.create({
   },
   confirmButtonText: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 14,
     textAlign: "center",
   },

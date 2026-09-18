@@ -476,14 +476,15 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "space-between",
   },
-  title: { fontFamily: "Inter_700Bold", fontSize: 30, lineHeight: 36 },
+  title: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 30, lineHeight: 36 },
   kicker: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 10,
     letterSpacing: 1.2,
     marginBottom: 2,
   },
-  subtitle: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
+  subtitle: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 13, marginTop: 2 },
   periodToggle: {
     flexDirection: "row",
     alignSelf: "flex-start",
@@ -515,12 +516,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 4,
   },
-  statNum: { fontFamily: "Inter_700Bold", fontSize: 22 },
-  statLabel: { fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 2 },
+  statNum: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 22 },
+  statLabel: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 11, marginTop: 2 },
   statDivider: { width: 1, marginHorizontal: 8 },
   podiumSection: { marginBottom: 20 },
   sectionTitle: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 17,
     marginBottom: 12,
     paddingHorizontal: 20,
@@ -555,14 +557,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
-  medalLabel: { fontFamily: "Inter_700Bold", fontSize: 11 },
+  medalLabel: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 11 },
   podiumName: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 12,
     textAlign: "center",
     width: "100%",
   },
-  podiumPoints: { fontFamily: "Inter_400Regular", fontSize: 11, textAlign: "center" },
+  podiumPoints: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 11, textAlign: "center" },
   podiumBar: {
     width: "100%",
     borderTopLeftRadius: 14,
@@ -597,6 +600,7 @@ const styles = StyleSheet.create({
   },
   rank: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 16,
     width: 24,
     textAlign: "center",
@@ -606,6 +610,7 @@ const styles = StyleSheet.create({
   rankName: {
     flexShrink: 1,
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 15,
   },
   fairyBadge: {
@@ -616,9 +621,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 8,
   },
-  fairyText: { fontFamily: "Inter_600SemiBold", fontSize: 10 },
+  fairyText: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 10 },
   rankMeta: { flexDirection: "row", alignItems: "center", gap: 8 },
-  rankCompleted: { fontFamily: "Inter_400Regular", fontSize: 12 },
+  rankCompleted: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 12 },
   miniBar: { flex: 1, height: 4, borderRadius: 2, overflow: "hidden" },
   miniBarFill: { height: 4, borderRadius: 2 },
   rankPoints: {
@@ -628,6 +633,6 @@ const styles = StyleSheet.create({
     minWidth: 58,
     maxWidth: 76,
   },
-  rankPtsNum: { fontFamily: "Inter_700Bold", fontSize: 18 },
-  rankPtsLabel: { fontFamily: "Inter_400Regular", fontSize: 10 },
+  rankPtsNum: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 18 },
+  rankPtsLabel: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 10 },
 });

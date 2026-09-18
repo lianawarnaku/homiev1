@@ -64,6 +64,7 @@ const styles = StyleSheet.create({
   },
   initials: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     letterSpacing: 0.5,
   },
 });

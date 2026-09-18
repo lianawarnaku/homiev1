@@ -1582,6 +1582,7 @@ export default function SettingsScreen() {
                             style={{
                               color: colors.mutedForeground,
                               fontFamily: "Inter_400Regular",
+                              includeFontPadding: false,
                             }}
                           >
                             {"  · current"}
@@ -1844,7 +1845,7 @@ export default function SettingsScreen() {
                       style={[styles.demoCodeText, { color: colors.warning }]}
                     >
                       Demo mode (no email service configured). Your code:{" "}
-                      <Text style={{ fontFamily: "Inter_700Bold" }}>
+                      <Text style={{ fontFamily: "Inter_700Bold", includeFontPadding: false }}>
                         {resetDemoCode}
                       </Text>
                     </Text>
@@ -1953,7 +1954,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     borderBottomWidth: 2,
   },
-  title: { fontFamily: "Inter_700Bold", fontSize: 23, letterSpacing: 1.8 },
+  title: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 23, letterSpacing: 1.8 },
   iconBtn: {
     width: 36,
     height: 36,
@@ -1963,6 +1964,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 14,
     textTransform: "uppercase",
     letterSpacing: 1.5,
@@ -2000,6 +2002,7 @@ const styles = StyleSheet.create({
   householdSwitchButtonText: {
     flex: 1,
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 14,
   },
   switcherBackdrop: {
@@ -2029,9 +2032,10 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 16,
   },
-  switcherTitle: { fontFamily: "Inter_700Bold", fontSize: 20 },
+  switcherTitle: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 20 },
   switcherSubtitle: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 12,
     marginTop: 2,
   },
@@ -2059,10 +2063,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  sweetName: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
-  sweetMeta: { fontFamily: "Inter_400Regular", fontSize: 11, marginTop: 2 },
+  sweetName: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 14 },
+  sweetMeta: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 11, marginTop: 2 },
   emptyMembershipText: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 14,
     paddingVertical: 16,
     textAlign: "center",
@@ -2077,7 +2082,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 14,
   },
-  switcherActionText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  switcherActionText: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 14 },
   settingsIntro: {
     marginHorizontal: 20,
     paddingVertical: 20,
@@ -2085,11 +2090,13 @@ const styles = StyleSheet.create({
   },
   settingsIntroTitle: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 19,
     letterSpacing: 1.4,
   },
   settingsIntroSub: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 14,
     marginTop: 2,
   },
@@ -2113,11 +2120,13 @@ const styles = StyleSheet.create({
   },
   collapsibleTitle: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 15,
     letterSpacing: 1,
   },
   collapsibleSubtitle: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 12,
     lineHeight: 17,
     marginTop: 2,
@@ -2151,6 +2160,7 @@ const styles = StyleSheet.create({
   photoBtnText: {
     color: "#fff",
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 13,
   },
   photoSecondaryBtn: {
@@ -2163,9 +2173,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: "center",
   },
-  photoSecondaryText: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  photoSecondaryText: { fontFamily: "Inter_500Medium", includeFontPadding: false, fontSize: 12 },
   fieldLabel: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 13,
     textTransform: "uppercase",
     letterSpacing: 1.2,
@@ -2176,6 +2187,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 15,
   },
   colorRow: {
@@ -2213,10 +2225,11 @@ const styles = StyleSheet.create({
   },
   linkTitle: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 16,
     letterSpacing: 1.1,
   },
-  linkSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
+  linkSub: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 13, marginTop: 2 },
   stickyBottom: {
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -2227,7 +2240,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
   },
-  saveBtnText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 15 },
+  saveBtnText: { color: "#fff", fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 15 },
 
   // ── Account section ──
   accountRow: {
@@ -2237,11 +2250,13 @@ const styles = StyleSheet.create({
   },
   accountName: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 17,
     letterSpacing: 0.5,
   },
   accountUsername: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 13,
     marginTop: 2,
   },
@@ -2256,6 +2271,7 @@ const styles = StyleSheet.create({
   switchUserBtnText: {
     color: "#fff",
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 13,
   },
   outlineDangerBtn: {
@@ -2269,10 +2285,12 @@ const styles = StyleSheet.create({
   },
   outlineDangerBtnText: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 13,
   },
   accountHint: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 11,
     lineHeight: 15,
     textAlign: "center",
@@ -2284,11 +2302,13 @@ const styles = StyleSheet.create({
   },
   memberManagementTitle: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 12,
     letterSpacing: 1.1,
   },
   memberManagementHint: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 11,
     lineHeight: 15,
   },
@@ -2300,6 +2320,7 @@ const styles = StyleSheet.create({
   memberManagementName: {
     flex: 1,
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 14,
   },
   memberRemoveBtn: {
@@ -2313,6 +2334,7 @@ const styles = StyleSheet.create({
   },
   memberRemoveText: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 12,
   },
 
@@ -2334,8 +2356,8 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 6,
   },
-  authTitle: { fontFamily: "Inter_700Bold", fontSize: 20 },
-  authSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginBottom: 8 },
+  authTitle: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 20 },
+  authSub: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 13, marginBottom: 8 },
   roommateRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2345,9 +2367,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
   },
-  roommateRowName: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  roommateRowName: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 14 },
   authErrorText: {
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 12,
     marginTop: 2,
   },
@@ -2364,9 +2387,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
-  authBtnText: { fontFamily: "Inter_700Bold", fontSize: 14 },
+  authBtnText: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 14 },
   linkText: {
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 12,
     marginTop: 2,
     textDecorationLine: "underline",
@@ -2383,6 +2407,7 @@ const styles = StyleSheet.create({
   demoCodeText: {
     flex: 1,
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 12,
     lineHeight: 17,
   },

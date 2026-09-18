@@ -1310,6 +1310,7 @@ export default function ExpensesScreen() {
                           style={{
                             color: selected ? colors.primary : colors.mutedForeground,
                             fontFamily: "Inter_600SemiBold",
+                            includeFontPadding: false,
                             fontSize: 12,
                             marginLeft: 4,
                           }}
@@ -1355,6 +1356,7 @@ export default function ExpensesScreen() {
                           color:
                             expPaidBy === r.id ? r.color : colors.mutedForeground,
                           fontFamily: "Inter_600SemiBold",
+                          includeFontPadding: false,
                           fontSize: 12,
                           marginLeft: 6,
                         }}
@@ -1412,6 +1414,7 @@ export default function ExpensesScreen() {
                         style={{
                           color: colors.primary,
                           fontFamily: "Inter_600SemiBold",
+                          includeFontPadding: false,
                           fontSize: 12,
                         }}
                       >
@@ -1432,15 +1435,15 @@ export default function ExpensesScreen() {
                       gap: 4,
                     }}
                   >
-                    <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 13 }}>
+                    <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 13 }}>
                       From Shopping: {expenseSource.shoppingListName}
                     </Text>
                     {expenseSource.type === "shopping-list" ? (
                       <>
-                        <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontSize: 12 }}>
+                        <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 12 }}>
                           Individually allocated: ${centsToDollars(sourceAllocatedCents).toFixed(2)}
                         </Text>
-                        <Text style={{ color: colors.foreground, fontFamily: "Inter_600SemiBold", fontSize: 12 }}>
+                        <Text style={{ color: colors.foreground, fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 12 }}>
                           Remaining group split: ${centsToDollars(Math.max(0, allocatableTotalCents ?? 0)).toFixed(2)}
                         </Text>
                       </>
@@ -1495,7 +1498,7 @@ export default function ExpensesScreen() {
                   autoCapitalize="none"
                 />
                 {!validExpenseDate ? (
-                  <Text style={{ color: colors.destructive, fontFamily: "Inter_500Medium", fontSize: 12 }}>
+                  <Text style={{ color: colors.destructive, fontFamily: "Inter_500Medium", includeFontPadding: false, fontSize: 12 }}>
                     Enter a valid date as YYYY-MM-DD.
                   </Text>
                 ) : null}
@@ -1535,6 +1538,7 @@ export default function ExpensesScreen() {
                             style={{
                               color: selected ? r.color : colors.mutedForeground,
                               fontFamily: "Inter_600SemiBold",
+                              includeFontPadding: false,
                               fontSize: 12,
                               marginLeft: 6,
                             }}
@@ -1574,6 +1578,7 @@ export default function ExpensesScreen() {
                   <Text
                     style={{
                       fontFamily: "Inter_500Medium",
+                      includeFontPadding: false,
                       fontSize: 14,
                       color: expRecurring ? colors.primary : colors.mutedForeground,
                       flex: 1,
@@ -1604,6 +1609,7 @@ export default function ExpensesScreen() {
                             <Text
                               style={{
                                 fontFamily: "Inter_600SemiBold",
+                                includeFontPadding: false,
                                 fontSize: 13,
                                 color: selected ? colors.primary : colors.mutedForeground,
                                 textAlign: "center",
@@ -1670,6 +1676,7 @@ export default function ExpensesScreen() {
                           <Text style={{
                             color: selected ? colors.primary : colors.mutedForeground,
                             fontFamily: "Inter_600SemiBold",
+                            includeFontPadding: false,
                             fontSize: 13,
                           }}>
                             {option.label}
@@ -1698,6 +1705,7 @@ export default function ExpensesScreen() {
                               ? colors.warning
                               : colors.destructive,
                           fontFamily: "Inter_600SemiBold",
+                          includeFontPadding: false,
                           fontSize: 12,
                         }}
                       >
@@ -1711,6 +1719,7 @@ export default function ExpensesScreen() {
                         style={{
                           color: colors.success,
                           fontFamily: "Inter_600SemiBold",
+                          includeFontPadding: false,
                           fontSize: 12,
                         }}
                       >
@@ -1782,7 +1791,7 @@ export default function ExpensesScreen() {
                               accessibilityRole="button"
                               accessibilityLabel={`Assign remaining amount to ${person.name}`}
                             >
-                              <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 11 }}>
+                              <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 11 }}>
                                 Remainder
                               </Text>
                             </TouchableOpacity>
@@ -1797,7 +1806,7 @@ export default function ExpensesScreen() {
               {!allocationValidation.valid ? (
                 <Text
                   accessibilityLiveRegion="polite"
-                  style={{ color: colors.destructive, fontFamily: "Inter_500Medium", fontSize: 13 }}
+                  style={{ color: colors.destructive, fontFamily: "Inter_500Medium", includeFontPadding: false, fontSize: 13 }}
                 >
                   {allocationValidation.reason}
                 </Text>
@@ -1805,7 +1814,7 @@ export default function ExpensesScreen() {
               {iouSubmitError ? (
                 <Text
                   accessibilityLiveRegion="polite"
-                  style={{ color: colors.destructive, fontFamily: "Inter_500Medium", fontSize: 13 }}
+                  style={{ color: colors.destructive, fontFamily: "Inter_500Medium", includeFontPadding: false, fontSize: 13 }}
                 >
                   {iouSubmitError}
                 </Text>
@@ -1864,8 +1873,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
   },
-  title: { fontFamily: "Inter_700Bold", fontSize: 30, lineHeight: 36 },
-  subtitle: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
+  title: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 30, lineHeight: 36 },
+  subtitle: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 13, marginTop: 2 },
   addHeaderBtn: {
     width: 40,
     height: 40,
@@ -1887,9 +1896,9 @@ const styles = StyleSheet.create({
   },
   balanceCardPressable: { flex: 1 },
   balanceCardContent: { flex: 1, alignItems: "center", justifyContent: "center" },
-  balanceLabel: { fontFamily: "Inter_400Regular", fontSize: 13 },
-  balanceAmount: { fontFamily: "Inter_700Bold", fontSize: 34, marginTop: 4 },
-  balanceHint: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  balanceLabel: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 13 },
+  balanceAmount: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 34, marginTop: 4 },
+  balanceHint: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 12, marginTop: 2 },
   netList: {
     borderRadius: 18,
     borderWidth: 1,
@@ -1903,8 +1912,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 10,
   },
-  netText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 14 },
-  netAmount: { fontFamily: "Inter_700Bold", fontSize: 15 },
+  netText: { flex: 1, fontFamily: "Inter_500Medium", includeFontPadding: false, fontSize: 14 },
+  netAmount: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 15 },
   listContent: { paddingHorizontal: 16, paddingTop: 6, gap: 12 },
   expenseCard: {
     borderRadius: 22,
@@ -1918,10 +1927,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  expTitle: { fontFamily: "Inter_600SemiBold", fontSize: 14, marginBottom: 2 },
-  expMeta: { fontFamily: "Inter_400Regular", fontSize: 12 },
+  expTitle: { fontFamily: "Inter_600SemiBold", includeFontPadding: false, fontSize: 14, marginBottom: 2 },
+  expMeta: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 12 },
   expRight: { alignItems: "flex-end", gap: 6 },
-  expAmount: { fontFamily: "Inter_700Bold", fontSize: 16 },
+  expAmount: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 16 },
   expActions: { flexDirection: "row", gap: 12 },
   iouChips: {
     flexDirection: "row",
@@ -1938,7 +1947,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   iouDot: { width: 7, height: 7, borderRadius: 4 },
-  iouChipText: { fontFamily: "Inter_500Medium", fontSize: 12 },
+  iouChipText: { fontFamily: "Inter_500Medium", includeFontPadding: false, fontSize: 12 },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
@@ -1972,11 +1981,13 @@ const styles = StyleSheet.create({
   },
   sheetTitle: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 20,
     marginBottom: 14,
   },
   label: {
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 13,
     marginBottom: 6,
   },
@@ -1987,6 +1998,7 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     fontSize: 15,
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
   },
   amountInputRow: {
     flexDirection: "row",
@@ -1998,6 +2010,7 @@ const styles = StyleSheet.create({
   },
   dollarSign: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 22,
     marginRight: 4,
   },
@@ -2005,6 +2018,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 28,
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     paddingVertical: 8,
   },
   evenSplitBtn: {
@@ -2046,6 +2060,7 @@ const styles = StyleSheet.create({
   splitName: {
     flex: 1,
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 14,
   },
   splitAmountBox: {
@@ -2059,11 +2074,13 @@ const styles = StyleSheet.create({
   },
   splitDollar: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 14,
     marginRight: 2,
   },
   splitInput: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 15,
     minWidth: 60,
     padding: 0,
@@ -2077,6 +2094,7 @@ const styles = StyleSheet.create({
   },
   addBtnText: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 16,
     color: "#fff",
   },
@@ -2123,6 +2141,7 @@ const styles = StyleSheet.create({
   },
   recurringBadgeText: {
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 10,
   },
   detailOverlay: {
@@ -2152,15 +2171,18 @@ const styles = StyleSheet.create({
   },
   detailTitle: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 17,
   },
   detailMeta: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 13,
     marginTop: 2,
   },
   detailAmount: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 20,
   },
   detailDivider: {
@@ -2169,6 +2191,7 @@ const styles = StyleSheet.create({
   },
   detailSectionLabel: {
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 12,
     textTransform: "uppercase",
     letterSpacing: 0.6,
@@ -2184,10 +2207,12 @@ const styles = StyleSheet.create({
   },
   detailPersonName: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 14,
   },
   detailPersonAmount: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 13,
     marginTop: 1,
   },
@@ -2201,6 +2226,7 @@ const styles = StyleSheet.create({
   },
   detailPaidBadgeText: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 12,
   },
   detailMarkPaidBtn: {
@@ -2213,6 +2239,7 @@ const styles = StyleSheet.create({
   },
   detailMarkPaidText: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 12,
     color: "#fff",
   },
@@ -2224,6 +2251,7 @@ const styles = StyleSheet.create({
   },
   detailPendingText: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 12,
   },
   detailMyOweBanner: {
@@ -2237,6 +2265,7 @@ const styles = StyleSheet.create({
   detailMyOweText: {
     flex: 1,
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -2256,6 +2285,7 @@ const styles = StyleSheet.create({
   },
   detailActionBtnText: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 13,
   },
   detailCloseBtn: {
@@ -2268,6 +2298,7 @@ const styles = StyleSheet.create({
   },
   detailCloseBtnText: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 18,
     letterSpacing: 0.3,
   },
@@ -2282,8 +2313,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
-  iouHeaderTitle: { fontFamily: "Inter_700Bold", fontSize: 26 },
-  iouHeaderSub: { fontFamily: "Inter_400Regular", fontSize: 13, marginTop: 2 },
+  iouHeaderTitle: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 26 },
+  iouHeaderSub: { fontFamily: "Inter_400Regular", includeFontPadding: false, fontSize: 13, marginTop: 2 },
   iouCloseBtn: {
     width: 40,
     height: 40,
@@ -2318,5 +2349,5 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 14,
   },
-  iouSendBtnText: { fontFamily: "Inter_700Bold", fontSize: 16 },
+  iouSendBtnText: { fontFamily: "Inter_700Bold", includeFontPadding: false, fontSize: 16 },
 });

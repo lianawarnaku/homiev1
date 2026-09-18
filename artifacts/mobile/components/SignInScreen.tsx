@@ -277,7 +277,7 @@ export function SignInScreen() {
               <Text
                 accessibilityRole="link"
                 onPress={openPrivacyPolicy}
-                style={{ color: colors.primary, fontFamily: "Inter_600SemiBold" }}
+                style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", includeFontPadding: false }}
               >
                 Privacy Policy
               </Text>
@@ -297,7 +297,7 @@ export function SignInScreen() {
           >
             <Text style={[styles.switchText, { color: colors.mutedForeground }]}>
               {mode === "signin" ? "New here?" : "Already have an account?"}{" "}
-              <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold" }}>
+              <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", includeFontPadding: false }}>
                 {mode === "signin" ? "Create an account" : "Sign in"}
               </Text>
             </Text>
@@ -320,11 +320,13 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 30,
     marginBottom: 6,
   },
   subtitle: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 14,
     textAlign: "center",
     marginBottom: 32,
@@ -333,6 +335,7 @@ const styles = StyleSheet.create({
   form: { alignSelf: "stretch", maxWidth: 420, width: "100%" },
   label: {
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 12,
     letterSpacing: 0.4,
     textTransform: "uppercase",
@@ -345,6 +348,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
   },
   banner: {
     marginTop: 14,
@@ -357,6 +361,7 @@ const styles = StyleSheet.create({
   },
   bannerText: {
     fontFamily: "Inter_500Medium",
+    includeFontPadding: false,
     fontSize: 13,
     flex: 1,
     lineHeight: 18,
@@ -369,6 +374,7 @@ const styles = StyleSheet.create({
   },
   resendText: {
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     fontSize: 13,
   },
   submit: {
@@ -380,6 +386,7 @@ const styles = StyleSheet.create({
   submitText: {
     color: "#fff",
     fontFamily: "Inter_700Bold",
+    includeFontPadding: false,
     fontSize: 15,
   },
   switchRow: {
@@ -388,12 +395,14 @@ const styles = StyleSheet.create({
   },
   switchText: {
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 13,
   },
   privacyCopy: {
     marginTop: 14,
     textAlign: "center",
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     fontSize: 12,
     lineHeight: 17,
   },

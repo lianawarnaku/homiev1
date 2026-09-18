@@ -48,11 +48,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 17,
     fontFamily: "Inter_600SemiBold",
+    includeFontPadding: false,
     textAlign: "center",
   },
   subtitle: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
+    includeFontPadding: false,
     textAlign: "center",
     lineHeight: 20,
   },
