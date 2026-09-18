@@ -2195,6 +2195,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     marginHorizontal: 16,
+    // Consecutive link rows are plain siblings in the scroll view, so without
+    // this they sit flush against each other. 6 + 6 leaves 12 between rows,
+    // matching the card-to-card rhythm used elsewhere.
+    marginVertical: 6,
     borderRadius: 22,
     borderWidth: 1,
     paddingHorizontal: 18,
