@@ -36,6 +36,7 @@ import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useTheme } from "@/constants/colors";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
+import { computeNetBalances, isSettled } from "@/lib/balances";
 import { success as hapticSuccess } from "@/lib/haptics";
 import { tapLight } from "@/lib/haptics";
 import {
@@ -120,7 +121,6 @@ export default function ExpensesScreen() {
     settleExpense,
     deleteExpense,
     markPersonPaid,
-    getBalances,
     currentUserId,
     pendingIouDraft,
     setPendingIouDraft,
@@ -134,7 +134,6 @@ export default function ExpensesScreen() {
     settleExpense: context.settleExpense,
     deleteExpense: context.deleteExpense,
     markPersonPaid: context.markPersonPaid,
-    getBalances: context.getBalances,
     currentUserId: context.currentUserId,
     pendingIouDraft: context.pendingIouDraft,
     setPendingIouDraft: context.setPendingIouDraft,
@@ -255,16 +254,38 @@ export default function ExpensesScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : 0;
 
+  // One net figure per member across the whole household, so reciprocal debts
+  // and chains cancel instead of being listed in both directions.
+  const netBalances = useMemo(
+    () =>
+      computeNetBalances(
+        expenses,
+        roommates.map((roommate) => roommate.id),
+      ),
+    [expenses, roommates],
+  );
+  const myNet = netBalances[currentUserId] ?? 0;
+  const roommateNets = useMemo(
+    () =>
+      roommates
+        .filter((roommate) => roommate.id !== currentUserId)
+        .map((roommate) => ({
+          id: roommate.id,
+          name: roommate.name,
+          net: netBalances[roommate.id] ?? 0,
+        }))
+        // Settled roommates are left out, matching how the summary hides a
+        // direction with nothing outstanding.
+        .filter((entry) => !isSettled(entry.net)),
+    [currentUserId, netBalances, roommates],
+  );
+
   const {
     activeExpenses,
     historicalExpenses,
     firstIOweIndex,
     firstOwedToMeIndex,
-    iOwe,
-    myBalance,
-    owedToMe,
   } = useMemo(() => {
-    const balances = getBalances();
     const historical = expenses.filter(
       (expense) =>
         expense.settled &&
@@ -275,22 +296,6 @@ export default function ExpensesScreen() {
         !expense.settled ||
         !isHistoricalResolution(expense.resolvedAt),
     );
-    const unresolved = active.filter((expense) => !expense.settled);
-
-    // Gross amounts in each direction — exclude entries already paid back.
-    let nextOwedToMe = 0;
-    let nextIOwe = 0;
-    unresolved.forEach((expense) => {
-      if (expense.paidBy === currentUserId) {
-        Object.entries(expense.splits ?? {}).forEach(([id, amount]) => {
-          if (id !== expense.paidBy && !(expense.paidBack ?? {})[id]) {
-            nextOwedToMe += amount as number;
-          }
-        });
-      } else if (!(expense.paidBack ?? {})[currentUserId]) {
-        nextIOwe += (expense.splits ?? {})[currentUserId] as number || 0;
-      }
-    });
 
     return {
       activeExpenses: active,
@@ -304,11 +309,8 @@ export default function ExpensesScreen() {
       firstOwedToMeIndex: active.findIndex(
         (expense) => !expense.settled && expense.paidBy === currentUserId,
       ),
-      iOwe: nextIOwe,
-      myBalance: balances[currentUserId] ?? 0,
-      owedToMe: nextOwedToMe,
     };
-  }, [currentUserId, expenses, getBalances]);
+  }, [currentUserId, expenses]);
   const visibleHistory = useMemo(
     () =>
       historyExpanded
@@ -594,76 +596,82 @@ export default function ExpensesScreen() {
       </View>
 
       <>
-          {/* Balance cards — You owe on top, Owed to you below */}
+          {/* Net balances — one prominent figure for you, one line per roommate */}
           <View style={styles.balanceRow}>
-            {iOwe > 0 && (
-              <Reanimated.View
-                style={[
-                  styles.balanceCard,
-                  balanceCardStyle,
-                  { backgroundColor: colors.destructive + "14", borderColor: colors.destructive + "40" },
-                ]}
-              >
-                <TouchableOpacity
-                  style={styles.balanceCardPressable}
-                  onPress={() => scrollToExpense(firstIOweIndex)}
-                  activeOpacity={0.75}
-                >
-                  <Reanimated.View style={[styles.balanceCardContent, balanceCardContentStyle]}>
-                    <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>You owe</Text>
-                    <Reanimated.Text style={[styles.balanceAmount, balanceAmountStyle, { color: colors.destructive }]}>
-                      -${iOwe.toFixed(2)}
-                    </Reanimated.Text>
-                    <Reanimated.Text style={[styles.balanceHint, balanceHintStyle, { color: colors.mutedForeground }]}>
-                      Tap to view
-                    </Reanimated.Text>
-                  </Reanimated.View>
-                </TouchableOpacity>
-              </Reanimated.View>
-            )}
-            {owedToMe > 0 && (
-              <Reanimated.View
-                style={[
-                  styles.balanceCard,
-                  balanceCardStyle,
-                  { backgroundColor: colors.success + "14", borderColor: colors.success + "40" },
-                ]}
-              >
-                <TouchableOpacity
-                  style={styles.balanceCardPressable}
-                  onPress={() => scrollToExpense(firstOwedToMeIndex)}
-                  activeOpacity={0.75}
-                >
-                  <Reanimated.View style={[styles.balanceCardContent, balanceCardContentStyle]}>
-                    <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Owed to you</Text>
-                    <Reanimated.Text style={[styles.balanceAmount, balanceAmountStyle, { color: colors.success }]}>
-                      +${owedToMe.toFixed(2)}
-                    </Reanimated.Text>
-                    <Reanimated.Text style={[styles.balanceHint, balanceHintStyle, { color: colors.mutedForeground }]}>
-                      Tap to view
-                    </Reanimated.Text>
-                  </Reanimated.View>
-                </TouchableOpacity>
-              </Reanimated.View>
-            )}
-            {owedToMe === 0 && iOwe === 0 && (
-              <Reanimated.View
-                style={[
-                  styles.balanceCard,
-                  balanceCardStyle,
-                  { backgroundColor: colors.success + "14", borderColor: colors.success + "40" },
-                ]}
+            <Reanimated.View
+              style={[
+                styles.balanceCard,
+                balanceCardStyle,
+                myNet < 0
+                  ? {
+                      backgroundColor: colors.destructive + "14",
+                      borderColor: colors.destructive + "40",
+                    }
+                  : {
+                      backgroundColor: colors.success + "14",
+                      borderColor: colors.success + "40",
+                    },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.balanceCardPressable}
+                onPress={() =>
+                  scrollToExpense(myNet < 0 ? firstIOweIndex : firstOwedToMeIndex)
+                }
+                disabled={isSettled(myNet)}
+                activeOpacity={0.75}
               >
                 <Reanimated.View style={[styles.balanceCardContent, balanceCardContentStyle]}>
-                  <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Balance</Text>
-                  <Reanimated.Text style={[styles.balanceAmount, balanceAmountStyle, { color: colors.success }]}>
-                    $0.00
+                  <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>
+                    {myNet > 0
+                      ? "You're owed"
+                      : myNet < 0
+                        ? "You owe"
+                        : "You're all settled up"}
+                  </Text>
+                  <Reanimated.Text
+                    style={[
+                      styles.balanceAmount,
+                      balanceAmountStyle,
+                      { color: myNet < 0 ? colors.destructive : colors.success },
+                    ]}
+                  >
+                    {myNet > 0 ? "+" : myNet < 0 ? "-" : ""}${Math.abs(myNet).toFixed(2)}
                   </Reanimated.Text>
-                  <Reanimated.Text style={[styles.balanceHint, balanceHintStyle, { color: colors.mutedForeground }]}>
-                    All settled up
+                  <Reanimated.Text
+                    style={[styles.balanceHint, balanceHintStyle, { color: colors.mutedForeground }]}
+                  >
+                    {isSettled(myNet) ? "Everything nets out" : "Tap to view"}
                   </Reanimated.Text>
                 </Reanimated.View>
-              </Reanimated.View>
+              </TouchableOpacity>
+            </Reanimated.View>
+            {roommateNets.length > 0 && (
+              <View
+                style={[
+                  styles.netList,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                {roommateNets.map(({ id, name, net }) => (
+                  <View key={id} style={styles.netRow}>
+                    <Text
+                      style={[styles.netText, { color: colors.foreground }]}
+                      numberOfLines={1}
+                    >
+                      {net < 0 ? `${name} owes you` : `You owe ${name}`}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.netAmount,
+                        { color: net < 0 ? colors.success : colors.destructive },
+                      ]}
+                    >
+                      ${Math.abs(net).toFixed(2)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             )}
           </View>
 
@@ -1874,6 +1882,21 @@ const styles = StyleSheet.create({
   balanceLabel: { fontFamily: "Inter_400Regular", fontSize: 13 },
   balanceAmount: { fontFamily: "Inter_700Bold", fontSize: 34, marginTop: 4 },
   balanceHint: { fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  netList: {
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  netRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  netText: { flex: 1, fontFamily: "Inter_500Medium", fontSize: 14 },
+  netAmount: { fontFamily: "Inter_700Bold", fontSize: 15 },
   listContent: { paddingHorizontal: 16, paddingTop: 6, gap: 12 },
   expenseCard: {
     borderRadius: 22,

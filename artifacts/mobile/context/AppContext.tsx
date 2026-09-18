@@ -20,6 +20,7 @@ import {
 import type { ItemCategory } from "@/constants/itemDifficulty";
 import type { Difficulty } from "@/lib/itemDifficulty";
 import { reportSupabaseError, reportRuntimeError } from "@/lib/runtimeDiagnostics";
+import { computeNetBalances } from "@/lib/balances";
 import { findAssignedLoadDeviations } from "@/lib/chartLoadBalance";
 import { deleteLocalAnalyticsIdentity, track } from "@/lib/analytics";
 import {
@@ -4315,24 +4316,16 @@ export function AppProvider({
     [chores]
   );
 
-  const getBalances = useCallback((): Record<string, number> => {
-    const balanceCents: Record<string, number> = {};
-    roommates.forEach((r) => (balanceCents[r.id] = 0));
-    expenses
-      .filter((e) => !e.settled)
-      .forEach((e) => {
-        Object.entries(e.splits ?? {}).forEach(([personId, amount]) => {
-          if (personId !== e.paidBy && !(e.paidBack ?? {})[personId]) {
-            const cents = Math.round((amount as number) * 100);
-            balanceCents[personId] = (balanceCents[personId] ?? 0) - cents;
-            balanceCents[e.paidBy] = (balanceCents[e.paidBy] ?? 0) + cents;
-          }
-        });
-      });
-    return Object.fromEntries(
-      Object.entries(balanceCents).map(([memberId, cents]) => [memberId, cents / 100]),
-    );
-  }, [expenses, roommates]);
+  // Shares one netting implementation with the Expenses summary so a member's
+  // balance never reads differently in two places.
+  const getBalances = useCallback(
+    (): Record<string, number> =>
+      computeNetBalances(
+        expenses,
+        roommates.map((roommate) => roommate.id),
+      ),
+    [expenses, roommates],
+  );
 
   // AppProvider also owns synchronization-only state (hydration flags,
   // realtime readiness, auth token refreshes). Those updates should not
