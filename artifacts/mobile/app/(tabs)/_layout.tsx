@@ -134,6 +134,10 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
+        // bottom-tabs v7 renders each tab inside its own scene container. Left
+        // unstyled it defaults to white and flashes for a frame on every tab
+        // switch, before the screen's own themed background paints.
+        sceneStyle: { backgroundColor: colors.background },
         // Keep the first frame light, then ScrollableTabBar preloads the other
         // routes after interactions. Once mounted, tabs stay live so an edit
         // is not paid as a queued rerender on the next focus.

@@ -13,6 +13,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthGate } from "@/components/AuthGate";
+import { NavigationThemeProvider } from "@/components/NavigationThemeProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { QuickGuideModal } from "@/components/QuickGuideModal";
 import { NudgeToast } from "@/components/NudgeToast";
@@ -62,39 +63,41 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-              <ErrorBoundary
-                onError={(error, componentStack) =>
-                  reportRuntimeError("React render", error, { componentStack })
-                }
-              >
+      <ErrorBoundary
+        onError={(error, componentStack) =>
+          reportRuntimeError("React render", error, { componentStack })
+        }
+      >
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <AppProvider session={session}>
-              <AnalyticsConsentManager session={session} />
-              <AuthGate session={session} sessionLoading={sessionLoading}>
-                <>
-                <HouseholdSetupRouteGuard />
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    animation: "fade_from_bottom",
-                    animationDuration: 220,
-                    gestureEnabled: true,
-                  }}
-                  initialRouteName="(tabs)"
-                >
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="settings" options={{ headerShown: false, presentation: "card" }} />
-                  <Stack.Screen name="planning" options={{ headerShown: false, presentation: "card" }} />
-                  <Stack.Screen name="task-difficulty" options={{ headerShown: false, presentation: "card" }} />
-                  <Stack.Screen name="alerts" options={{ headerShown: false, presentation: "card" }} />
-                  <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-                  <Stack.Screen name="+not-found" />
-                </Stack>
-                <QuickGuideModal />
-                <NudgeToast />
-                </>
-              </AuthGate>
+              <NavigationThemeProvider>
+                <AnalyticsConsentManager session={session} />
+                <AuthGate session={session} sessionLoading={sessionLoading}>
+                  <>
+                    <HouseholdSetupRouteGuard />
+                    <Stack
+                      screenOptions={{
+                        headerShown: false,
+                        animation: "fade_from_bottom",
+                        animationDuration: 220,
+                        gestureEnabled: true,
+                      }}
+                      initialRouteName="(tabs)"
+                    >
+                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                      <Stack.Screen name="settings" options={{ headerShown: false, presentation: "card" }} />
+                      <Stack.Screen name="planning" options={{ headerShown: false, presentation: "card" }} />
+                      <Stack.Screen name="task-difficulty" options={{ headerShown: false, presentation: "card" }} />
+                      <Stack.Screen name="alerts" options={{ headerShown: false, presentation: "card" }} />
+                      <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+                      <Stack.Screen name="+not-found" />
+                    </Stack>
+                    <QuickGuideModal />
+                    <NudgeToast />
+                  </>
+                </AuthGate>
+              </NavigationThemeProvider>
             </AppProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
