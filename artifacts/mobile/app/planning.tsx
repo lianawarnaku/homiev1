@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAppContext, type ChoreAssignment, type ChoreCategory, type ChoreChartData, type GeneratedTask, type Roommate } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { KEYBOARD_BEHAVIOR } from "@/lib/keyboard";
 import { androidRipple } from "@/lib/ripple";
 import { error as hapticError } from "@/lib/haptics";
 import type { ChoreFrequency, ChoreTimeOfDay } from "@/constants/choreRules";
@@ -1235,7 +1236,7 @@ export default function PlanningScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={KEYBOARD_BEHAVIOR}
     >
     <ScrollView
       style={{ flex: 1 }}

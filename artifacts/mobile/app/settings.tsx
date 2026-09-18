@@ -22,6 +22,7 @@ import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { ActionMenuModal } from "@/components/ActionMenuModal";
 import { useAppContext } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { KEYBOARD_BEHAVIOR } from "@/lib/keyboard";
 import { elevationStyle } from "@/lib/elevation";
 import { UserPreferencesPanel } from "@/components/UserPreferencesPanel";
 import { AnalyticsPreferencesPanel } from "@/components/AnalyticsConsentManager";
@@ -645,7 +646,7 @@ export default function SettingsScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={KEYBOARD_BEHAVIOR}
       >
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -1525,7 +1526,7 @@ export default function SettingsScreen() {
           onPress={() => setAuthOpen(false)}
         />
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={KEYBOARD_BEHAVIOR}
           pointerEvents="box-none"
         >
           <View

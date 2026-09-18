@@ -26,6 +26,7 @@ import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useAppContextSelector, type BorrowItem } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { KEYBOARD_BEHAVIOR } from "@/lib/keyboard";
 import { historyPage, isHistoricalResolution } from "@/lib/resolutionHistory";
 import {
   canManageBorrowItem,
@@ -701,9 +702,14 @@ export default function BorrowScreen() {
         }
       />
 
-      <Modal visible={showModal} transparent animationType="slide">
+      <Modal
+        visible={showModal}
+        transparent
+        animationType="slide"
+        onRequestClose={closeModal}
+      >
         <Pressable style={styles.overlay} onPress={() => setShowModal(false)} />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} pointerEvents="box-none">
+        <KeyboardAvoidingView behavior={KEYBOARD_BEHAVIOR} pointerEvents="box-none">
         <View
           style={[
             styles.sheet,

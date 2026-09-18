@@ -4,7 +4,6 @@ import {
   Animated,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "@/constants/colors";
+import { KEYBOARD_BEHAVIOR } from "@/lib/keyboard";
 import { elevationStyle } from "@/lib/elevation";
 import { androidRipple } from "@/lib/ripple";
 
@@ -132,7 +132,7 @@ export function ActionMenuModal({
       accessibilityViewIsModal
     >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={KEYBOARD_BEHAVIOR}
         style={styles.fill}
       >
         <Animated.View

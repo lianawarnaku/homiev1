@@ -34,6 +34,7 @@ import { FloatingActionButton, useFloatingActionMetrics } from "@/components/Flo
 import { HeaderActions } from "@/components/HeaderActions";
 import { RoommateAvatar } from "@/components/RoommateAvatar";
 import { useTheme } from "@/constants/colors";
+import { KEYBOARD_BEHAVIOR } from "@/lib/keyboard";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
 import { computeNetBalances, isSettled } from "@/lib/balances";
@@ -1242,7 +1243,7 @@ export default function ExpensesScreen() {
 
           {/* Body — keyboard-avoiding scroll with sticky footer */}
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            behavior={KEYBOARD_BEHAVIOR}
             style={{ flex: 1 }}
           >
             <ScrollView

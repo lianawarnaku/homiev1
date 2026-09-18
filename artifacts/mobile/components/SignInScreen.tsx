@@ -15,7 +15,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Linking,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +25,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTheme } from "@/constants/colors";
+import { KEYBOARD_BEHAVIOR } from "@/lib/keyboard";
 import { error as hapticError } from "@/lib/haptics";
 import { BrandMark } from "./BrandMark";
 import { supabase } from "@/lib/supabase";
@@ -164,7 +164,7 @@ export function SignInScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.root, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={KEYBOARD_BEHAVIOR}
     >
       <ScrollView
         contentContainerStyle={[

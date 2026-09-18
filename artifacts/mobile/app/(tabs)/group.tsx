@@ -34,6 +34,7 @@ import {
   type Chore,
 } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { KEYBOARD_BEHAVIOR } from "@/lib/keyboard";
 import { useTabBarLayout } from "@/hooks/useTabBarLayout";
 import { error as hapticError, success as hapticSuccess } from "@/lib/haptics";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -1364,7 +1365,7 @@ export default function GroupChoresScreen() {
           </View>
 
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            behavior={KEYBOARD_BEHAVIOR}
             style={{ flex: 1 }}
           >
             <ManualChoreForm

@@ -42,6 +42,7 @@ function normalizeAssignees(item: ShoppingItem): string[] {
   return [];
 }
 import { useTheme } from "@/constants/colors";
+import { KEYBOARD_BEHAVIOR } from "@/lib/keyboard";
 import { elevationStyle } from "@/lib/elevation";
 import { tapLight } from "@/lib/haptics";
 import { localDateKey } from "@/lib/calendarItems";
@@ -739,12 +740,20 @@ export default function ShoppingScreen() {
       </Modal>
 
       {/* ── Add Item Modal ── */}
-      <Modal visible={showShoppingModal} transparent animationType="slide">
+      <Modal
+        visible={showShoppingModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShowShoppingModal(false);
+          setTargetListId(null);
+        }}
+      >
         <Pressable
           style={styles.overlay}
           onPress={() => { setShowShoppingModal(false); setTargetListId(null); }}
         />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} pointerEvents="box-none">
+        <KeyboardAvoidingView behavior={KEYBOARD_BEHAVIOR} pointerEvents="box-none">
           <View
             style={[
               styles.sheet,
@@ -801,9 +810,14 @@ export default function ShoppingScreen() {
       </Modal>
 
       {/* ── New List Modal ── */}
-      <Modal visible={showNewListModal} transparent animationType="slide">
+      <Modal
+        visible={showNewListModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowNewListModal(false)}
+      >
         <Pressable style={styles.overlay} onPress={() => setShowNewListModal(false)} />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} pointerEvents="box-none">
+        <KeyboardAvoidingView behavior={KEYBOARD_BEHAVIOR} pointerEvents="box-none">
           <View
             style={[
               styles.sheet,

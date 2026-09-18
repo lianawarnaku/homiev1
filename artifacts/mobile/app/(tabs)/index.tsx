@@ -32,6 +32,7 @@ import {
   useAppContextSelector,
 } from "@/context/AppContext";
 import { useTheme } from "@/constants/colors";
+import { KEYBOARD_BEHAVIOR } from "@/lib/keyboard";
 import { elevationStyle } from "@/lib/elevation";
 import { success as hapticSuccess } from "@/lib/haptics";
 import { useDraggableSheet } from "@/hooks/useDraggableSheet";
@@ -1209,7 +1210,7 @@ export default function MyChoresScreen() {
           </View>
 
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            behavior={KEYBOARD_BEHAVIOR}
             style={{ flex: 1 }}
           >
             <ManualChoreForm
