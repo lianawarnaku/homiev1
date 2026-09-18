@@ -217,12 +217,13 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
     textAlign: "center",
     lineHeight: 40,
   },
   message: {
     fontSize: 16,
+    fontFamily: "Inter_400Regular",
     textAlign: "center",
     lineHeight: 24,
   },
@@ -253,7 +254,7 @@ const styles = StyleSheet.create({
     ...elevationStyle("raised", BRAND_BASE_DARK),
   },
   buttonText: {
-    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
     textAlign: "center",
     fontSize: 16,
   },
@@ -279,7 +280,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
   },
   closeButton: {
     width: 44,
